@@ -11,6 +11,7 @@ SUPPORTED_MODELS = [
     "Qwen/Qwen2-VL-7B-Instruct",
     "HuggingFaceM4/idefics2-8b",
     "allenai/Molmo-7B-D-0924",
+    "StanfordAIMI/CheXagent-8b",
 ]
 
 
@@ -55,6 +56,14 @@ def get_model_class(
             processor_name=processor_name,
             local_files_only=args.local_files_only,
         )
+    elif "CheXagent" in model_name_or_path:
+        from models.chexagent import CheXagent
+        model_class = CheXagent(
+            model_name_or_path=model_name_or_path,
+            processor_name=processor_name,
+            local_files_only=args.local_files_only,
+        )
+
     else:
         raise NotImplementedError(
             f"Got {model_name_or_path}, but only these models are supported {SUPPORTED_MODELS}"

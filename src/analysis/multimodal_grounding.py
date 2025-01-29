@@ -1,6 +1,8 @@
 import argparse
 import os
 from typing import Any, Callable, Dict, List
+import nltk
+nltk.download('words')
 
 import torch
 from nltk.corpus import words
@@ -80,6 +82,7 @@ def get_multimodal_grounding(
     logger: Callable = None,
     args: argparse.Namespace = None,
 ) -> None:
+    #model_class = model_class.get_lm_head()
     lm_head = model_class.get_lm_head().float()
     tokenizer = model_class.get_tokenizer()
     grounding_dict = {}

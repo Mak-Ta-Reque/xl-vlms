@@ -9,7 +9,7 @@ Code for CLIPScore (https://arxiv.org/abs/2104.08718)
 """
 
 import warnings
-
+import os
 import clip
 import numpy as np
 import sklearn
@@ -19,6 +19,11 @@ from packaging import version
 from PIL import Image
 from torchvision.transforms import (CenterCrop, Compose, Normalize, Resize,
                                     ToTensor)
+import pydicom
+from pydicom.pixel_data_handlers.util import apply_modality_lut
+
+
+
 
 
 class CLIPCaptionDataset(torch.utils.data.Dataset):
@@ -59,7 +64,10 @@ class CLIPImageDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         c_data = self.data[idx]
-        image = Image.open(c_data)
+        from helpers.utils import load_image_as_rgb
+        #image = Image.open(c_data, out_type="PIL")
+        #image = Image.open(c_data, out_type="PIL")
+        image = load_image_as_rgb(c_data,  out_type="PIL")
         image = self.preprocess(image)
         return {"image": image}
 

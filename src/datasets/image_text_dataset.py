@@ -182,10 +182,12 @@ class COCODataset(ImageTextDataset):
 
             img_id = datum["filename"].split(".")[0]
 
-            if "train" in img_id:
+            if "patch" in img_id and "train" in img_id :
+                source = "train_patches"
+            elif "train" in img_id:
                 source = "train2014"
             elif "val" in img_id:
-                source = "val2014"
+                source = "val2014"        
             else:
                 raise NotImplementedError(
                     f"Please specify the image directory for the image: {img_id}"
@@ -252,6 +254,81 @@ class VQAv2Dataset(ImageTextDataset):
                 "answer_type": datum["answer_type"],
                 "question_id": datum["question_id"],
                 "targets": "$$".join([d["answer"] for d in datum["answers"]]),
+            }
+            data.append(item)
+
+        if self.dataset_size > 0:
+            data = self.rng.choice(data, size=self.dataset_size, replace=False)
+
+        self.data = data
+
+class XRAYdataset(ImageTextDataset):
+    def create_dataset(
+        self,
+    ) -> None:
+        annotation_path = os.path.join(self.data_dir, self.annotation_file)
+        with open(annotation_path) as f:
+            karpathy_data = json.load(f)
+
+        data = []
+        for datum in karpathy_data["images"]:
+            split_ = datum["split"]
+            if split_ != self.split:
+                continue
+
+            img_id = datum["filename"].split(".")[0]
+
+
+            image_path = os.path.join(self.data_dir, datum["filepath"], datum["filename"])
+            instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                 "Findings", "Please provide a detailed finding of chest X-ray "
+            )
+            targets = [d["raw"].strip() for d in datum["sentences"]]
+            response = targets[0]  # take only the first caption
+
+            item = {
+                "img_id": img_id,
+                "instruction": instruction,
+                "response": response,
+                "image": image_path,
+                "targets": "$$".join(targets),
+            }
+            data.append(item)
+
+        if self.dataset_size > 0:
+            data = self.rng.choice(data, size=self.dataset_size, replace=False)
+
+        self.data = data
+
+
+class XRAYdataset_view(ImageTextDataset):
+    def create_dataset(
+        self,
+    ) -> None:
+        annotation_path = os.path.join(self.data_dir, self.annotation_file)
+        with open(annotation_path) as f:
+            karpathy_data = json.load(f)
+
+        data = []
+        for datum in karpathy_data["View Classification"]:
+            split_ = datum["split"]
+            if split_ != self.split:
+                continue
+
+            img_id = datum["image_path"].split(".")[0]
+
+
+            image_path = os.path.join(self.data_dir, datum["image_path"])
+            instruction = f'Identify the view of this CXR. (A) {datum["option_0"]}, (B) {datum["option_1"]}, (B) {datum["option_3"]}'
+            targets = datum["slice"]
+            response = targets  # take only the first caption
+
+            item = {
+                "img_id": img_id,
+                "instruction": instruction,
+                "response": response,
+                "image": image_path,
+                "targets": targets,
             }
             data.append(item)
 

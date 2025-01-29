@@ -1,0 +1,29 @@
+2025-01-29 16:21:21.597 [info] [main] Log level: Info
+2025-01-29 16:21:21.597 [info] [main] Validating found git in: "git"
+2025-01-29 16:21:21.597 [info] [main] Using git "2.34.1" from "git"
+2025-01-29 16:21:21.597 [info] [Model][doInitialScan] Initial repository scan started
+2025-01-29 16:21:21.614 [info] > git rev-parse --show-toplevel [27ms]
+2025-01-29 16:21:21.623 [info] > git rev-parse --git-dir --git-common-dir [3ms]
+2025-01-29 16:21:21.634 [info] [Model][openRepository] Opened repository: /home/kadir/xl-vlms
+2025-01-29 16:21:21.650 [info] > git rev-parse --show-toplevel [8ms]
+2025-01-29 16:21:21.663 [info] > git config --get commit.template [13ms]
+2025-01-29 16:21:21.664 [info] > git rev-parse --show-toplevel [9ms]
+2025-01-29 16:21:21.678 [info] > git for-each-ref --format=%(refname)%00%(upstream:short)%00%(objectname)%00%(upstream:track)%00%(upstream:remotename)%00%(upstream:remoteref) refs/heads/main refs/remotes/main [17ms]
+2025-01-29 16:21:21.708 [info] > git rev-parse --show-toplevel [31ms]
+2025-01-29 16:21:21.750 [info] > git for-each-ref --sort -committerdate --format %(refname) %(objectname) %(*objectname) [43ms]
+2025-01-29 16:21:22.200 [info] > git rev-parse --show-toplevel [452ms]
+2025-01-29 16:21:22.249 [info] > git rev-parse --show-toplevel [41ms]
+2025-01-29 16:21:22.277 [info] > git rev-parse --show-toplevel [10ms]
+2025-01-29 16:21:22.523 [info] > git check-ignore -v -z --stdin [248ms]
+2025-01-29 16:21:22.530 [info] > git rev-parse --show-toplevel [8ms]
+2025-01-29 16:21:22.534 [info] [Model][doInitialScan] Initial repository scan completed - repositories (1), closed repositories (0), parent repositories (0), unsafe repositories (0)
+2025-01-29 16:21:23.771 [info] > git status -z -uall [2078ms]
+2025-01-29 16:21:25.595 [info] > git for-each-ref --format=%(refname)%00%(upstream:short)%00%(objectname)%00%(upstream:track)%00%(upstream:remotename)%00%(upstream:remoteref) refs/heads/main refs/remotes/main [1337ms]
+2025-01-29 16:21:25.678 [info] > git config --local branch.main.vscode-merge-base [65ms]
+2025-01-29 16:21:25.695 [info] > git config --get commit.template [101ms]
+2025-01-29 16:21:25.706 [info] > git for-each-ref --format=%(refname)%00%(upstream:short)%00%(objectname)%00%(upstream:track)%00%(upstream:remotename)%00%(upstream:remoteref) refs/heads/origin/main refs/remotes/origin/main [11ms]
+2025-01-29 16:21:25.824 [info] > git merge-base refs/heads/main refs/remotes/origin/main [109ms]
+2025-01-29 16:21:25.847 [info] > git for-each-ref --format=%(refname)%00%(upstream:short)%00%(objectname)%00%(upstream:track)%00%(upstream:remotename)%00%(upstream:remoteref) refs/heads/main refs/remotes/main [142ms]
+2025-01-29 16:21:25.890 [info] > git diff --name-status -z --diff-filter=ADMR f05e4dc7952df4853acdccc983f97f42f165b114...refs/remotes/origin/main [43ms]
+2025-01-29 16:21:25.924 [info] > git for-each-ref --sort -committerdate --format %(refname) %(objectname) %(*objectname) [38ms]
+2025-01-29 16:21:27.215 [info] > git status -z -uall [1338ms]

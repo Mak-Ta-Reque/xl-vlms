@@ -1,0 +1,16 @@
+2025-01-29 16:19:19.941 [info] Started initializing default profile extensions in extensions installation folder. file:///home/kadir/xl-vlms/.code-server/extensions
+2025-01-29 16:19:20.033 [info] Completed initializing default profile extensions in extensions installation folder. file:///home/kadir/xl-vlms/.code-server/extensions
+2025-01-29 16:19:21.276 [info] Getting Manifest... ms-python.python
+2025-01-29 16:19:21.623 [info] Installing extension: ms-python.python {"isMachineScoped":false,"installPreReleaseVersion":false,"isBuiltin":false,"installGivenVersion":false,"isApplicationScoped":false,"installOnlyNewlyAddedFromExtensionPack":true,"profileLocation":{"$mid":1,"fsPath":"/home/kadir/xl-vlms/.code-server/extensions/extensions.json","external":"file:///home/kadir/xl-vlms/.code-server/extensions/extensions.json","path":"/home/kadir/xl-vlms/.code-server/extensions/extensions.json","scheme":"file"},"productVersion":{"version":"1.96.2","date":"2024-12-19T21:23:46.441Z"}}
+2025-01-29 16:19:21.969 [info] Getting Manifest... ms-python.debugpy
+2025-01-29 16:19:22.111 [info] Installing extension: ms-python.debugpy {"isMachineScoped":false,"installPreReleaseVersion":false,"isBuiltin":false,"installGivenVersion":false,"isApplicationScoped":false,"installOnlyNewlyAddedFromExtensionPack":true,"profileLocation":{"$mid":1,"fsPath":"/home/kadir/xl-vlms/.code-server/extensions/extensions.json","external":"file:///home/kadir/xl-vlms/.code-server/extensions/extensions.json","path":"/home/kadir/xl-vlms/.code-server/extensions/extensions.json","scheme":"file"},"productVersion":{"version":"1.96.2","date":"2024-12-19T21:23:46.441Z"},"context":{"dependecyOrPackExtensionInstall":true}}
+2025-01-29 16:19:23.171 [error] Could not load vsce-sign module Cannot find package '@vscode/vsce-sign' imported from /tmp/code-server-4.96.2-linux-amd64/lib/vscode/out/server-main.js
+2025-01-29 16:19:23.171 [info] Extension signature verification is not done: ms-python.debugpy
+2025-01-29 16:19:23.280 [error] Could not load vsce-sign module Cannot find package '@vscode/vsce-sign' imported from /tmp/code-server-4.96.2-linux-amd64/lib/vscode/out/server-main.js
+2025-01-29 16:19:23.280 [info] Extension signature verification is not done: ms-python.python
+2025-01-29 16:19:24.215 [info] Extracted extension to file:///home/kadir/xl-vlms/.code-server/extensions/ms-python.debugpy-2024.14.0-linux-x64: ms-python.debugpy
+2025-01-29 16:19:24.257 [info] Renamed to /home/kadir/xl-vlms/.code-server/extensions/ms-python.debugpy-2024.14.0-linux-x64
+2025-01-29 16:19:26.634 [info] Extracted extension to file:///home/kadir/xl-vlms/.code-server/extensions/ms-python.python-2024.23.0-dev-universal: ms-python.python
+2025-01-29 16:19:26.795 [info] Renamed to /home/kadir/xl-vlms/.code-server/extensions/ms-python.python-2024.23.0-dev-universal
+2025-01-29 16:19:26.817 [info] Extension installed successfully: ms-python.debugpy file:///home/kadir/xl-vlms/.code-server/extensions/extensions.json
+2025-01-29 16:19:26.817 [info] Extension installed successfully: ms-python.python file:///home/kadir/xl-vlms/.code-server/extensions/extensions.json

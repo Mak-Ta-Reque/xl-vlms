@@ -26,6 +26,7 @@ src/metrics/dictionary_learning_metrics.py
 src/metrics/utils.py
 src/metrics/vqa_accuracy.py
 src/models/__init__.py
+src/models/chexagent.py
 src/models/constants.py
 src/models/idefics2.py
 src/models/image_text_model.py

@@ -33,7 +33,7 @@ def l2_distance(batch1: torch.Tensor, batch2: torch.Tensor) -> torch.Tensor:
 def get_token_of_interest_features(
     features: torch.Tensor, token_of_interest_mask: torch.Tensor = None
 ) -> torch.Tensor:
-
+   
     if token_of_interest_mask is not None:
         if isinstance(token_of_interest_mask, list):
             token_of_interest_mask = torch.cat(token_of_interest_mask, dim=0)

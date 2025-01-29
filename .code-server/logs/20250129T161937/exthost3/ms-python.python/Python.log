@@ -1,0 +1,41 @@
+2025-01-29 16:21:22.623 [info] Experiment 'pythonRecommendTensorboardExt' is active
+2025-01-29 16:21:22.623 [info] Experiment 'pythonSurveyNotificationcf' is active
+2025-01-29 16:21:22.623 [info] Experiment 'pythonTerminalEnvVarActivation' is active
+2025-01-29 16:21:22.623 [info] Experiment 'pythonTestAdapter' is active
+2025-01-29 16:21:22.645 [warning] Dir "/home/kadir/xl-vlms/.pixi/envs" is not watchable (directory does not exist)
+2025-01-29 16:21:22.834 [info] Starting Environment refresh
+2025-01-29 16:21:22.834 [info] Searching for interpreters in posix paths locator
+2025-01-29 16:21:22.851 [info] Searching for pyenv environments
+2025-01-29 16:21:22.852 [info] Searching for conda environments
+2025-01-29 16:21:22.852 [info] Searching for global virtual environments
+2025-01-29 16:21:22.852 [info] Searching for custom virtual environments
+2025-01-29 16:21:22.866 [info] pyenv is not installed
+2025-01-29 16:21:22.866 [info] Finished searching for pyenv environments: 31 milliseconds
+2025-01-29 16:21:22.869 [info] Finished searching for custom virtual envs: 33 milliseconds
+2025-01-29 16:21:22.885 [info] > conda info --json
+2025-01-29 16:21:22.906 [info] > hatch env show --json
+2025-01-29 16:21:22.906 [info] cwd: .
+2025-01-29 16:21:22.925 [info] > pyenv which python
+2025-01-29 16:21:22.925 [info] cwd: .
+2025-01-29 16:21:22.925 [info] Finished searching for global virtual envs: 89 milliseconds
+2025-01-29 16:21:22.936 [info] Found: /usr/bin/python3 --> /usr/bin/python3.10
+2025-01-29 16:21:22.936 [info] Found: /usr/bin/python3.10 --> /usr/bin/python3.10
+2025-01-29 16:21:22.936 [info] Found: /usr/bin/python3.6 --> /usr/bin/python3.6
+2025-01-29 16:21:22.937 [info] Found: /usr/bin/python3.8 --> /usr/bin/python3.8
+2025-01-29 16:21:22.953 [info] Found: /root/anaconda3/bin/python --> /root/anaconda3/bin/python3.11
+2025-01-29 16:21:22.956 [info] Found: /root/anaconda3/bin/python3 --> /root/anaconda3/bin/python3.11
+2025-01-29 16:21:22.956 [info] Found: /root/anaconda3/bin/python3.1 --> /root/anaconda3/bin/python3.11
+2025-01-29 16:21:22.956 [info] Found: /root/anaconda3/bin/python3.11 --> /root/anaconda3/bin/python3.11
+2025-01-29 16:21:22.997 [info] > /usr/bin/python3 -I ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/get_output_via_markers.py ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/interpreterInfo.py
+2025-01-29 16:21:23.027 [info] > /usr/bin/python3.6 -I ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/get_output_via_markers.py ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/interpreterInfo.py
+2025-01-29 16:21:23.031 [info] Finished searching for interpreters in posix paths locator: 210 milliseconds
+2025-01-29 16:21:23.149 [info] > /usr/bin/python3.8 -I ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/get_output_via_markers.py ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/interpreterInfo.py
+2025-01-29 16:21:26.010 [info] > ~/anaconda3/bin/python -I ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/get_output_via_markers.py ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/interpreterInfo.py
+2025-01-29 16:21:26.011 [info] Finished searching for conda environments: 3176 milliseconds
+2025-01-29 16:21:26.074 [info] > ~/anaconda3/envs/xl_vlm/bin/python -I ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/get_output_via_markers.py ./.code-server/extensions/ms-python.python-2024.23.0-dev-universal/python_files/interpreterInfo.py
+2025-01-29 16:21:26.074 [info] Environments refresh paths discovered (event): 3253 milliseconds
+2025-01-29 16:21:26.074 [info] Environments refresh paths discovered: 3254 milliseconds
+2025-01-29 16:21:26.165 [info] Environments refresh finished (event): 3345 milliseconds
+2025-01-29 16:21:26.176 [info] Environment refresh took 3356 milliseconds
+2025-01-29 16:21:26.188 [info] Python interpreter path: /usr/bin/python3
+2025-01-29 16:21:29.814 [info] Starting Jedi language server for xl-vlms.

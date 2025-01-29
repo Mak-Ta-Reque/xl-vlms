@@ -13,6 +13,9 @@ from tqdm import tqdm
 
 import metrics
 from datasets.constants import WORDS
+import pydicom
+from pydicom.pixel_data_handlers.util import apply_modality_lut
+from PIL import Image
 
 __all__ = [
     "register_hooks",
@@ -101,6 +104,7 @@ def save_hidden_states(module_name: str = "", **kwargs: Any):
     global HIDDEN_STATES
 
     def hook(module, input, output):
+        m = module
         if isinstance(output, tuple):  # e.g residual streams output is a tuple
             output = output[0]
         output = output.detach().cpu()
@@ -601,3 +605,58 @@ def setup_hooks(
         hook_postprocessing_functions.append(hook_postprocessing_function)
 
     return hook_return_functions, hook_postprocessing_functions
+
+
+
+def load_image_as_rgb(file_path, out_type="PIL"):
+    """
+    Load an image file (.dcm, .jpeg, .png) and return it as either a PIL image or a NumPy array.
+
+    Parameters:
+        file_path (str): The path to the image file.
+        out_type (str): The desired output type, either "PIL" or "np".
+
+    Returns:
+        PIL.Image.Image or np.ndarray: The loaded image either as a PIL object or a NumPy array.
+    """
+    # Extract the file extension
+    ext = os.path.splitext(file_path)[-1].lower()
+
+    if ext == ".dcm":
+        # Load DICOM file
+        dicom_data = pydicom.dcmread(file_path)
+        image = dicom_data.pixel_array
+        image_array = image
+        
+        # Convert grayscale to RGB (if it's single-channel)
+        if len(image.shape) == 2:  # Grayscale image
+            image = np.stack([image] * 3, axis=-1)  # Convert to RGB
+
+        if out_type == "PIL":
+            # Convert NumPy array to PIL Image
+            pil_image = Image.fromarray(image_array)
+            # Ensure 3-channel image if grayscale
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+            return pil_image
+        elif out_type == "np":
+            # Normalize to 0-255 for RGB conversion if necessary
+            if np.max(image) > 255:
+                image = (image / np.max(image)) * 255.0
+            return image.astype(np.uint8)
+        else:
+            raise ValueError("Invalid out_type. Use 'PIL' or 'np'.")
+
+    elif ext in [".jpeg", ".jpg", ".png"]:
+        # Load JPEG or PNG file
+        image = Image.open(file_path).convert("RGB")  # Ensure it's RGB
+
+        if out_type == "PIL":
+            return image
+        elif out_type == "np":
+            return np.array(image)
+        else:
+            raise ValueError("Invalid out_type. Use 'PIL' or 'np'.")
+
+    else:
+        raise ValueError(f"Unsupported file format: {ext}")

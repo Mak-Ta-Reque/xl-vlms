@@ -1,0 +1,19 @@
+
+   70  conda create --name xl_vlm python=3.9
+   71  conda activate xl_vlm
+   72  pip install -e .
+   73  conda install -c bioconda perl-xml-libxml
+   74  conda install -c conda-forge openjdk
+   75  pip install git+https://github.com/bckim92/language-evaluation.git
+   76  apt-get install git
+   77  apt-get install git --fix-missing
+   78  sudo apt update
+   79  apt update
+   80  apt-get install git --fix-missing
+   81  pip install git+https://github.com/bckim92/language-evaluation.git
+   82  python -c "import language_evaluation; language_evaluation.download('coco')"
+   83  pip install git+https://github.com/bckim92/language-evaluation.git
+   apt install zip
+   84  python -c "import language_evaluation; language_evaluation.download('coco')"
+   85  ./src/examples/concept_dictionary/save_features.sh
+   86  history > commands.txt 
