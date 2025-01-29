@@ -26,7 +26,7 @@ def load_features(
     logger: Callable = None,
     feature_key: str = "hidden_states",
     args: argparse.Namespace = None,
-    keep_only_token_of_interest: bool = True,
+    keep_only_token_of_interest: bool = True, # Originally true
 ) -> List[Dict[str, Any]]:  #
 
     if isinstance(features_path, str):
@@ -48,7 +48,6 @@ def load_features(
         )
         meta = {k: v for k, v in data.items() if feature_key not in k}
         feat_key = os.path.basename(feat_path)
-
         if keep_only_token_of_interest:
             if token_of_interest_mask is None:
                 feat = get_token_of_interest_features(

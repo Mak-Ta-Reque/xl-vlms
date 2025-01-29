@@ -1,0 +1,16 @@
+2025-01-29 16:21:00.753 [info] Extension host with pid 3991416 started
+2025-01-29 16:21:00.753 [error] Error: EEXIST: file already exists, open '/home/kadir/xl-vlms/.code-server/User/workspaceStorage/-40c67f36/vscode.lock'
+2025-01-29 16:21:00.775 [info] Lock '/home/kadir/xl-vlms/.code-server/User/workspaceStorage/-40c67f36/vscode.lock': Could not acquire lock, checking if the file is stale.
+2025-01-29 16:21:00.779 [info] Lock '/home/kadir/xl-vlms/.code-server/User/workspaceStorage/-40c67f36/vscode.lock': The lock does not look stale, elapsed: 255 ms, giving up.
+2025-01-29 16:21:00.809 [info] Lock '/home/kadir/xl-vlms/.code-server/User/workspaceStorage/-40c67f36-1/vscode.lock': Lock acquired.
+2025-01-29 16:21:00.906 [info] ExtensionService#_doActivateExtension vscode.git-base, startup: true, activationEvent: '*'
+2025-01-29 16:21:01.080 [info] ExtensionService#_doActivateExtension vscode.github, startup: true, activationEvent: '*'
+2025-01-29 16:21:01.408 [info] Eager extensions activated
+2025-01-29 16:21:01.409 [info] ExtensionService#_doActivateExtension vscode.debug-auto-launch, startup: false, activationEvent: 'onStartupFinished'
+2025-01-29 16:21:01.410 [info] ExtensionService#_doActivateExtension vscode.merge-conflict, startup: false, activationEvent: 'onStartupFinished'
+2025-01-29 16:21:21.391 [info] ExtensionService#_doActivateExtension vscode.git, startup: false, activationEvent: 'api', root cause: vscode.github
+2025-01-29 16:21:21.759 [info] ExtensionService#_doActivateExtension ms-python.python, startup: false, activationEvent: 'workspaceContains:mspythonconfig.json,pyproject.toml,Pipfile,setup.py,requirements.txt,manage.py,app.py,.venv,.conda'
+2025-01-29 16:21:21.759 [info] ExtensionService#_doActivateExtension vscode.emmet, startup: false, activationEvent: 'onLanguage'
+2025-01-29 16:21:24.200 [warning] [Decorations] CAPPING events from decorations provider vscode.git 4683
+2025-01-29 16:21:25.722 [info] ExtensionService#_doActivateExtension vscode.github-authentication, startup: false, activationEvent: 'onAuthenticationRequest:github'
+2025-01-29 16:21:27.366 [warning] [Decorations] CAPPING events from decorations provider vscode.git 4688

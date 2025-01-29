@@ -421,4 +421,11 @@ def get_arguments():
         help="Path to the file with ids of samples to be filtered.",
     )
 
+    parser.add_argument(
+        "--slice_prediction",
+        default=False,
+        action="store_true",
+        help="This is modification from original implementation, ChexAgent model only generate prediction , no input is repeted, so we dontwand to slice the ouput prediction of n/ model",
+    )
+
     return parser.parse_args()

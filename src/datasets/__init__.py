@@ -4,7 +4,7 @@ from typing import Any, Callable, Tuple
 
 from torch.utils.data import DataLoader, Subset
 
-from datasets.image_text_dataset import COCODataset, VQAv2Dataset
+from datasets.image_text_dataset import COCODataset, VQAv2Dataset, XRAYdataset, XRAYdataset_view
 
 __all__ = ["get_dataset_loader"]
 
@@ -35,6 +35,10 @@ def get_dataset_loader(
         dataset_cls = COCODataset
     elif dataset_name == "vqav2":
         dataset_cls = VQAv2Dataset
+    elif dataset_name == "xray":
+        dataset_cls = XRAYdataset
+    elif dataset_name == "xray_view":
+        dataset_cls = XRAYdataset_view
     else:
         raise NotImplementedError(f"{dataset_name} is not implemented.")
 
