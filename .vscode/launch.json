@@ -11,24 +11,22 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "coco",
-        "--dataset_size", "100",
-        "--data_dir", "/ds/images/xai_vision",
-        "--annotation_file", "/ds/images/xai_vision/patches_json_file.json",
-        "--split", "train_patch",
-        "--hook_name", "save_hidden_states_for_token_of_interest",
+        "--dataset_size", "8446",
+        "--data_dir", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco",
+        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco_patch.json",
+        "--split", "train",
+        "--hook_name", "save_hidden_states",
         "--modules_to_hook", "model.norm,model.layers.27",
-        "--select_token_of_interest_samples",
-        "--token_of_interest", "clothes",
-        "--save_dir", "/netscratch/kadir/xl-vlms",
-        "--save_filename", "qwen2_chair_patch_generation_split_train",
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_combined_patch_generation_split_train",
         "--generation_mode",
         "--slice_prediction",
         "--exact_match_modules_to_hook"
       ],
       "env": {
-        "HF_HOME": "/netscratch/kadir/xl-vlms/cache"
+        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
       },
-      "python": "/root/anaconda3/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     }, 
@@ -40,24 +38,24 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "coco",
-        "--dataset_size", "100",
-        "--data_dir", "/ds/images/xai_vision",
-        "--annotation_file", "/ds/images/xai_vision/patches_json_file.json",
-        "--split", "train",
+        "--dataset_size", "20",
+        "--data_dir", "/mnt/abka03/mscoco2014",
+        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco.json",
+        "--split", "val",
         "--hook_name", "save_hidden_states_for_token_of_interest",
         "--modules_to_hook", "model.norm,model.layers.27",
         "--select_token_of_interest_samples",
-        "--token_of_interest", "tables",
-        "--save_dir", "/netscratch/kadir/xl-vlms",
-        "--save_filename", "qwen2_chair_patch_generation_split_train",
+        "--token_of_interest", "catch",
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_catch_patch_generation_split_val",
         "--generation_mode",
         "--slice_prediction",
         "--exact_match_modules_to_hook"
       ],
       "env": {
-        "HF_HOME": "/netscratch/kadir/xl-vlms/cache"
+        "HF_HOME":  "/mnt/abka03/xl-vlms/cache"
       },
-      "python": "/root/anaconda3/envs/xl_vlm/bin/python",  // Update this path
+      "python":  "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -151,17 +149,17 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/netscratch/kadir/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_chair_patch_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_qwen2_combined_patch_generation_split_train.pth",
         "--module_to_decompose", "model.norm",
-        "--num_concepts", "15",
-        "--decomposition_method", "pca",
-        "--save_filename", "qwen2_results_patch_pca",
-        "--save_dir", "/netscratch/kadir/xl-vlms/results"
+        "--num_concepts", "50",
+        "--decomposition_method", "snmf",
+        "--save_filename", "qwen2_results_patch_combined_snmf",
+        "--save_dir", "/mnt/abka03/xl-vlms/results"
       ],
       "env": {
-        "HF_HOME": "/netscratch/kadir/xl-vlms/cache"
+        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
       },
-      "python": "/root/anaconda3/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -251,7 +249,24 @@
       "python": "/root/anaconda3/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
-    }
+    },
+// Pach processing debugger 
+    {
+      "name": "Run generate_patches.py",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/preprocessing/generate_patches.py",
+      "python": "/home/abka03/.conda/envs/lang_sam/bin/python",
+      "args": [
+          "/mnt/abka03/mscoco2014/xl-vlm",
+          "/mnt/abka03/mscoco2014",
+          "250",
+          "10",
+          "--technique",
+          "vqa-seg"
+      ],
+      "console": "integratedTerminal"
+  }
 
 
 

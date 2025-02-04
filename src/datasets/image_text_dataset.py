@@ -182,9 +182,7 @@ class COCODataset(ImageTextDataset):
 
             img_id = datum["filename"].split(".")[0]
 
-            if "patch" in img_id and "train" in img_id :
-                source = "train_patches"
-            elif "train" in img_id:
+            if "train" in img_id:
                 source = "train2014"
             elif "val" in img_id:
                 source = "val2014"        
@@ -198,7 +196,7 @@ class COCODataset(ImageTextDataset):
                 "ShortCaptioning", "An image of "
             )
             targets = [d["raw"].strip() for d in datum["sentences"]]
-            response = targets[0]  # take only the first caption
+            response = " ".join(targets)#targets[0]  # take only the first caption
 
             item = {
                 "img_id": img_id,

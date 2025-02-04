@@ -211,7 +211,7 @@ def get_arguments():
         help="True for autoregressive generation mode. False for teacher forcing.",
     )
     parser.add_argument(
-        "--max_new_tokens", type=int, default=50, help="Max numberof generated tokens."
+        "--max_new_tokens", type=int, default=1000, help="Max numberof generated tokens."
     )
 
     # Saving hidden states for token of interest

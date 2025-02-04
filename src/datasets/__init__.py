@@ -106,6 +106,6 @@ def get_dataset_loader(
         )
     if logger is not None:
         logger.info(f"Reading dataset: {dataset_name} of size: {len(loader)}")
-    assert len(loader) > 0, f"loader is empty"
+    assert len(loader) > 0, f"loader is empty. Check if the --token_of_interest is properly assigned"
 
     return loader
