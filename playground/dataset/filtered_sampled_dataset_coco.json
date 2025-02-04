@@ -1,0 +1,1063 @@
+{
+    "images": [
+        {
+            "filepath": "train2014",
+            "sentids": [
+                334315,
+                334522,
+                336580,
+                337783,
+                339520
+            ],
+            "filename": "COCO_train2014_000000083079.jpg",
+            "imgid": 49954,
+            "split": "train",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "bus",
+                        "stopped",
+                        "at",
+                        "a",
+                        "corner",
+                        "with",
+                        "a",
+                        "fancy",
+                        "building",
+                        "in",
+                        "the",
+                        "background"
+                    ],
+                    "raw": "A bus stopped at a corner with a fancy building in the background.",
+                    "imgid": 49954,
+                    "sentid": 334315
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "green",
+                        "bus",
+                        "next",
+                        "to",
+                        "the",
+                        "backside",
+                        "of",
+                        "a",
+                        "stop",
+                        "sign"
+                    ],
+                    "raw": "a  green bus next to the backside of a stop sign",
+                    "imgid": 49954,
+                    "sentid": 334522
+                },
+                {
+                    "tokens": [
+                        "there",
+                        "is",
+                        "a",
+                        "bus",
+                        "that",
+                        "is",
+                        "stopped",
+                        "in",
+                        "front",
+                        "of",
+                        "a",
+                        "castle"
+                    ],
+                    "raw": "there is a bus that is stopped in front of a castle",
+                    "imgid": 49954,
+                    "sentid": 336580
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "bus",
+                        "on",
+                        "the",
+                        "street",
+                        "near",
+                        "a",
+                        "large",
+                        "building"
+                    ],
+                    "raw": "A bus on the street near a large building.",
+                    "imgid": 49954,
+                    "sentid": 337783
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "big",
+                        "green",
+                        "city",
+                        "bus",
+                        "in",
+                        "front",
+                        "of",
+                        "a",
+                        "large",
+                        "church"
+                    ],
+                    "raw": "A big green city bus in front of a large church.",
+                    "imgid": 49954,
+                    "sentid": 339520
+                }
+            ],
+            "cocoid": 83079
+        },
+        {
+            "filepath": "train2014",
+            "sentids": [
+                67038,
+                67380,
+                69345,
+                72081,
+                74028
+            ],
+            "filename": "COCO_train2014_000000067143.jpg",
+            "imgid": 78676,
+            "split": "train",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "that",
+                        "has",
+                        "been",
+                        "written",
+                        "and",
+                        "signed",
+                        "on"
+                    ],
+                    "raw": "A stop sign that has been written and signed on.",
+                    "imgid": 78676,
+                    "sentid": 67038
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "is",
+                        "covered",
+                        "in",
+                        "thoughtful",
+                        "graffiti"
+                    ],
+                    "raw": "A stop sign is covered in thoughtful graffiti. ",
+                    "imgid": 78676,
+                    "sentid": 67380
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "red",
+                        "stop",
+                        "sign",
+                        "with",
+                        "a",
+                        "lot",
+                        "of",
+                        "graffiti"
+                    ],
+                    "raw": "A red stop sign with a lot of graffiti .",
+                    "imgid": 78676,
+                    "sentid": 69345
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "with",
+                        "an",
+                        "enormous",
+                        "amount",
+                        "of",
+                        "graffiti",
+                        "on",
+                        "it"
+                    ],
+                    "raw": "A stop sign with an enormous amount of graffiti on it.",
+                    "imgid": 78676,
+                    "sentid": 72081
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "red",
+                        "stop",
+                        "sign",
+                        "with",
+                        "lots",
+                        "of",
+                        "writing",
+                        "all",
+                        "over",
+                        "it"
+                    ],
+                    "raw": "A red stop sign with lots of writing all over it.",
+                    "imgid": 78676,
+                    "sentid": 74028
+                }
+            ],
+            "cocoid": 67143
+        },
+        {
+            "filepath": "train2014",
+            "sentids": [
+                464462,
+                466730,
+                468023,
+                468527,
+                469748
+            ],
+            "filename": "COCO_train2014_000000254911.jpg",
+            "imgid": 93073,
+            "split": "train",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "red",
+                        "stop",
+                        "sign",
+                        "sitting",
+                        "next",
+                        "to",
+                        "a",
+                        "leaf",
+                        "free",
+                        "tree"
+                    ],
+                    "raw": "A red stop sign sitting next to a leaf free tree.",
+                    "imgid": 93073,
+                    "sentid": 464462
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "four",
+                        "way",
+                        "stop",
+                        "sign",
+                        "on",
+                        "a",
+                        "pole"
+                    ],
+                    "raw": "A four way stop sign on a pole.",
+                    "imgid": 93073,
+                    "sentid": 466730
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "with",
+                        "the",
+                        "word",
+                        "war",
+                        "written",
+                        "below",
+                        "it"
+                    ],
+                    "raw": "A stop sign with the word \"war\" written below it. ",
+                    "imgid": 93073,
+                    "sentid": 468023
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "with",
+                        "graffiti",
+                        "on",
+                        "it",
+                        "sit",
+                        "underneath",
+                        "power",
+                        "lines"
+                    ],
+                    "raw": "a stop sign with graffiti on it sit underneath power lines ",
+                    "imgid": 93073,
+                    "sentid": 468527
+                },
+                {
+                    "tokens": [
+                        "the",
+                        "stop",
+                        "sign",
+                        "on",
+                        "the",
+                        "street",
+                        "was",
+                        "vandalized"
+                    ],
+                    "raw": "The stop sign on the street was vandalized. ",
+                    "imgid": 93073,
+                    "sentid": 469748
+                }
+            ],
+            "cocoid": 254911
+        },
+        {
+            "filepath": "train2014",
+            "sentids": [
+                616648,
+                617155,
+                619135,
+                623923,
+                624280
+            ],
+            "filename": "COCO_train2014_000000132621.jpg",
+            "imgid": 66284,
+            "split": "train",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "bunch",
+                        "of",
+                        "street",
+                        "signs",
+                        "in",
+                        "the",
+                        "middle",
+                        "of",
+                        "the",
+                        "night"
+                    ],
+                    "raw": "A bunch of street signs in the middle of the night",
+                    "imgid": 66284,
+                    "sentid": 616648
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "sign",
+                        "is",
+                        "hanging",
+                        "near",
+                        "some",
+                        "red",
+                        "lights",
+                        "at",
+                        "night"
+                    ],
+                    "raw": "a sign is hanging near some red lights at night",
+                    "imgid": 66284,
+                    "sentid": 617155
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "dark",
+                        "night",
+                        "on",
+                        "a",
+                        "street",
+                        "with",
+                        "a",
+                        "blue",
+                        "street",
+                        "light",
+                        "lit",
+                        "up"
+                    ],
+                    "raw": "A dark night on a street with a blue street light lit up.",
+                    "imgid": 66284,
+                    "sentid": 619135
+                },
+                {
+                    "tokens": [
+                        "traffic",
+                        "lights",
+                        "and",
+                        "a",
+                        "bus",
+                        "stop",
+                        "sign",
+                        "lit",
+                        "up",
+                        "at",
+                        "night"
+                    ],
+                    "raw": "Traffic lights and a bus stop sign lit up at night",
+                    "imgid": 66284,
+                    "sentid": 623923
+                },
+                {
+                    "tokens": [
+                        "traffic",
+                        "lights",
+                        "mounted",
+                        "on",
+                        "poles",
+                        "are",
+                        "lit",
+                        "up",
+                        "in",
+                        "the",
+                        "night"
+                    ],
+                    "raw": "Traffic lights mounted on poles are lit up in the night.",
+                    "imgid": 66284,
+                    "sentid": 624280
+                }
+            ],
+            "cocoid": 132621
+        },
+        {
+            "filepath": "train2014",
+            "sentids": [
+                691014,
+                692772,
+                698214,
+                698256,
+                703668
+            ],
+            "filename": "COCO_train2014_000000116656.jpg",
+            "imgid": 79743,
+            "split": "train",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "short",
+                        "stop",
+                        "sign",
+                        "at",
+                        "an",
+                        "intersection",
+                        "with",
+                        "parked",
+                        "cars",
+                        "in",
+                        "the",
+                        "background"
+                    ],
+                    "raw": "A short stop sign at an intersection with parked cars in the background. ",
+                    "imgid": 79743,
+                    "sentid": 691014
+                },
+                {
+                    "tokens": [
+                        "the",
+                        "stop",
+                        "sign",
+                        "is",
+                        "across",
+                        "the",
+                        "street",
+                        "from",
+                        "many",
+                        "parked",
+                        "cars"
+                    ],
+                    "raw": "The stop sign is across the street from many parked cars. ",
+                    "imgid": 79743,
+                    "sentid": 692772
+                },
+                {
+                    "tokens": [
+                        "intersection",
+                        "of",
+                        "a",
+                        "roadway",
+                        "with",
+                        "a",
+                        "stop",
+                        "sign",
+                        "at",
+                        "a",
+                        "cross",
+                        "walk"
+                    ],
+                    "raw": "Intersection of a roadway with a stop sign at a cross-walk.",
+                    "imgid": 79743,
+                    "sentid": 698214
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "red",
+                        "stop",
+                        "sign",
+                        "sitting",
+                        "on",
+                        "the",
+                        "side",
+                        "of",
+                        "a",
+                        "road"
+                    ],
+                    "raw": "A red stop sign sitting on the side of a road.",
+                    "imgid": 79743,
+                    "sentid": 698256
+                },
+                {
+                    "tokens": [
+                        "city",
+                        "street",
+                        "intersection",
+                        "near",
+                        "commercial",
+                        "businesses",
+                        "with",
+                        "traffic"
+                    ],
+                    "raw": "City street intersection near commercial businesses with traffic.",
+                    "imgid": 79743,
+                    "sentid": 703668
+                }
+            ],
+            "cocoid": 116656
+        },
+        {
+            "filepath": "val2014",
+            "sentids": [
+                269534,
+                271457,
+                273113,
+                276161,
+                276497
+            ],
+            "filename": "COCO_val2014_000000110626.jpg",
+            "imgid": 5433,
+            "split": "val",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "located",
+                        "at",
+                        "a",
+                        "cross",
+                        "section",
+                        "in",
+                        "a",
+                        "rural",
+                        "area"
+                    ],
+                    "raw": "A stop sign located at a cross section in a rural area. ",
+                    "imgid": 5433,
+                    "sentid": 269534
+                },
+                {
+                    "tokens": [
+                        "on",
+                        "a",
+                        "country",
+                        "road",
+                        "a",
+                        "stop",
+                        "sign",
+                        "stands",
+                        "by",
+                        "a",
+                        "white",
+                        "post"
+                    ],
+                    "raw": "On a country road, a stop sign stands by a white post.",
+                    "imgid": 5433,
+                    "sentid": 271457
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "on",
+                        "the",
+                        "corner",
+                        "of",
+                        "a",
+                        "patch",
+                        "of",
+                        "grass"
+                    ],
+                    "raw": "A stop sign on the corner of a patch of grass.",
+                    "imgid": 5433,
+                    "sentid": 273113
+                },
+                {
+                    "tokens": [
+                        "an",
+                        "image",
+                        "of",
+                        "a",
+                        "stop",
+                        "sign",
+                        "that",
+                        "is",
+                        "at",
+                        "the",
+                        "street"
+                    ],
+                    "raw": "an image of a stop sign that is at the street",
+                    "imgid": 5433,
+                    "sentid": 276161
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "lonely",
+                        "stop",
+                        "sign",
+                        "on",
+                        "a",
+                        "corner",
+                        "in",
+                        "a",
+                        "remote",
+                        "place"
+                    ],
+                    "raw": "A lonely stop sign on a corner in a remote place.",
+                    "imgid": 5433,
+                    "sentid": 276497
+                }
+            ],
+            "cocoid": 110626
+        },
+        {
+            "filepath": "val2014",
+            "sentids": [
+                74098,
+                75925,
+                77914,
+                81661,
+                82732
+            ],
+            "filename": "COCO_val2014_000000123119.jpg",
+            "imgid": 16651,
+            "split": "val",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "on",
+                        "a",
+                        "beach",
+                        "with",
+                        "everyone",
+                        "in",
+                        "the",
+                        "water"
+                    ],
+                    "raw": "A stop sign on a beach with everyone in the water",
+                    "imgid": 16651,
+                    "sentid": 74098
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "beach",
+                        "crowded",
+                        "with",
+                        "people",
+                        "playing",
+                        "in",
+                        "the",
+                        "ocean"
+                    ],
+                    "raw": "A beach crowded with people playing in the ocean.",
+                    "imgid": 16651,
+                    "sentid": 75925
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "by",
+                        "a",
+                        "body",
+                        "of",
+                        "water",
+                        "with",
+                        "people",
+                        "in",
+                        "it"
+                    ],
+                    "raw": "A stop sign by a body of water with people in it.",
+                    "imgid": 16651,
+                    "sentid": 77914
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "and",
+                        "the",
+                        "ocean",
+                        "with",
+                        "people",
+                        "in",
+                        "the",
+                        "water"
+                    ],
+                    "raw": "A stop sign and the ocean with people in the water.",
+                    "imgid": 16651,
+                    "sentid": 81661
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "in",
+                        "front",
+                        "of",
+                        "a",
+                        "beach",
+                        "in",
+                        "which",
+                        "a",
+                        "group",
+                        "of",
+                        "people",
+                        "in",
+                        "the",
+                        "water"
+                    ],
+                    "raw": "A stop sign in front of a beach in which a group of people in the water.",
+                    "imgid": 16651,
+                    "sentid": 82732
+                }
+            ],
+            "cocoid": 123119
+        },
+        {
+            "filepath": "val2014",
+            "sentids": [
+                97472,
+                100052,
+                101564,
+                103502,
+                114392
+            ],
+            "filename": "COCO_val2014_000000099425.jpg",
+            "imgid": 18547,
+            "split": "val",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "large",
+                        "crowd",
+                        "of",
+                        "motorcycle",
+                        "enthusiasts",
+                        "at",
+                        "a",
+                        "motorcycle",
+                        "event"
+                    ],
+                    "raw": "A large crowd of motorcycle enthusiasts at a motorcycle event.",
+                    "imgid": 18547,
+                    "sentid": 97472
+                },
+                {
+                    "tokens": [
+                        "pedestrians",
+                        "make",
+                        "their",
+                        "way",
+                        "past",
+                        "motorcycle",
+                        "traffic",
+                        "on",
+                        "a",
+                        "street"
+                    ],
+                    "raw": "Pedestrians make their way past motorcycle traffic on a street.",
+                    "imgid": 18547,
+                    "sentid": 100052
+                },
+                {
+                    "tokens": [
+                        "some",
+                        "motorcycle",
+                        "riders",
+                        "are",
+                        "biking",
+                        "through",
+                        "a",
+                        "festival"
+                    ],
+                    "raw": "Some motorcycle riders are biking through a festival",
+                    "imgid": 18547,
+                    "sentid": 101564
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "group",
+                        "of",
+                        "bikers",
+                        "make",
+                        "their",
+                        "way",
+                        "through",
+                        "the",
+                        "intersection",
+                        "in",
+                        "town",
+                        "where",
+                        "tents",
+                        "and",
+                        "flags",
+                        "are",
+                        "set",
+                        "up"
+                    ],
+                    "raw": "A group of bikers make their way through the intersection in town, where tents and flags are set up.",
+                    "imgid": 18547,
+                    "sentid": 103502
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "three",
+                        "wheeler",
+                        "and",
+                        "a",
+                        "motorcycle",
+                        "stopping",
+                        "at",
+                        "at",
+                        "stop",
+                        "sign"
+                    ],
+                    "raw": "A three wheeler and a motorcycle stopping at at stop sign.",
+                    "imgid": 18547,
+                    "sentid": 114392
+                }
+            ],
+            "cocoid": 99425
+        },
+        {
+            "filepath": "val2014",
+            "sentids": [
+                257269,
+                257893,
+                261484,
+                261982,
+                262558
+            ],
+            "filename": "COCO_val2014_000000525050.jpg",
+            "imgid": 15740,
+            "split": "val",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "sidewalk",
+                        "with",
+                        "street",
+                        "sings",
+                        "next",
+                        "to",
+                        "a",
+                        "road"
+                    ],
+                    "raw": " A sidewalk with street sings next to a road.",
+                    "imgid": 15740,
+                    "sentid": 257269
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "stop",
+                        "sign",
+                        "and",
+                        "street",
+                        "sign",
+                        "stand",
+                        "on",
+                        "the",
+                        "corner",
+                        "of",
+                        "a",
+                        "street"
+                    ],
+                    "raw": "A stop sign and street sign stand on the corner of a street.",
+                    "imgid": 15740,
+                    "sentid": 257893
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "sidewalk",
+                        "on",
+                        "a",
+                        "corner",
+                        "with",
+                        "a",
+                        "stop",
+                        "sign",
+                        "and",
+                        "a",
+                        "street",
+                        "sign"
+                    ],
+                    "raw": "A sidewalk on a corner with a stop sign and a street sign.",
+                    "imgid": 15740,
+                    "sentid": 261484
+                },
+                {
+                    "tokens": [
+                        "a",
+                        "street",
+                        "sign",
+                        "on",
+                        "a",
+                        "city",
+                        "street",
+                        "with",
+                        "a",
+                        "sky",
+                        "background"
+                    ],
+                    "raw": "a street sign on a city street with a sky background",
+                    "imgid": 15740,
+                    "sentid": 261982
+                },
+                {
+                    "tokens": [
+                        "all",
+                        "way",
+                        "stop",
+                        "sign",
+                        "at",
+                        "the",
+                        "intersection",
+                        "of",
+                        "prairie",
+                        "street"
+                    ],
+                    "raw": "All way stop sign at the intersection of Prairie Street.",
+                    "imgid": 15740,
+                    "sentid": 262558
+                }
+            ],
+            "cocoid": 525050
+        },
+        {
+            "filepath": "val2014",
+            "sentids": [
+                737633,
+                738869,
+                740207,
+                825842,
+                826097
+            ],
+            "filename": "COCO_val2014_000000024851.jpg",
+            "imgid": 9372,
+            "split": "val",
+            "sentences": [
+                {
+                    "tokens": [
+                        "a",
+                        "picture",
+                        "of",
+                        "two",
+                        "stop",
+                        "lights",
+                        "that",
+                        "are",
+                        "red",
+                        "at",
+                        "a",
+                        "busy",
+                        "intersection"
+                    ],
+                    "raw": "A picture of two stop lights that are red at a busy intersection. ",
+                    "imgid": 9372,
+                    "sentid": 737633
+                },
+                {
+                    "tokens": [
+                        "two",
+                        "signal",
+                        "lights",
+                        "displaying",
+                        "the",
+                        "red",
+                        "stop",
+                        "light"
+                    ],
+                    "raw": "Two signal lights displaying the 'red' stop light. ",
+                    "imgid": 9372,
+                    "sentid": 738869
+                },
+                {
+                    "tokens": [
+                        "two",
+                        "red",
+                        "lights",
+                        "hanging",
+                        "from",
+                        "poles",
+                        "near",
+                        "a",
+                        "building"
+                    ],
+                    "raw": "Two red lights hanging from poles near a building",
+                    "imgid": 9372,
+                    "sentid": 740207
+                },
+                {
+                    "tokens": [
+                        "two",
+                        "traffic",
+                        "lights",
+                        "showing",
+                        "the",
+                        "stop",
+                        "signal",
+                        "in",
+                        "front",
+                        "of",
+                        "buildings",
+                        "and",
+                        "trees"
+                    ],
+                    "raw": "Two traffic lights showing the stop signal in front of buildings and trees.",
+                    "imgid": 9372,
+                    "sentid": 825842
+                },
+                {
+                    "tokens": [
+                        "two",
+                        "traffic",
+                        "lights",
+                        "displaying",
+                        "red",
+                        "in",
+                        "front",
+                        "of",
+                        "an",
+                        "office",
+                        "building"
+                    ],
+                    "raw": "Two traffic lights displaying red in front of an office building.",
+                    "imgid": 9372,
+                    "sentid": 826097
+                }
+            ],
+            "cocoid": 24851
+        }
+    ]
+}

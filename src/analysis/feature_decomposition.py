@@ -121,8 +121,12 @@ def decompose_activations(
         # Convert to numpy array for sklearn processing
         mat = mat.cpu().data.numpy()
 
-    mat = np.nan_to_num(mat, nan=0, posinf=0, neginf=0)
-    mask = np.any(np.isnan(mat) | np.isinf(mat), axis=1)
+    #mat -= np.min(mat) 
+    mat = mat.astype(np.float32)
+    print("Matrix stats:")
+    print("Min:", np.min(mat), "Max:", np.max(mat))
+    print("NaNs:", np.isnan(mat).sum(), "Infs:", np.isinf(mat).sum())
+    print("Shape:", mat.shape, "Rank:", np.linalg.matrix_rank(mat))
     assert (
         len(mat.shape) == 2
     ), f"Given feature matrix needs to be 2D. Shape encountered {mat.shape}"
