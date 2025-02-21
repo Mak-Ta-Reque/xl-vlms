@@ -67,6 +67,7 @@ def get_feature_matrix(
     features: List[Dict[str, Any]],
     module_name: str,
     token_idx: int = None,
+    token_of_interest_mask= None
 ) -> torch.Tensor:
     assert (
         module_name in features[0].keys()
@@ -79,11 +80,27 @@ def get_feature_matrix(
             feat[module_name] = feat[module_name].unsqueeze(
                 0
             )  # For unifying all shapes
-
+    
+    if token_of_interest_mask is not None:
+         if isinstance(token_of_interest_mask, list):
+            if token_of_interest_mask[0].shape[-1] > 1:
+                masked_features = [feat[module_name][:, mask[0] ] for feat, mask in zip(features, token_of_interest_mask)]
+                features = torch.cat([feat.mean(dim=1, keepdim=False) for feat in masked_features], dim=0 )
+                return features
     if token_idx is not None:
         matrix = torch.cat(
             [feat[module_name][:, token_idx] for feat in features], dim=0
         )
+
+    #if token_id is not None:
+        # get the token index based on token id
+        # get the matrix based on the token index.
+
+        # Remember to remove all sample that does not have token_id matching after this process. Other wise null value will exist.
+
+
+
+        
     else:
         # Take average over token positions
         matrix = torch.cat(

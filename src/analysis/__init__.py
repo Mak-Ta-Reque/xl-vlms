@@ -40,11 +40,17 @@ def load_features(
     for feat_path in features_path:
         data = torch.load(feat_path, map_location="cpu")
         assert feature_key in data, f"{feature_key} not found, got {data.keys()}."
+        
         data_ = data[feature_key]
+        
         feat = get_feature_matrix(
             data_,
             module_name=args.module_to_decompose,
             token_idx=args.decomposition_extract_pos,
+            token_of_interest_mask = data.get("token_of_interest_mask", None)
+            #token_id = args.token_id,
+            #metadata = meta_data
+
         )
         meta = {k: v for k, v in data.items() if feature_key not in k}
         feat_key = os.path.basename(feat_path)

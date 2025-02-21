@@ -15,6 +15,16 @@ from models import get_model_class
 from models.image_text_model import ImageTextModel
 
 
+def move_to_cpu_and_cleanup(obj):
+    for attr_name in dir(obj):
+        attr = getattr(obj, attr_name)
+        if isinstance(attr, torch.Tensor):
+            # Move the tensor to CPU
+            setattr(obj, attr_name, attr.cpu())
+    
+    # Clear the GPU cache
+    torch.cuda.empty_cache()
+
 @torch.no_grad()
 def inference(
     loader: Callable,
@@ -42,8 +52,16 @@ def inference(
 
         if args.generation_mode:
             out = model.generate(
-                **inputs, max_new_tokens=args.max_new_tokens, do_sample=False
+                **inputs, max_new_tokens=args.max_new_tokens,
+                  do_sample=False,
+                  output_scores=True,
+                  return_dict_in_generate=True
             )
+            move_to_cpu_and_cleanup(out)
+            scores = out.scores
+            
+            out = out.sequences
+
         else:
             out = model(**inputs).logits
 
@@ -64,7 +82,9 @@ def inference(
             item["model_predictions"] = model_class.get_tokenizer().batch_decode(
             out, skip_special_tokens=True
             )
-
+        del out
+        item["scores"] = scores
+        #item["token_of_interest"] = args.token_of_interest # This is becase we want to pass token of interest, I added
         if hook_return_functions is not None:
             for func in hook_return_functions:
                 if func is not None:
