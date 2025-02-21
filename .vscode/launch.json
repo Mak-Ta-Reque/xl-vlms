@@ -11,17 +11,19 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "coco",
-        "--dataset_size", "8446",
+        "--dataset_size", "400",
         "--data_dir", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco",
         "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco_patch.json",
         "--split", "train",
-        "--hook_name", "save_hidden_states",
-        "--modules_to_hook", "model.norm,model.layers.27",
+        "--hook_name", "save_hidden_states_for_tokens_of_interest", //"save_hidden_states_given_token_idx",
+        "--tokens_of_interest", " fur cat eye ears paw leg stripe long small", //space must be appended infront of token
+        "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
         "--save_dir", "/mnt/abka03/xl-vlms",
-        "--save_filename", "qwen2_combined_patch_generation_split_train",
+        "--save_filename", "qwen2_image_patched_combined_grid_patch_concept_generation_split_train",
         "--generation_mode",
+        "--save_only_generated_tokens",
         "--slice_prediction",
-        "--exact_match_modules_to_hook"
+        "--exact_match_modules_to_hook",
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/xl-vlms/cache"
@@ -30,6 +32,36 @@
       "console": "integratedTerminal",
       "justMyCode": true
     }, 
+
+    {
+      "name": "Save Features Qwen token of interest",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "coco",
+        "--dataset_size", "400",
+        "--data_dir", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco",
+        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco_patch.json",
+        "--split", "train",
+        "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx",
+        "--token_of_interest", "cat", //space must be appended infront of token
+        "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_patched_image_cat_token_of_interest_concept_generation_split_train",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
+      },
+      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
     {
       "name": "Save Features Qwen Global image",
       "type": "python",
@@ -40,14 +72,14 @@
         "--dataset_name", "coco",
         "--dataset_size", "20",
         "--data_dir", "/mnt/abka03/mscoco2014",
-        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco.json",
+        "--annotation_file", "/mnt/abka03/mscoco2014/dataset_coco.json",
         "--split", "val",
         "--hook_name", "save_hidden_states_for_token_of_interest",
         "--modules_to_hook", "model.norm,model.layers.27",
-        "--select_token_of_interest_samples",
-        "--token_of_interest", "catch",
+        //"--select_token_of_interest_samples",
+        "--token_of_interest", " cat",
         "--save_dir", "/mnt/abka03/xl-vlms",
-        "--save_filename", "qwen2_catch_patch_generation_split_val",
+        "--save_filename", "qwen2_cat_global_generation_split_val",
         "--generation_mode",
         "--slice_prediction",
         "--exact_match_modules_to_hook"
@@ -149,12 +181,37 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_qwen2_combined_patch_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_patched_image_cat_token_of_interest_concept_generation_split_train.pth",
         "--module_to_decompose", "model.norm",
         "--num_concepts", "50",
         "--decomposition_method", "snmf",
-        "--save_filename", "qwen2_results_patch_combined_snmf",
-        "--save_dir", "/mnt/abka03/xl-vlms/results"
+        "--save_filename", "qwen2_results_patch_token_of_interest_cat_patch_snmf",
+        "--save_dir", "/mnt/abka03/xl-vlms/results",
+        "--load_matched_features"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
+      },
+      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
+    {
+      "name": "Decompose Features Script Qwen token of interest",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/analyse_features.py",  // Replace with your script's name
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--analysis_name", "decompose_activations_text_grounding_image_grounding",
+        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_full_image_sleeping_cat_token_of_interest_concept_generation_split_train.pth",
+        "--module_to_decompose", "model.norm",
+        "--num_concepts", "50",
+        "--decomposition_method", "snmf",
+        "--save_filename", "qwen2_results_patch_all_patch_snmf",
+        "--save_dir", "/mnt/abka03/xl-vlms/results",
+        "--load_matched_features"
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/xl-vlms/cache"
@@ -173,9 +230,9 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/netscratch/kadir/xl-vlms/features/save_hidden_states_for_token_of_interest_chexagent_the_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_qwen2_full_image_hot_dog_concept_generation_split_train.pth",
         "--module_to_decompose", "model.norm",
-        "--num_concepts", "20",
+        "--num_concepts", "2",
         "--decomposition_method", "snmf",
         "--save_filename", "results_train",
         "--save_dir", "/netscratch/kadir/xl-vlms/results"
@@ -236,17 +293,17 @@
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
         "--analysis_name", "concept_dictionary_evaluation_overlap_clipscore_bertscore",
-        "--features_path", "/netscratch/kadir/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_chair_image_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_cat_global_generation_split_val.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--save_filename", "Qwen2_chair",
+        "--save_filename", "Qwen2_cat",
         "--local_files_only",
-        "--analysis_saving_path", "/netscratch/kadir/xl-vlms/results/decompose_activations_text_grounding_image_grounding_qwen2_results_patch_pca.pth",
+        "--analysis_saving_path", "/mnt/abka03/xl-vlms/results/decompose_activations_text_grounding_image_grounding_qwen2_results_patch_token_of_interest_cat_patch_snmf.pth",
       ],
       "env": {
-        "HF_HOME": "/netscratch/kadir/xl-vlms/cache"
+        "HF_HOME":  "/mnt/abka03/xl-vlms/cache"
       },
-      "python": "/root/anaconda3/envs/xl_vlm/bin/python",  // Update this path
+      "python":  "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -258,12 +315,12 @@
       "program": "${workspaceFolder}/preprocessing/generate_patches.py",
       "python": "/home/abka03/.conda/envs/lang_sam/bin/python",
       "args": [
-          "/mnt/abka03/mscoco2014/xl-vlm",
+          "/mnt/abka03/mscoco2014/random_patch",
           "/mnt/abka03/mscoco2014",
-          "250",
-          "10",
+          "100",
+          "20",
           "--technique",
-          "vqa-seg"
+          "random"
       ],
       "console": "integratedTerminal"
   }

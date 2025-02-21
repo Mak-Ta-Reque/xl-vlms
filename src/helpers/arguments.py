@@ -179,20 +179,20 @@ def get_arguments():
     parser.add_argument(
         "--dl_max_iter",
         type=int,
-        default=5000,
+        default=50,
         help="Max number of iterations for dictionary learning optimization.",
     )
     parser.add_argument(
         "--num_grounded_text_tokens",
         type=int,
-        default=10,
+        default=5,
         help="Number of concepts for dictionary learning.",
     )
 
     parser.add_argument(
         "--pre_num_top_tokens",
         type=int,
-        default=50,
+        default=10,
         help="Number of words to try to ground before filtering the top num_grounded_text_tokens.",
     )
 
@@ -211,7 +211,7 @@ def get_arguments():
         help="True for autoregressive generation mode. False for teacher forcing.",
     )
     parser.add_argument(
-        "--max_new_tokens", type=int, default=1000, help="Max numberof generated tokens."
+        "--max_new_tokens", type=int, default=50, help="Max numberof generated tokens."
     )
 
     # Saving hidden states for token of interest
@@ -239,6 +239,14 @@ def get_arguments():
         default=None,
         help="The entity that you want to extract the representation of from hidden states.",
     )
+    
+    parser.add_argument(
+        "--tokens_of_interest",
+        type=str,
+        default=None,
+        help="The entity that you want to extract the representation of from hidden states.",
+    )
+
     parser.add_argument(
         "--token_of_interest_key",
         type=str,
@@ -343,6 +351,7 @@ def get_arguments():
         help="token of interest expected to be in the ground truth.",
         default=None,
     )
+    
     parser.add_argument(
         "--save_predictions",
         action="store_true",

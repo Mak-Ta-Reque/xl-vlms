@@ -183,6 +183,8 @@ def shift_hidden_states(
     return hook
 
 
+
+
 def extract_token_of_interest_states(
     tokens: torch.Tensor,
     pred_tokens: torch.Tensor,
@@ -191,7 +193,7 @@ def extract_token_of_interest_states(
 ) -> Tuple[torch.Tensor]:
 
     if token_of_interest_start_token != 0:
-        # e.g. consider only te answers
+        # e.g. consider only the answers
         tokens = tokens[:, token_of_interest_start_token:]
         pred_tokens = pred_tokens[:, token_of_interest_start_token:]
 
@@ -215,7 +217,10 @@ def extract_token_of_interest_states(
     # Step 1: Find where the tokens of interest exist in the batch (B, L)
     token_of_interest_batch_presence = torch.isin(
         pred_tokens, token_of_interest_idx
-    )  # (B, L)
+    )  # (B, L) 
+    # Token of interest could be mutiple variation, we took the first one/ last one / or anything 
+    # Additional implemention: check if the tokens of interset a subset
+
     # Step 2: Get the first occurrence index for each sequence
     token_of_interest_batch_first_pos = torch.argmax(
         token_of_interest_batch_presence.long(), dim=1
@@ -235,6 +240,113 @@ def extract_token_of_interest_states(
         token_of_interest_batch_first_pos.clamp(min=0).to(tokens.device),
     ].unsqueeze(1)
     return v_selected, ~no_token_found_mask
+
+
+
+def extract_tokens_of_interest_states(
+    tokens: torch.Tensor,
+    pred_tokens: torch.Tensor,
+    tokens_of_interest_idx: Union[int, torch.Tensor] = None,
+    token_of_interest_start_token: int = 0,
+) -> Tuple[torch.Tensor]:
+    def _ordered_subset_mask_batch(main_arr, sub_arr):
+    # Get the batch size (first dimension)
+        batch_size = main_arr.shape[0]
+        
+        # List to store masks for each batch
+        masks = []
+        
+        # Loop through each batch and generate its corresponding mask
+        for batch_idx in range(batch_size):
+            mask = torch.zeros(main_arr.shape[1], dtype=torch.bool)  # Mask as a tensor of boolean values
+            n, m = main_arr.shape[1], sub_arr.shape[0]
+            
+            # Check if the sub_arr can be found as a contiguous subsequence in this batch
+            for i in range(n - m + 1):
+                if torch.all(main_arr[batch_idx, i:i + m] == sub_arr):
+                    # Mark the positions that match in the mask
+                    mask[i:i + m] = True
+                    break  # Once we find a match, no need to check further
+            
+            masks.append(mask)
+    
+        return torch.stack(masks)
+    def ordered_subset_mask_batch(main_arr, sub_arr):
+        batch_size = main_arr.shape[0]
+
+        # List to store masks for each batch
+        masks = []
+
+        # Loop through each batch and generate its corresponding mask
+        for batch_idx in range(batch_size):
+            main_seq = main_arr[batch_idx]
+            main_list = main_seq.tolist()
+
+            # Create mask initialized to False
+            mask = torch.zeros(main_seq.shape[0], dtype=torch.bool)
+
+            # Initialize the index for searching sub_arr
+            sub_idx = 0
+            sub_len = len(sub_arr)
+
+            # Loop through the main sequence and mark corresponding indices in the mask
+            for i in range(len(main_list)):
+                if sub_idx < sub_len and main_list[i] == sub_arr[sub_idx]:
+                    mask[i] = True
+                    sub_idx += 1  # Move to the next element in sub_arr
+
+                if sub_idx == sub_len:
+                    break  # Once all elements in sub_arr are matched, stop
+
+            masks.append(mask)
+
+        return torch.stack(masks)
+
+    if token_of_interest_start_token != 0:
+        # e.g. consider only the answers
+        tokens = tokens[:, token_of_interest_start_token:]
+        pred_tokens = pred_tokens[:, token_of_interest_start_token:]
+
+    # Concider only text, no preds tokens for image tokens
+    if pred_tokens.shape[1] > tokens.shape[1]:
+        pred_tokens = pred_tokens[
+            :, -tokens.shape[1] :
+        ]  # e.g. in case of language_model.lm_head only the hidden states for generated tokens are saved
+    elif pred_tokens.shape[1] < tokens.shape[1]:
+        tokens = tokens[:, -pred_tokens.shape[1] :]
+
+    assert (
+        tokens_of_interest_idx is not None
+    ), f"Please provide the token_of_interest_idx, got {tokens_of_interest_idx}"
+
+    # If the token_of_interest splits into different ids, we consider the first one (while skipping eos/bos tokens)
+    if not isinstance(tokens_of_interest_idx, torch.Tensor):
+        tokens_of_interest_idx = torch.tensor([tokens_of_interest_idx])
+    tokens_of_interest_idx = tokens_of_interest_idx.to(pred_tokens.device)
+
+    # Step 1: Find where the tokens of interest exist in the batch (B, L)
+    token_of_interest_batch_presence = torch.tensor([[item in tokens_of_interest_idx for item in large_list] for large_list in pred_tokens])
+    
+   # [[item in set(small_list) for item in large_list] 
+   #         for large_list, small_list in zip(pred_tokens, tokens_of_interest_idx)]
+
+    
+    # Additional implemention: check if the tokens of interset a subset
+    
+    # Step 2: Get the first occurrence index for each sequence
+    #tokens_of_interest_batch =   token_of_interest_batch_presence .sum(dim=1)
+
+    # Step 3: Mask for sequences with no token of interest
+
+    #print(tokens_of_interest_batch)
+    # Set the position to -1 if no token of interest is found
+    #token_of_interest_batch_first_pos[tokens_found_mask] = -1
+
+    # Step 4: Now handle indexing into `v` based on the first position
+    # Extract v at the first position for each batch (B,)
+    # Select only valid positions in `v`
+    v_selected = tokens#[token_of_interest_batch_presence].unsqueeze(0)
+    return v_selected, token_of_interest_batch_presence
 
 
 def extract_states_before_special_tokens(
@@ -302,6 +414,7 @@ def get_hidden_states(
     token_idx: int = None,
     token_start_end_idx: List[List[int]] = None,
     extract_token_of_interest: bool = False,
+    extract_tokens_of_interest: bool = False,
     token_of_interest_start_token: int = 0,
     extract_before_special_tokens: bool = False,
     save_only_generated_tokens: bool = False,
@@ -349,7 +462,21 @@ def get_hidden_states(
                 token_of_interest_mask
             ).bool()
             output["image"] = kwargs["image"]
+        elif extract_tokens_of_interest:
+            if save_only_generated_tokens:
+                start_idx_generated_tokens = -kwargs["model_generated_output"].shape[1]
+                token_of_interest_start_token = start_idx_generated_tokens
+            v, token_of_interest_mask = extract_tokens_of_interest_states(
+                tokens=v,
+                pred_tokens=kwargs["model_output"],
+                tokens_of_interest_idx=kwargs.get("tokens_of_interest_idx", None),
+                token_of_interest_start_token=token_of_interest_start_token,
+            )
+            output["token_of_interest_mask"] = token_of_interest_mask
+            output["image"] = kwargs["image"]
+        
         else:
+            
             pass
         hidden_states[k] = v
     output["hidden_states"] = hidden_states
@@ -453,6 +580,27 @@ def register_hooks(
             token_of_interest_start_token=args.token_of_interest_start_token,
             save_only_generated_tokens=args.save_only_generated_tokens,
         )
+
+    elif "save_hidden_states_for_tokens_of_interest" == hook_name:
+        # Save the hidden states of tokens between start and end index
+        tokens_of_interest = args.tokens_of_interest
+
+        # Get index in tokenizer vocabulary for token of interest
+        # Some tokenizers encode/decode space along with token, so include index of whitespace + token_of_interest
+
+        #token_of_interest_idx = args.token_of_interest_idx
+        #if token_of_interest_idx is None:
+        tokens_of_interest_idx = torch.tensor(tokenizer.encode(tokens_of_interest, add_special_tokens=False))#[0]
+
+        hook_function = save_hidden_states
+        hook_return_function = partial(
+            get_hidden_states,
+            extract_tokens_of_interest=True,
+            token_of_interest_start_token=args.token_of_interest_start_token,
+            tokens_of_interest_idx=tokens_of_interest_idx,
+            save_only_generated_tokens=args.save_only_generated_tokens,
+        )
+
     elif "save_hidden_states_for_token_of_interest_class" == hook_name:
         # Save the hidden states of tokens between start and end index
         token_of_interest = []
@@ -537,9 +685,9 @@ def hooks_postprocessing(
 
         data_keys = ["hidden_states", "image"]
         # temp change
-        data_keys = ["hidden_states", "image", "model_predictions"]
+        data_keys = ["hidden_states", "image", "model_predictions", "scores", "model_generated_output"]
 
-        if "token_of_interest" in hook_name:
+        if "token_of_interest" in hook_name or "tokens_of_interest" in hook_name:
             data_keys.append("token_of_interest_mask")
         hook_postprocessing_function = partial(
             save_hidden_states_to_file,

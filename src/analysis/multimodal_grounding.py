@@ -128,11 +128,17 @@ def get_multimodal_grounding(
         # Only keep image paths for samples with token_of_interest_mask True
 
         token_of_interest_mask = metadata.get("token_of_interest_mask", None)
-        if token_of_interest_mask is not None:
+        if token_of_interest_mask[0].shape[-1] == 1 and token_of_interest_mask is not None :
             image_paths = [
                 image_paths[i]
                 for i in range(len(image_paths))
                 if token_of_interest_mask[i]
+            ]
+        if token_of_interest_mask[0].shape[-1] > 1 and token_of_interest_mask is not None:
+            image_paths = [
+                image_paths[i]
+                for i in range(len(image_paths))
+                if token_of_interest_mask[i].any()
             ]
 
         all_concept_image_paths = []

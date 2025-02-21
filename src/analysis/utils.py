@@ -36,7 +36,10 @@ def get_token_of_interest_features(
    
     if token_of_interest_mask is not None:
         if isinstance(token_of_interest_mask, list):
-            token_of_interest_mask = torch.cat(token_of_interest_mask, dim=0)
+            if token_of_interest_mask[0].shape[-1] > 1:
+               token_of_interest_mask = [row.any() for row in token_of_interest_mask]
+            else:
+                token_of_interest_mask = torch.cat(token_of_interest_mask, dim=0)
         features = features[token_of_interest_mask].reshape(-1, features.shape[1])
 
     return features
