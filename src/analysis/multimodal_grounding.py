@@ -29,6 +29,7 @@ def concept_text_grounding(
     keep_unique_words: bool = False,
 ) -> List[List[str]]:
     # components are of shape n_comp x feature_dim
+
     eng_corpus = words.words()
     stopwords = get_stopwords(gist_file_path=gist_file_path)
     num_concepts = concepts.shape[0]
@@ -128,13 +129,13 @@ def get_multimodal_grounding(
         # Only keep image paths for samples with token_of_interest_mask True
 
         token_of_interest_mask = metadata.get("token_of_interest_mask", None)
-        if token_of_interest_mask[0].shape[-1] == 1 and token_of_interest_mask is not None :
+        if token_of_interest_mask is not None and token_of_interest_mask[0].shape[-1] == 1:
             image_paths = [
                 image_paths[i]
                 for i in range(len(image_paths))
                 if token_of_interest_mask[i]
             ]
-        if token_of_interest_mask[0].shape[-1] > 1 and token_of_interest_mask is not None:
+        if token_of_interest_mask is not None and token_of_interest_mask[0].shape[-1] > 1 :
             image_paths = [
                 image_paths[i]
                 for i in range(len(image_paths))

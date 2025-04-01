@@ -66,6 +66,56 @@ def update_dict_of_list(item: Dict[str, Any], data: Dict[str, Any]) -> Dict[str,
             data[k] = [v]
     return data
 
+def _load_all_pickles(directory: str) -> Dict[str, Any]:
+    """
+    Loads all pickle files from a directory and merges them into a single dictionary.
+
+    Args:
+        directory (str): Path to the directory containing .pkl files.
+
+    Returns:
+        Dict[str, Any]: Merged dictionary containing all loaded data.
+    """
+    combined_data = {}  # Initialize empty dictionary
+
+    # List all .pkl files in the directory
+    pickle_files = [f for f in os.listdir(directory) if f.endswith(".pkl")]
+
+    # Load and merge each file
+    for file in pickle_files:
+        file_path = os.path.join(directory, file)
+        loaded_data = torch.load(file_path)  # Load the dictionary from file
+        combined_data = update_dict_of_list(loaded_data, combined_data)  # Merge data
+
+    return combined_data
+
+
+def save_dict_as_pickle(data, save_dir):
+    """
+    Saves a dictionary as a pickle file using PyTorch's torch.save(),
+    handling any tensor values properly.
+
+    Args:
+        data (dict): The dictionary to save.
+        save_dir (str): The directory where the file should be saved.
+
+    Returns:
+        str: The path of the saved file.
+    """
+    os.makedirs(save_dir, exist_ok=True)  # Ensure the directory exists
+
+    # Extract filename from "img_id"
+    if "img_id" not in data or not data["img_id"]:
+        raise ValueError("The dictionary must contain a non-empty 'img_id' key.")
+
+    filename = f"{data['img_id'][0]}.pkl"
+    file_path = os.path.join(save_dir, filename)
+
+    # Save the dictionary using torch.save()
+    torch.save(data, file_path)
+
+    return
+
 
 def fmatch(name: str, patterns: List[str], exact_match: bool = False) -> bool:
     if exact_match:
@@ -424,9 +474,13 @@ def get_hidden_states(
     output = {}
     for k, v in HIDDEN_STATES.items():
         if isinstance(v, list) and len(v) > 1:
-            v = torch.cat(v, dim=1)
+            buffer_encoding = [v[0][:, -2:-1,:]]
+            v = torch.cat(buffer_encoding + v[1:], dim=1)# Skip the buffer
         else:
             v = v[0]
+            if v.shape[1]> 1: # if the first token geneation take the last index
+                v = v [:, -2:-1,:]
+        
         if token_idx is not None:
             v = v[:, token_idx, :].unsqueeze(1)
         elif token_start_end_idx is not None:
@@ -499,12 +553,55 @@ def save_hidden_states_to_file(
             ), f"{data_key} not found in data, there is only: {data.keys()}"
 
             saved_data[data_key] = data[data_key]  # List[Any]
+
+    if args.post_process_hidden:
+       saved_data =  post_process_hidden(saved_data)
+
     file_name = os.path.join(
         args.save_dir, "features", f"{hook_name}_{args.save_filename}.pth"
     )
     torch.save(saved_data, file_name)
     if logger is not None:
         logger.info(f"Saving data to: {file_name}")
+
+
+def post_process_hidden(hidden_states):
+    all_hidden = []
+    data = hidden_states
+    for images, hiden_states, scores, predictions, token_pred in zip(data["image"], data["hidden_states"], data["scores"], data["model_predictions"], data['model_generated_output']):
+        all_tokens = token_pred.tolist()[0]
+        updated_hidden_states = {}
+        for hidden_key, hidden_value in hiden_states.items():
+            new_hidden_states = []
+            for embeding, logits, token in zip(hidden_value.permute(1, 0, 2), scores, token_pred.permute(1, 0)):
+                #print(token)
+                #print(embeding.shape)
+                #print(logits.shape)
+                probabilities = torch.softmax(logits, dim=1).cpu()
+                _lambdas = probabilities[:,all_tokens]
+                
+                l1_norm = torch.norm(_lambdas, p=1, dim=1, keepdim=True)  # Compute L1 norm along dim=1
+                l1_normalized_lambda = _lambdas / l1_norm
+                #print(l1_normalized_lambda)
+                pos_index = all_tokens.index(token[0])
+                pos_value = l1_normalized_lambda[0][pos_index]
+                l1_normalized_lambda = -1 * l1_normalized_lambda
+                l1_normalized_lambda[0][pos_index] = pos_value
+                #negative_lambda = probabilities[:, negatve_indices]
+                #positive_location = all_tokens.index(token.item())
+                #lamdas = negative_lambda[0] * -1
+                #lamdas = torch.cat((lamdas[:positive_location], positve_lambda[0], lamdas[positive_location:]))
+                #coefficients =  lamdas.view(1, -1, 1)
+                linear_combination = torch.sum(hidden_value * l1_normalized_lambda.unsqueeze(-1), dim=1) 
+                new_hidden_states.append(linear_combination)  
+            new_hidden_states = torch.stack(new_hidden_states)
+            updated_hidden_states[hidden_key] = new_hidden_states.permute(1, 0, 2)
+        all_hidden.append(updated_hidden_states)
+
+
+    data["hidden_states"] = all_hidden
+        
+    return data
 
 
 def save_analysis_to_file(
@@ -540,6 +637,12 @@ def register_hooks(
         # Save the hidden states of all tokens in the sequence
         hook_function = save_hidden_states
         hook_return_function = get_hidden_states
+
+    elif "save_hidden_states_noun_phrase" == hook_name:
+        # Save the hidden states of all tokens in the sequence
+        hook_function = save_hidden_states
+        hook_return_function = get_hidden_states
+
     elif "save_hidden_states_given_token_idx" == hook_name:
         # Save the hidden states at given token index
         hook_function = save_hidden_states
@@ -683,9 +786,9 @@ def hooks_postprocessing(
     hook_postprocessing_function = None
     if "save_hidden_states" in hook_name:
 
-        data_keys = ["hidden_states", "image"]
+        data_keys = ["hidden_states", "image", "text", 'model_predictions']
         # temp change
-        data_keys = ["hidden_states", "image", "model_predictions", "scores", "model_generated_output"]
+        #data_keys = ["hidden_states", "image", "model_predictions", "scores", "model_generated_output"]
 
         if "token_of_interest" in hook_name or "tokens_of_interest" in hook_name:
             data_keys.append("token_of_interest_mask")
@@ -768,7 +871,7 @@ def load_image_as_rgb(file_path, out_type="PIL"):
         PIL.Image.Image or np.ndarray: The loaded image either as a PIL object or a NumPy array.
     """
     # Extract the file extension
-    ext = os.path.splitext(file_path)[-1].lower()
+    ext = os.path.splitext(file_path[0])[-1].lower()
 
     if ext == ".dcm":
         # Load DICOM file
@@ -797,7 +900,7 @@ def load_image_as_rgb(file_path, out_type="PIL"):
 
     elif ext in [".jpeg", ".jpg", ".png"]:
         # Load JPEG or PNG file
-        image = Image.open(file_path).convert("RGB")  # Ensure it's RGB
+        image = Image.open(file_path[0]).convert("RGB")  # Ensure it's RGB
 
         if out_type == "PIL":
             return image

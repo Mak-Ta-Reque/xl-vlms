@@ -11,12 +11,12 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "coco",
-        "--dataset_size", "400",
-        "--data_dir", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco",
-        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco_patch.json",
+        "--dataset_size", "4000",
+        "--data_dir", "/mnt/abka03/mscoco2014/",
+        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco.json",
         "--split", "train",
         "--hook_name", "save_hidden_states_for_tokens_of_interest", //"save_hidden_states_given_token_idx",
-        "--tokens_of_interest", " fur cat eye ears paw leg stripe long small", //space must be appended infront of token
+        "--tokens_of_interest", " cat dog", //space must be appended infront of token
         "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_image_patched_combined_grid_patch_concept_generation_split_train",
@@ -24,14 +24,135 @@
         "--save_only_generated_tokens",
         "--slice_prediction",
         "--exact_match_modules_to_hook",
+        //"--post_process_hidden",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
       ],
       "env": {
-        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
       },
-      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     }, 
+
+    {
+      "name": "Save Features Qwen all hidden states",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "coco",
+        "--dataset_size", "500",
+        "--data_dir", "/mnt/abka03/mscoco2014/",
+        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/cat_dataset_coco.json",
+        "--split", "train",
+        "--hook_name", "save_hidden_states", //"save_hidden_states_given_token_idx",
+        "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_image_patched_combined_grid_patch_concept_generation_split_train",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+        //"--post_process_hidden",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }, 
+
+    {
+      "name": "Save Features Qwen all noun phrases",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "image",
+        "--dataset_size", "10",
+        "--data_dir", "/mnt/abka03/mscoco2014/train2014",
+        "--hook_names", "save_hidden_states_noun_phrase", 
+        "--modules_to_hook", "model.norm", 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase_concept_generation_split_val",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }, 
+
+    {
+      "name": "Save Features Qwen all noun phrases text only",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "text",
+        "--dataset_size", "1",
+        "--data_dir", "cake",
+        "--hook_names", "save_hidden_states_noun_phrase", 
+        "--modules_to_hook", "model.norm", 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_twext_ebedding",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }, 
+
+    {
+      "name": "Save Features Qwen all hidden states_val",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "coco",
+        "--dataset_size", "20",
+        "--data_dir", "/mnt/abka03/mscoco2014/",
+        "--annotation_file", "/mnt/abka03/mscoco2014/dataset_coco.json",
+        "--split", "val",
+        "--hook_name", "save_hidden_states", //"save_hidden_states_given_token_idx",
+        "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_image_patched_combined_grid_patch_concept_generation_split_train",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+        //"--post_process_hidden",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }, 
+
 
     {
       "name": "Save Features Qwen token of interest",
@@ -41,9 +162,9 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "coco",
-        "--dataset_size", "400",
-        "--data_dir", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco",
-        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco_patch.json",
+        "--dataset_size", "200",
+        "--data_dir", "/mnt/abka03/mscoco2014/",
+        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco.json",
         "--split", "train",
         "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx",
         "--token_of_interest", "cat", //space must be appended infront of token
@@ -56,9 +177,9 @@
         "--exact_match_modules_to_hook",
       ],
       "env": {
-        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
       },
-      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -82,12 +203,13 @@
         "--save_filename", "qwen2_cat_global_generation_split_val",
         "--generation_mode",
         "--slice_prediction",
-        "--exact_match_modules_to_hook"
+        "--exact_match_modules_to_hook",
+        "--post_process_hidden"
       ],
       "env": {
         "HF_HOME":  "/mnt/abka03/xl-vlms/cache"
       },
-      "python":  "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python":  "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -181,18 +303,18 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_patched_image_cat_token_of_interest_concept_generation_split_train.pth",
+        "--features_path",  "/mnt/abka03/xl-vlms/features/save_hidden_states_noun_phrase_qwen2_image_coco_hidden_states.pth",
         "--module_to_decompose", "model.norm",
-        "--num_concepts", "50",
+        "--num_concepts", "2",
         "--decomposition_method", "snmf",
-        "--save_filename", "qwen2_results_patch_token_of_interest_cat_patch_snmf",
+        "--save_filename", "qwen2_results_patch_token_of_interest_combined_patch_snmf",
         "--save_dir", "/mnt/abka03/xl-vlms/results",
         "--load_matched_features"
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/xl-vlms/cache"
       },
-      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -205,9 +327,9 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_full_image_sleeping_cat_token_of_interest_concept_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_tokens_of_interest_qwen2_image_patched_combined_grid_patch_concept_generation_split_train.pth",
         "--module_to_decompose", "model.norm",
-        "--num_concepts", "50",
+        "--num_concepts", "5",
         "--decomposition_method", "snmf",
         "--save_filename", "qwen2_results_patch_all_patch_snmf",
         "--save_dir", "/mnt/abka03/xl-vlms/results",
@@ -293,17 +415,17 @@
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
         "--analysis_name", "concept_dictionary_evaluation_overlap_clipscore_bertscore",
-        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_cat_global_generation_split_val.pth",
+        "--features_path", "/mnt/abka03/xl-vlms/features/modified_save_hidden_states_qwen2_image_patched_combined_grid_patch_concept_generation_split_train.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--save_filename", "Qwen2_cat",
         "--local_files_only",
-        "--analysis_saving_path", "/mnt/abka03/xl-vlms/results/decompose_activations_text_grounding_image_grounding_qwen2_results_patch_token_of_interest_cat_patch_snmf.pth",
+        "--analysis_saving_path", "/mnt/abka03/xl-vlms/results//decompose_activations_text_grounding_image_grounding_qwen2_results_patch_token_of_interest_combined_patch_snmf.pth",
       ],
       "env": {
-        "HF_HOME":  "/mnt/abka03/xl-vlms/cache"
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
       },
-      "python":  "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python":  "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -313,16 +435,16 @@
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/preprocessing/generate_patches.py",
-      "python": "/home/abka03/.conda/envs/lang_sam/bin/python",
       "args": [
-          "/mnt/abka03/mscoco2014/random_patch",
+          "/mnt/abka03/mscoco2014/xl-vlm",
           "/mnt/abka03/mscoco2014",
-          "100",
-          "20",
+          "250",
+          "5",
           "--technique",
-          "random"
+          "object"
       ],
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "python":  "/mnt/abka03/.conda/envs/lang_sam/bin/python"
   }
 
 

@@ -91,6 +91,8 @@ def get_feature_matrix(
         matrix = torch.cat(
             [feat[module_name][:, token_idx] for feat in features], dim=0
         )
+      
+
 
     #if token_id is not None:
         # get the token index based on token id
@@ -106,6 +108,9 @@ def get_feature_matrix(
         matrix = torch.cat(
             [feat[module_name].mean(dim=1, keepdim=False) for feat in features], dim=0
         )
+        #matrix = torch.cat(
+        #    [feat[module_name][:,-1, :] for feat in features], dim=0
+        #)
 
     return matrix
 
