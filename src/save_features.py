@@ -2,7 +2,7 @@ import argparse
 import os
 import time
 from typing import Any, Callable, Dict, List, Tuple
-
+import shutil
 import torch
 
 from datasets import get_dataset_loader
@@ -10,20 +10,20 @@ from helpers.arguments import get_arguments
 from helpers.logger import log_args, setup_logger
 from helpers.utils import (clear_forward_hooks, clear_hooks_variables,
                            compute_time_left, set_seed, setup_hooks,
-                           update_dict_of_list)
-from models import get_model_class
+                           update_dict_of_list, save_dict_as_pickle)
+from models import get_model_class 
+from helpers.loading_cache import load_all_pickles
+from helpers.post_process_embeding import extract_phrase_embeddings
 from models.image_text_model import ImageTextModel
 
 
-def move_to_cpu_and_cleanup(obj):
-    for attr_name in dir(obj):
-        attr = getattr(obj, attr_name)
-        if isinstance(attr, torch.Tensor):
-            # Move the tensor to CPU
-            setattr(obj, attr_name, attr.cpu())
-    
-    # Clear the GPU cache
-    torch.cuda.empty_cache()
+def move_to_cpu(data):
+    if isinstance(data, torch.Tensor):
+        return data.cpu()
+    elif isinstance(data, tuple):
+        return tuple(tensor.cpu() if isinstance(tensor, torch.Tensor) else tensor for tensor in data)
+    else:
+        raise TypeError("Input must be a tensor or a tuple of tensors.")
 
 @torch.no_grad()
 def inference(
@@ -40,27 +40,41 @@ def inference(
     model = model_class.get_model()
     start_time = time.time()
     for i, item in enumerate(loader):
-
-        text = item["text"][0]  # for now we support batch size = 1
-        image_path = item["image"][0]
-        inputs = model_class.preprocessor(
+        
+        if args.dataset_name == "text":
+            text = item["text"][0]  # for now we support batch size = 1
+        
+            inputs = model_class.preprocessor(
             instruction=text,
-            image_file=image_path,
             response="",
             generation_mode=args.generation_mode,
-        )
+            )
+        else:
+            text = item["text"][0]  # for now we support batch size = 1
+            image_path = item["image"][0]
+            
+            inputs = model_class.preprocessor(
+                instruction=text,
+                image_file=image_path,
+                response="",
+                generation_mode=args.generation_mode,
+                
+            )
 
         if args.generation_mode:
             out = model.generate(
                 **inputs, max_new_tokens=args.max_new_tokens,
-                  do_sample=False,
+                  do_sample=True,
                   output_scores=True,
-                  return_dict_in_generate=True
+                  return_dict_in_generate=True,
+                  temperature=0.3,
+                  top_k=1,
             )
-            move_to_cpu_and_cleanup(out)
+            #move_to_cpu_and_cleanup(out)
             scores = out.scores
-            
+            scores = move_to_cpu(scores)
             out = out.sequences
+            out = move_to_cpu(out)
 
         else:
             out = model(**inputs).logits
@@ -91,14 +105,37 @@ def inference(
                     hook_output = func(**item)
                     if hook_output:
                         item.update(hook_output)
+        """
+        cache_dir = args.cache_dir
+        if cache_dir is not None:
+            
+            os.makedirs(cache_dir, exist_ok=True)
+            if len(os.listdir(cache_dir))> 1: # If cache directory has files already just load them and return
+                return load_all_pickles(cache_dir)
 
-        hook_data = update_dict_of_list(item, hook_data)
+
+        else:
+            raise(f"Cache duirectroy is{cache_dir}. It is not possible to svae save intermidiate file")
+        save_dict_as_pickle(item, cache_dir )
+        """
+        if "save_hidden_states_noun_phrase" in args.hook_names : # With tis hook name we only extract the phrase embeddigns of all embedding 
+            item = extract_phrase_embeddings(item, model_class)
+            for key, value in item.items():
+                if key in hook_data:
+                    hook_data[key].extend(item[key])
+                else:
+                    hook_data[key] = item[key]
+        else:
+            hook_data = update_dict_of_list(item, hook_data)
         clear_hooks_variables()
         if (i + 1) % 100 == 0:
             time_left = compute_time_left(start_time, i, num_iterations)
             logger.info(
                 f"Iteration: {i}/{num_iterations},  Estimated time left: {time_left:.2f} mins"
             )
+        
+    #hook_data = load_all_pickles(cache_dir)
+    #shutil.rmtree(cache_dir)
     return hook_data
 
 

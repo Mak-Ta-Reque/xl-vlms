@@ -179,7 +179,7 @@ def get_arguments():
     parser.add_argument(
         "--dl_max_iter",
         type=int,
-        default=50,
+        default=30000,
         help="Max number of iterations for dictionary learning optimization.",
     )
     parser.add_argument(
@@ -436,5 +436,12 @@ def get_arguments():
         action="store_true",
         help="This is modification from original implementation, ChexAgent model only generate prediction , no input is repeted, so we dontwand to slice the ouput prediction of n/ model",
     )
+    parser.add_argument(
+        "--post_process_hidden",
+        default=False,
+        action="store_true",
+        help="This is modification from original implementation, it is a flag whre the hidden state is preprocessed using the prediction probablity",
+    )
+
 
     return parser.parse_args()

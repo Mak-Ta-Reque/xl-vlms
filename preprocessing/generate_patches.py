@@ -8,7 +8,7 @@ from PIL import Image
 from lang_sam import LangSAM
 from PIL import Image, ImageOps
 from transformers import BlipProcessor, BlipForQuestionAnswering
-
+from ultralytics import YOLO
 #Vqa patch processor
 device = "cuda" if torch.cuda.is_available() else "cpu"
 processor = BlipProcessor.from_pretrained("Salesforce/blip-vqa-base")
@@ -83,6 +83,8 @@ def vqa_and_segment(image_pil, patch_size, num_patches):
 
     return segmented_images
 
+
+
 # Function to create a directory if it doesn't exist
 def create_directory(dir_path):
     if not os.path.exists(dir_path):
@@ -124,6 +126,112 @@ def create_patches_grid(image, patch_size, num_patches):
     
     return patches
 
+
+
+from ultralytics import YOLO
+from PIL import Image
+
+def create_patches_yolo(image, patch_size, num_patches):
+    """
+    Create patches from detected objects in an image using YOLOv8L.
+    Returns resized patch images with their detected labels.
+    If fewer patches than num_patches are detected, returns all available patches.
+    Otherwise, returns the top num_patches patches by confidence.
+    
+    Args:
+        image: PIL Image object
+        patch_size: Size to resize patches to (square)
+        num_patches: Maximum number of patches to return
+        
+    Returns:
+        List of tuples containing (patch_image, class_name)
+    """
+    model = YOLO("yolo11x.pt")  # Load the YOLOv8L model
+    results = model(image)  # Run object detection
+    
+    detection_data = []
+
+    for result in results:
+        boxes = result.boxes
+        for i, box in enumerate(boxes.xyxy):
+            # Extract bounding box coordinates
+            x1, y1, x2, y2 = map(int, box)
+            
+            # Compute width and height
+            width, height = x2 - x1, y2 - y1
+
+            # Skip patches smaller than 100 pixels in any direction
+            if width < 100 or height < 100:
+                continue
+            
+            # Get confidence and class name
+            confidence = boxes.conf[i].item()
+            class_idx = int(boxes.cls[i].item())
+            class_name = result.names[class_idx]
+            
+            # Create and resize patch
+            patch = image.crop((x1 + 80, y1 + 80, x2 + 80, y2 + 80))
+            
+            detection_data.append((confidence, patch, class_name))
+    
+    # Sort patches by confidence (descending order)
+    detection_data.sort(key=lambda x: x[0], reverse=True)
+    
+    # Extract just the patch and class name from the sorted data
+    sorted_patches = [(patch, class_name) for _, patch, class_name in detection_data]
+    
+    return sorted_patches[:num_patches] if len(sorted_patches) > num_patches else sorted_patches
+
+def _create_patches_yolo(image, patch_size, num_patches):
+    """
+    Create patches from detected objects in an image using YOLOv8L.
+    Returns resized patch images with their detected labels.
+    If fewer patches than num_patches are detected, returns all available patches.
+    Otherwise, returns the top num_patches patches by confidence.
+    
+    Args:
+        image: PIL Image object
+        patch_size: Size to resize patches to (square)
+        num_patches: Maximum number of patches to return
+        
+    Returns:
+        List of tuples containing (patch_image, class_name)
+    """
+    model = YOLO("yolo11x.pt")  # Load the YOLOv8L model
+    results = model(image)  # Run object detection
+    
+    # Create a list to store tuples of (confidence, patch_image, class_name)
+    detection_data = []
+    
+    for result in results:
+        boxes = result.boxes
+        for i, box in enumerate(boxes.xyxy):
+            # Extract bounding box coordinates
+            x1, y1, x2, y2 = map(int, box)
+            
+            # Get confidence and class name
+            confidence = boxes.conf[i].item()
+            class_idx = int(boxes.cls[i].item())
+            class_name = result.names[class_idx]
+            
+            # Create and resize patch
+            patch = image.crop((x1 + 80, y1  + 80, x2 + 80, y2 + 80))
+            #-patch_resized = patch.resize((patch_size, patch_size), Image.Resampling.LANCZOS)
+            # Store confidence with the patch and class name
+            detection_data.append((confidence, patch, class_name))
+    
+    # Sort by confidence using a lambda function
+    detection_data.sort(key=lambda x: x[0], reverse=True)
+    
+    # Extract just the patch and class name from the sorted data
+    sorted_patches = [(patch, class_name) for _, patch, class_name in detection_data]
+    
+    # Check if we have fewer patches than requested
+    if len(sorted_patches) <= num_patches:
+        return sorted_patches
+    else:
+        return sorted_patches[:num_patches]
+
 # Function to process images and update JSON
 def process_and_save_patches(images_data, root_image_folder, json_file_name, json_directory, patch_size, num_patches, technique):
     if technique == "grid":
@@ -132,6 +240,8 @@ def process_and_save_patches(images_data, root_image_folder, json_file_name, jso
         patch_processor = create_patche_random
     elif technique == "vqa-seg":
         patch_processor = vqa_and_segment
+    elif technique == "object":
+         patch_processor = create_patches_yolo
     else:
         raise Exception("method is not implemented")
     
@@ -150,21 +260,21 @@ def process_and_save_patches(images_data, root_image_folder, json_file_name, jso
         subfolder = train_folder if split == 'train' else val_folder
         image_path = os.path.join(root_image_folder, entry['filepath'], image_file)
 
-        try:
-            img = Image.open(image_path).convert("RGB")
-            patches = patch_processor(img, patch_size, num_patches)
+        #try:
+        img = Image.open(image_path).convert("RGB")
+        patches = patch_processor(img, patch_size, num_patches)
 
-            for i, (patch, label) in enumerate(patches):
-                patch_filename = f"{image_file.split('.')[0]}_patch_{i}.png"
-                patch.save(os.path.join(subfolder, patch_filename))
+        for i, (patch, label) in enumerate(patches):
+            patch_filename = f"{image_file.split('.')[0]}_patch_{i}.png"
+            patch.save(os.path.join(subfolder, patch_filename))
 
-                updated_entry = entry.copy()
-                updated_entry['filename'] = patch_filename
-                updated_entry['patch'] = label
-                updated_images_data.append(updated_entry)
+            updated_entry = entry.copy()
+            updated_entry['filename'] = patch_filename
+            updated_entry['patch'] = label
+            updated_images_data.append(updated_entry)
 
-        except Exception as e:
-            print(f"Error processing image {image_file}: {e}")
+        #except Exception as e:
+        #    print(f"Error processing image {image_file}: {e}")
 
     return updated_images_data
 

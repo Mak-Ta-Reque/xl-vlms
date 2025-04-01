@@ -20,6 +20,7 @@ class QwenVL(ImageTextModel):
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             local_files_only=self.local_files_only,
+
         )
 
     def get_language_model(
@@ -135,19 +136,32 @@ class QwenVL(ImageTextModel):
             response=response,
             image_file=image_file,
         )
+        if image_file != "":
+            image, video = self.preprocess_images(conversation)
+            text = self.preprocess_text(
+                conversation,
+                generation_mode=generation_mode,
+            )
 
-        image, video = self.preprocess_images(conversation)
-        text = self.preprocess_text(
-            conversation,
-            generation_mode=generation_mode,
-        )
+            inputs = self.processor_(
+                text=[text],
+                images=image,
+                videos=video,
+                padding=True,
+                return_tensors="pt",
+            )
 
-        inputs = self.processor_(
-            text=[text],
-            images=image,
-            videos=video,
-            padding=True,
-            return_tensors="pt",
-        )
+            return inputs
+        else:
+            text = self.preprocess_text(
+                conversation,
+                generation_mode=generation_mode,
+            )
 
-        return inputs
+            inputs = self.processor_(
+                text=[text],
+                padding=True,
+                return_tensors="pt",
+            )
+
+            return inputs

@@ -213,6 +213,132 @@ class COCODataset(ImageTextDataset):
         self.data = data
 
 
+
+class _ImageDataset(ImageTextDataset):
+    def create_dataset(self) -> None:
+        data = []
+
+        for root, _, files in os.walk(self.data_dir):
+            for file in files:
+                if file.endswith(('.jpg', '.png', '.jpeg', '.dcm')):
+                    img_id = os.path.splitext(file)[0]
+                    image_path = os.path.join(root, file)
+
+                    instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                        "ShortCaptioning", "An image of "
+                    )
+                    response = ""  # Assuming response generation is handled elsewhere
+
+                    item = {
+                        "img_id": img_id,
+                        "instruction": instruction,
+                        "response": response,
+                        "image": image_path,
+                        "targets": "",  # No targets since no JSON file
+                    }
+                    data.append(item)
+
+        if self.dataset_size > 0:
+            data = self.rng.choice(data, size=self.dataset_size, replace=False)
+
+        self.data = data
+
+
+
+class ImageDataset(ImageTextDataset):
+    def create_dataset(self) -> None:
+        data = []
+
+        if os.path.isfile(self.data_dir):
+            # Single file path provided
+            if self.data_dir.endswith(('.jpg', '.png', '.jpeg', '.dcm')):
+                img_id = os.path.splitext(os.path.basename(self.data_dir))[0]
+                image_path = self.data_dir
+
+                instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                    "ShortCaptioning", "An image of "
+                )
+                response = ""  # Assuming response generation is handled elsewhere
+
+                item = {
+                    "img_id": img_id,
+                    "instruction": instruction,
+                    "response": response,
+                    "image": image_path,
+                    "targets": "",  # No targets since no JSON file
+                }
+                self.data = [item]
+                return
+
+        else:
+            # Directory path provided
+            for root, _, files in os.walk(self.data_dir):
+                for file in files:
+                    if file.endswith(('.jpg', '.png', '.jpeg', '.dcm')):
+                        img_id = os.path.splitext(file)[0]
+                        image_path = os.path.join(root, file)
+
+                        instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                            "ShortCaptioning", "An image of "
+                        )
+                        response = ""  # Assuming response generation is handled elsewhere
+
+                        item = {
+                            "img_id": img_id,
+                            "instruction": instruction,
+                            "response": response,
+                            "image": image_path,
+                            "targets": "",  # No targets since no JSON file
+                        }
+                        data.append(item)
+
+        if self.dataset_size > 0:
+            data = self.rng.choice(data, size=self.dataset_size, replace=False)
+
+        self.data = data
+
+
+
+class TextDataset(ImageTextDataset):
+    def create_dataset(
+        self,
+    ) -> None:
+        # if self annotation_file is is a text file path then load the text file
+        # and create a list of sentences
+        # if self.annotation_file is a string then just put in to a list 
+        
+        lines = []
+        if os.path.isfile(self.data_dir):
+            annotation_path = self.data_dir
+            with open(annotation_path) as f:
+            # Load the text file and read all the lines and create a list of sentences
+                lines = f.readlines()
+        else:
+            # If it's not a file, just put the string into a list
+            lines = [self.data_dir]
+        
+        
+
+        data = []
+        for datum in lines:
+            instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                "Repeat the text", "An image of "
+            )
+           
+            item = {
+                "instruction": f"{instruction}:' '{datum}",
+                "response": "",
+                "targets": f"{datum}",
+            }
+            data.append(item)
+
+        if self.dataset_size > 0:
+            data = self.rng.choice(data, size=self.dataset_size, replace=False)
+
+        self.data = data
+
+
+
 class VQAv2Dataset(ImageTextDataset):
     def create_dataset(
         self,
