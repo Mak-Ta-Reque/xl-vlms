@@ -44,6 +44,12 @@ def get_arguments():
         default="llava",
         help="Task prompts to be applied to each input instruction.",
     )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="Describe the image in detail.",
+        help="Prompt to be applied to each input.",
+    )
 
     # Data
     parser.add_argument(

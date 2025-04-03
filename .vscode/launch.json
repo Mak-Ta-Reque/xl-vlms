@@ -2,6 +2,30 @@
   "version": "0.2.0",
   "configurations": [
 
+
+
+    {
+      "name": "Generate noun phrase data",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/generate_phrase.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "image",
+        "--dataset_size", "100",
+        "--data_dir", "/mnt/abka03/mscoco2014/val2014",
+        "--save_dir", "/mnt/abka03/xl-vlms/data",
+        "--slice_prediction",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
     
     {
       "name": "Save Features Qwen",
@@ -103,7 +127,7 @@
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "text",
         "--dataset_size", "1",
-        "--data_dir", "cake",
+        "--data_dir", "/mnt/abka03/xl-vlms/data/output/phrases.txt",
         "--hook_names", "save_hidden_states_noun_phrase", 
         "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
