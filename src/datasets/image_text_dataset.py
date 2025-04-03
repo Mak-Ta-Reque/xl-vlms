@@ -324,7 +324,9 @@ class TextDataset(ImageTextDataset):
             instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
                 "Repeat the text", "An image of "
             )
-           
+            if len(datum)< 2:
+                print(f"Skipping empty line in ")
+                continue
             item = {
                 "instruction": f"{instruction}:' '{datum}",
                 "response": "",

@@ -43,7 +43,6 @@ def inference(
         
         if args.dataset_name == "text":
             text = item["text"][0]  # for now we support batch size = 1
-        
             inputs = model_class.preprocessor(
             instruction=text,
             response="",

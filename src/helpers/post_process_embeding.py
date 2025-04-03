@@ -80,6 +80,8 @@ def extract_phrase_embeddings(item, model_class):
         
         
         #modified_response.append([f"{phrase}@{item['response'][0]}"])
+        if len(new_hidden) < 1:
+            continue
         if "image" not in item: 
             modified_image.append(item['text'])
             modified_predictions.append(item['model_predictions'])
@@ -92,6 +94,7 @@ def extract_phrase_embeddings(item, model_class):
         #modified_model_generated_output.append(item['model_generated_output'])
         
         #modified_scores.append([item['scores']])
+        
         modified_hidden_states.append(new_hidden)
         
  
@@ -125,7 +128,7 @@ def clean_string(input_string, remove_words=None):
     articles = r'\b(?:a|an|the)\b'
     
     # List of English pronouns
-    pronouns = r'\b(?:i|you|he|she|it|we|they|me|him|her|us|them|my|mine|your|yours|his|hers|its|our|ours|their|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves)\b'
+    pronouns = r'\b(?:i|you|he|she|it|we|they|me|him|her|us|them|my|mine|your|yours|his|hers|its|our|ours|their|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|photo|image|question)\b'
 
     # Combine articles and pronouns into one regex pattern
     combined_pattern = f"{articles}|{pronouns}"
