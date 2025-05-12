@@ -98,12 +98,39 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
-        "--dataset_size", "10",
-        "--data_dir", "/mnt/abka03/mscoco2014/train2014",
+        "--dataset_size", "100",
+        "--data_dir", "/mnt/abka03/imagenette2-320/train",
         "--hook_names", "save_hidden_states_noun_phrase", 
         "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
-        "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase_concept_generation_split_val",
+        "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase_truck_generation_split_val",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+        "--concept", "truck",
+        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }, 
+    {
+      "name": "Save Features Qwen all noun phrases of an image",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "image",
+        "--data_dir", "/mnt/abka03/imagenette2-320/val/golf_ball/n03445777_5582.JPEG",
+        "--hook_names", "save_hidden_states_noun_phrase", 
+        "--modules_to_hook", "model.norm", 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase",
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
@@ -145,6 +172,8 @@
       "console": "integratedTerminal",
       "justMyCode": true
     }, 
+
+    
 
     {
       "name": "Save Features Qwen all hidden states_val",

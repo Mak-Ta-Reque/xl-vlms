@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List
 
 import numpy as np
 from torch.utils.data import Dataset
-
+import random
 from datasets.constants import WORDS
 from models.constants import TASK_PROMPTS
 
@@ -251,12 +251,12 @@ class ImageDataset(ImageTextDataset):
 
         if os.path.isfile(self.data_dir):
             # Single file path provided
-            if self.data_dir.endswith(('.jpg', '.png', '.jpeg', '.dcm')):
+            if self.data_dir.endswith(('.jpg', '.png', '.jpeg', '.dcm','.JPEG')):
                 img_id = os.path.splitext(os.path.basename(self.data_dir))[0]
                 image_path = self.data_dir
 
                 instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
-                    "ShortCaptioning", "An image of "
+                    "List of item", "An image of "
                 )
                 response = ""  # Assuming response generation is handled elsewhere
 
@@ -274,7 +274,7 @@ class ImageDataset(ImageTextDataset):
             # Directory path provided
             for root, _, files in os.walk(self.data_dir):
                 for file in files:
-                    if file.endswith(('.jpg', '.png', '.jpeg', '.dcm')):
+                    if file.endswith(('.jpg', '.png', '.jpeg', '.dcm', '.JPEG')):
                         img_id = os.path.splitext(file)[0]
                         image_path = os.path.join(root, file)
 
@@ -293,6 +293,7 @@ class ImageDataset(ImageTextDataset):
                         data.append(item)
 
         if self.dataset_size > 0:
+            random.shuffle(data)
             data = self.rng.choice(data, size=self.dataset_size, replace=False)
 
         self.data = data
