@@ -185,13 +185,13 @@ def get_arguments():
     parser.add_argument(
         "--dl_max_iter",
         type=int,
-        default=30000,
+        default=3000,
         help="Max number of iterations for dictionary learning optimization.",
     )
     parser.add_argument(
         "--num_grounded_text_tokens",
         type=int,
-        default=5,
+        default=7,
         help="Number of concepts for dictionary learning.",
     )
 
@@ -205,7 +205,7 @@ def get_arguments():
     parser.add_argument(
         "--num_most_activating_samples",
         type=int,
-        default=5,
+        default=10,
         help="Number of most activated samples.",
     )
 
@@ -448,6 +448,11 @@ def get_arguments():
         action="store_true",
         help="This is modification from original implementation, it is a flag whre the hidden state is preprocessed using the prediction probablity",
     )
-
+    parser.add_argument(
+        "--concept",
+        type=str,
+        default=None,
+        help="Concept should be searched in the image.",
+    )
 
     return parser.parse_args()

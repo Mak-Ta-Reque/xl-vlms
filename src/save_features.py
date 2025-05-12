@@ -13,7 +13,7 @@ from helpers.utils import (clear_forward_hooks, clear_hooks_variables,
                            update_dict_of_list, save_dict_as_pickle)
 from models import get_model_class 
 from helpers.loading_cache import load_all_pickles
-from helpers.post_process_embeding import extract_phrase_embeddings
+from helpers.post_process_embeding import extract_phrase_embeddings, extract_sentence_embeddings, extract_token_embeddings
 from models.image_text_model import ImageTextModel
 
 
@@ -50,6 +50,8 @@ def inference(
             )
         else:
             text = item["text"][0]  # for now we support batch size = 1
+            if args.concept is not None:
+                text = text.replace("[concept]", args.concept)
             image_path = item["image"][0]
             
             inputs = model_class.preprocessor(
@@ -119,6 +121,20 @@ def inference(
         """
         if "save_hidden_states_noun_phrase" in args.hook_names : # With tis hook name we only extract the phrase embeddigns of all embedding 
             item = extract_phrase_embeddings(item, model_class)
+            for key, value in item.items():
+                if key in hook_data:
+                    hook_data[key].extend(item[key])
+                else:
+                    hook_data[key] = item[key]
+        elif "save_hidden_states_token" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
+            item = extract_token_embeddings(item, model_class)
+            for key, value in item.items():
+                if key in hook_data:
+                    hook_data[key].extend(item[key])
+                else:
+                    hook_data[key] = item[key]
+        elif "save_hidden_states_sentence" in args.hook_names: # With tis hook name we only extract the sentence embeddigns of all embedding
+            item = extract_sentence_embeddings(item, model_class)
             for key, value in item.items():
                 if key in hook_data:
                     hook_data[key].extend(item[key])

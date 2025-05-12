@@ -638,7 +638,7 @@ def register_hooks(
         hook_function = save_hidden_states
         hook_return_function = get_hidden_states
 
-    elif "save_hidden_states_noun_phrase" == hook_name:
+    elif hook_name in ["save_hidden_states_noun_phrase", "save_hidden_states_token", "save_hidden_states_sentence"]:
         # Save the hidden states of all tokens in the sequence
         hook_function = save_hidden_states
         hook_return_function = get_hidden_states
