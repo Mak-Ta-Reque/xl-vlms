@@ -23,7 +23,7 @@ def extract_phrase_embeddings(item, model_class):
     phrases = []
     for np in doc.noun_chunks:
        clean_text = np.text
-       #clean_text = clean_string(np.text)
+       #clean_text = clean_string(clean_text)
        #clean_text = modify_string(clean_text)
        if len(clean_text) > 1:
             phrases.append(clean_text)
@@ -40,7 +40,7 @@ def extract_phrase_embeddings(item, model_class):
            clean_token = clean_string(token)
            if len(clean_token) > 0:
                emb = hidden_value[:, index: index+1, :]
-               noise = torch.randn_like(emb) * 5  # adjust scale of noise if needed
+               noise = torch.randn_like(emb) * 0  # adjust scale of noise if needed
                emb = emb #+ noise
                all_text_tokens_embedding[clean_token] = emb
        filtered_ebedding_of_hidden_states[hidden_key] = all_text_tokens_embedding
