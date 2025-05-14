@@ -222,3 +222,24 @@ def project_test_sample(
         # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
         projected_sample = 1 / (1 + projected_sample)
     return projected_sample
+
+def project_test_sample_using_matix(
+    sample: torch.Tensor, activations: torch.Tensor, decomposition_type: str = "snmf"
+) -> np.ndarray:
+    """
+    Input:
+        sample: torch tensor or numpy array object of shape (N_samples, Representation_dim). Should contain test representations
+        analysis_model: Already learnt sklearn dictionary learning / clustering object.
+        decomposition_type: Dictionary learning model type (Options: PCA, KMeans, Semi-NMF/Non-negative dict learning, Simple)
+    Output:
+        proj: numpy array of shape (N_samples, # components of analysis_model)
+    """
+    projection = sample.float() @ activations["concepts"].T
+
+    #assert isinstance(sample, np.ndarray), "sample should be of type np.ndarray"
+
+    #projected_sample = analysis_model.transform(sample)
+   # if decomposition_type in ["kmeans", "simple"]:
+   #     # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
+   #     projected_sample = 1 / (1 + projected_sample)
+    return  projection

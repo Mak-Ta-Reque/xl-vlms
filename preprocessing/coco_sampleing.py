@@ -66,3 +66,4 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         image_root_dir=args.image_root_dir
     )
+#python preprocessing/coco_sampleing.py /mnt/abka03/mscoco2014/dataset_coco.json  50  "dog" "hot dog" "bus" "school bus" "teddy bear" "microwave oven"  "fire hydrant" "traffic light" "baseball glove" "train" "cat" "bear" "baby" "car" "stop sign" /mnt/abka03/xlvlm_data/coco_100_samples /mnt/abka03/mscoco2014

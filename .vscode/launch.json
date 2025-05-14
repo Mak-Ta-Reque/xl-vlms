@@ -126,14 +126,15 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
-        "--data_dir", "/mnt/abka03/imagenette2-320/val/golf_ball/n03445777_5582.JPEG",
-        "--hook_names", "save_hidden_states_noun_phrase", 
+        "--data_dir", "/mnt/abka03/xlvlm_data/coco_crops/train/fire_hydrant/COCO_train2014_000000309403_patch_16.png",
+        "--hook_names", "save_hidden_states_sentence", 
         "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
-        "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase",
+        "--save_filename", "qwen2_image_combine_hidden_states_sentence",
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
+        "--concept", "fire hydrant",
         "--exact_match_modules_to_hook",
         "--cache_dir", "/mnt/abka03/xl-vlms/cache"
       ],
@@ -468,12 +469,13 @@
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
         "--analysis_name", "concept_dictionary_evaluation_overlap_clipscore_bertscore",
-        "--features_path", "/mnt/abka03/xl-vlms/features/modified_save_hidden_states_qwen2_image_patched_combined_grid_patch_concept_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/concept_extraction_result/CoX/coco/val/features/save_hidden_states_noun_phrase_qwen2_image_concept_hidden_states_original_paper_validation.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--save_filename", "Qwen2_cat",
+        "--save_filename", "coco15object",
         "--local_files_only",
-        "--analysis_saving_path", "/mnt/abka03/xl-vlms/results//decompose_activations_text_grounding_image_grounding_qwen2_results_patch_token_of_interest_combined_patch_snmf.pth",
+        //"--use_random_grounding_words",
+        "--analysis_saving_path", "/mnt/abka03/concept_extraction_result/CoX/coco/train/concept/decompose_activations_text_grounding_image_grounding_phrase_embeddings_concepts_combined.pth",
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"

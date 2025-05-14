@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# #"save_hidden_states_noun_phrase" 
 # Set environment variable
 export HF_HOME=/mnt/abka03/huggingface/hub
 
@@ -8,7 +8,7 @@ concepts=("baby"  "baseball glove"  "bear"  "bus"  "car"  "cat"  "dog"  "fire hy
 
 # Paths
 base_data_dir="/mnt/abka03/xlvlm_data/coco_crops/train"
-save_dir="/mnt/abka03/concept_extraction_result/coco"
+save_dir="/mnt/abka03/concept_extraction_result/coco_sentence"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
 
@@ -27,7 +27,7 @@ for concept in "${concepts[@]}"; do
         --dataset_name "image" \
         --dataset_size "300" \
         --data_dir "$data_dir" \
-        --hook_name "save_hidden_states_noun_phrase" \
+        --hook_name "save_hidden_states_sentence" \
         --modules_to_hook "model.norm" \
         --save_dir "$save_dir" \
         --save_filename "$save_file_name" \

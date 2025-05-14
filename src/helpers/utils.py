@@ -900,7 +900,7 @@ def load_image_as_rgb(file_path, out_type="PIL"):
 
     elif ext in [".jpeg", ".jpg", ".png"]:
         # Load JPEG or PNG file
-        image = Image.open(file_path[0]).convert("RGB")  # Ensure it's RGB
+        image = Image.open(file_path[0].split("@")[1]).convert("RGB")  # Ensure it's RGB
 
         if out_type == "PIL":
             return image
