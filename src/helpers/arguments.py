@@ -185,13 +185,13 @@ def get_arguments():
     parser.add_argument(
         "--dl_max_iter",
         type=int,
-        default=3000,
+        default=5000,
         help="Max number of iterations for dictionary learning optimization.",
     )
     parser.add_argument(
         "--num_grounded_text_tokens",
         type=int,
-        default=7,
+        default=9,
         help="Number of concepts for dictionary learning.",
     )
 
@@ -217,7 +217,7 @@ def get_arguments():
         help="True for autoregressive generation mode. False for teacher forcing.",
     )
     parser.add_argument(
-        "--max_new_tokens", type=int, default=50, help="Max numberof generated tokens."
+        "--max_new_tokens", type=int, default=80, help="Max numberof generated tokens."
     )
 
     # Saving hidden states for token of interest
@@ -339,6 +339,12 @@ def get_arguments():
         help="Apply steering starting from this token idx of the prompt.",
     )
     # Evaluation
+    parser.add_argument(
+        "--use_random_grounding_words",
+        default=False,
+        action="store_true",
+        help="True for selecting random grounding words.",
+    )
     parser.add_argument(
         "--captioning_metrics",
         type=List[str],

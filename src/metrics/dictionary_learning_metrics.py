@@ -1,6 +1,6 @@
 import argparse
 from typing import Any, Callable, Dict, List
-
+from bert_score import score as bert_score
 import clip
 import numpy as np
 import torch
@@ -32,12 +32,13 @@ def get_clip_score(
     metadata = list(metadata.values())[0]
     analysis_model = concepts_dict["analysis_model"]
     grounding_words = concepts_dict["text_grounding"]
-    projections = analysis_decomposition.project_test_sample(
+    projections = analysis_decomposition.project_test_sample_using_matix(
         sample=features,
-        analysis_model=analysis_model,
+        activations=concepts_dict,
         decomposition_type=concepts_dict["decomposition_method"],
     )
-    """
+
+    
     if args.use_random_grounding_words:
         lm_head = model_class.get_lm_head().float()
         tokenizer = model_class.get_tokenizer()
@@ -47,7 +48,7 @@ def get_clip_score(
             grounding_words=grounding_words,
         )
         logger.info(f"Random words usage is True. Only for CLIPScore evaluation")
-    """
+    
 
     clipscore_dict = compute_test_clipscore(
         projections=projections,
@@ -60,6 +61,49 @@ def get_clip_score(
     )
     return clipscore_dict
 
+
+def get_bert_score(
+    features: Dict[str, torch.Tensor] = None,
+    metadata: Dict[str, Any] = {},
+    concepts_dict: Dict[str, Any] = {},
+    model_class: Callable = None,
+    device: torch.device = torch.device("cpu"),
+    logger: Callable = None,
+    args: argparse.Namespace = None,
+) -> Dict[str, Any]:
+
+    features = list(features.values())[0]
+    metadata = list(metadata.values())[0]
+    analysis_model = concepts_dict["analysis_model"]
+    grounding_words = concepts_dict["text_grounding"]
+    projections = analysis_decomposition.project_test_sample_using_matix(
+        sample=features,
+        activations=concepts_dict,
+        decomposition_type=concepts_dict["decomposition_method"],
+    )
+
+    
+    if args.use_random_grounding_words:
+        lm_head = model_class.get_lm_head().float()
+        tokenizer = model_class.get_tokenizer()
+        grounding_words = get_random_words(
+            lm_head=lm_head,
+            tokenizer=tokenizer,
+            grounding_words=grounding_words,
+        )
+        logger.info(f"Random words usage is True. Only for CLIPScore evaluation")
+    
+
+    clipscore_dict = compute_test_bertscore(
+        projections=projections,
+        grounding_words=grounding_words,
+        device=device,
+        metadata=metadata,
+    )
+    logger.info(
+        f"top-1 test BERTScore (mean, std) {clipscore_dict['top_1_mean']: .3f} +/- {clipscore_dict['top_1_std']: .3f}"
+    )
+    return clipscore_dict
 
 def get_random_words(
     lm_head: Callable, tokenizer: Callable, grounding_words: List[List[str]] = []
@@ -155,12 +199,62 @@ def compute_test_clipscore(
     )  # image_features of shape (num_images, dim)
 
     for idx in range(num_samples):
-        img_activations = projections[idx]
+        img_activations = projections[idx] #get 15 activations for
         img_feat = image_features[idx]
         img_score = img_clipscore(
             clip_model, img_feat, img_activations, grounding_words, device, top_k=top_k
         )
         scores.append(img_score)
+    scores = np.array(scores)
+    # Return dictionary containing all test sample scores, their mean, std
+    scores_dict = {}
+    for k in [1, 3]:
+        key = f"top_{k}_all"
+        key_mean = f"top_{k}_mean"
+        key_std = f"top_{k}_std"
+        all_test_scores = scores[:, -k:].mean(axis=1)
+        mean_topk_score, std_topk = all_test_scores.mean(), all_test_scores.std()
+        scores_dict[key] = all_test_scores
+        scores_dict[key_mean] = mean_topk_score
+        scores_dict[key_std] = std_topk
+
+    return scores_dict
+
+
+def compute_test_bertscore(
+    projections: np.ndarray,
+    grounding_words: List[List[str]],
+    metadata: Dict[str, Any],
+    device: torch.device = torch.device("cpu"),
+    top_k: int = 5,
+) -> Dict[str, Any]:
+    scores = []
+    image_paths = []
+    predictions = [item[0].split("@") [1] for item in metadata.get("model_predictions", None)]
+    num_samples = projections.shape[0]
+    #clip_model, _ = clip.load("ViT-B/32", device=device, jit=False)
+    #clip_model.eval()
+
+    #image_paths = metadata.get("image_paths", [])
+    #image_paths = metadata.get("image", [])
+    #token_of_interest_mask = metadata.get("token_of_interest_mask", None)
+ 
+    for idx in range(num_samples):
+        projection_scores = projections[idx] #get 15 activations for
+        predicton = [predictions[idx]]* top_k # making a batch for calculating bert score for top 5
+        top_comp = projection_scores.argsort()[-top_k:]
+        top_grounding_words = []
+        for comp_idx in top_comp:
+            comp_grounding_words = grounding_words[comp_idx]
+            cand = ""
+            for word in comp_grounding_words:
+                cand = cand + word + " "
+            cand = cand[: len(cand) - 2] + "."
+            top_grounding_words.append(cand)
+        
+
+        P, R, F1 = bert_score(top_grounding_words, predicton, lang="en", verbose=True)
+        scores.append(F1)
     scores = np.array(scores)
     # Return dictionary containing all test sample scores, their mean, std
     scores_dict = {}

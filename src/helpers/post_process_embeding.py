@@ -40,7 +40,7 @@ def extract_phrase_embeddings(item, model_class):
            clean_token = clean_string(token)
            if len(clean_token) > 0:
                emb = hidden_value[:, index: index+1, :]
-               noise = torch.randn_like(emb) * 0  # adjust scale of noise if needed
+               #noise = torch.randn_like(emb) * 0  # adjust scale of noise if needed
                emb = emb #+ noise
                all_text_tokens_embedding[clean_token] = emb
        filtered_ebedding_of_hidden_states[hidden_key] = all_text_tokens_embedding
@@ -243,8 +243,8 @@ def extract_sentence_embeddings(item, model_class):
             clean_token = clean_string(token)
             if clean_token:
                 emb =  layer_embeddings[:, idx:idx+1, :]
-                noise = torch.randn_like(emb) * 0.1  # adjust scale of noise if needed
-                emb = emb + noise
+                #noise = torch.randn_like(emb) * 0.1  # adjust scale of noise if needed
+                emb = emb #+ noise
 
                 token_embeddings[clean_token] = emb # rot_emb(layer_embeddings[:, idx:idx+1, :], position_ids = torch.arange(0, len(phrases)))
         filtered_embeddings[layer_name] = token_embeddings
@@ -260,7 +260,7 @@ def extract_sentence_embeddings(item, model_class):
     output_item = {}
 
     if "image" in item:
-        output_item["image"] =[[f"{'_'.join(phrases)}@{item['image'][0]}"]]
+        output_item["image"] =[[f"{item['model_predictions'][0].replace(' ' , '_')}@{item['image'][0]}"]]
     else:
         output_item["text"] = item["text"]
 
@@ -281,7 +281,7 @@ def clean_string(input_string, remove_words=None):
     articles = r'\b(?:a|an|the)\b'
     
     # List of English pronouns
-    pronouns = r'\b(?:i|you|he|she|it|we|they|me|him|her|us|them|my|mine|your|yours|his|hers|its|our|ours|that|their|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|photo|image|im_end|question)\b'
+    pronouns = r'\b(?:i|object|you|he|she|it|we|they|me|him|her|us|them|my|mine|your|yours|his|hers|its|our|ours|that|their|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|photo|image|im_end|question)\b'
 
     # Combine articles and pronouns into one regex pattern
     combined_pattern = f"{articles}|{pronouns}" #f"im_end"#

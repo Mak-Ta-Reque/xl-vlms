@@ -23,7 +23,7 @@ def is_number(string: str) -> bool:
         return False
 
 
-def get_stopwords(gist_file_path: str = "gist_stopwords.txt") -> List[str]:
+def get_stopwords(gist_file_path: str = "src/assets/gist_stopwords.txt") -> List[str]:
     gist_file = open(gist_file_path, "r")
     content = gist_file.read()
     stopwords = content.split(",")
