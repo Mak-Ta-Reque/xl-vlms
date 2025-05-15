@@ -26,7 +26,7 @@ def concept_text_grounding(
     num_top_tokens: int = 15,
     gist_file_path: str = GIST_FILE_PATH,
     pre_num_top_tokens: int = 50,
-    keep_unique_words: bool = False,
+    keep_unique_words: bool = True,
 ) -> List[List[str]]:
     # components are of shape n_comp x feature_dim
 

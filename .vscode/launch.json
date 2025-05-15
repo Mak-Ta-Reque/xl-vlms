@@ -469,13 +469,14 @@
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
         "--analysis_name", "concept_dictionary_evaluation_overlap_clipscore_bertscore",
-        "--features_path", "/mnt/abka03/concept_extraction_result/CoX/coco/val/features/save_hidden_states_noun_phrase_qwen2_image_concept_hidden_states_original_paper_validation.pth",
+        "--features_path","/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/val/features/save_hidden_states_token_qwen2_image_concept_hidden_states_original_paper_val_data_imagenet10.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--save_filename", "coco15object",
+        "--save_filename", "imagenet10object_random_label",
         "--local_files_only",
-        //"--use_random_grounding_words",
-        "--analysis_saving_path", "/mnt/abka03/concept_extraction_result/CoX/coco/train/concept/decompose_activations_text_grounding_image_grounding_phrase_embeddings_concepts_combined.pth",
+        "--save_dir", "/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/val/matrics",
+        "--use_random_grounding_words",
+        "--analysis_saving_path",  "/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/train/concept/decompose_activations_text_grounding_image_grounding_token_embeddings_imagenet10.pth" ,
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"
