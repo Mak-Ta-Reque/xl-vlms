@@ -13,7 +13,7 @@ from helpers.utils import (clear_forward_hooks, clear_hooks_variables,
                            update_dict_of_list, save_dict_as_pickle)
 from models import get_model_class 
 from helpers.loading_cache import load_all_pickles
-from helpers.post_process_embeding import extract_phrase_embeddings, extract_sentence_embeddings, extract_token_embeddings
+from helpers.post_process_embeding import extract_phrase_embeddings, extract_sentence_embeddings, extract_token_embeddings, append_token_before_path
 from models.image_text_model import ImageTextModel
 
 
@@ -126,6 +126,7 @@ def inference(
                     hook_data[key].extend(item[key])
                 else:
                     hook_data[key] = item[key]
+        
         elif "save_hidden_states_token" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
             item = extract_token_embeddings(item, model_class)
             for key, value in item.items():
@@ -133,6 +134,12 @@ def inference(
                     hook_data[key].extend(item[key])
                 else:
                     hook_data[key] = item[key]
+
+        elif "save_hidden_states_for_token_of_interest" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
+            item["image"] = [f"{args.token_of_interest}@{item['image'][0]}"]
+            update_dict_of_list(item, hook_data)
+            
+
         elif "save_hidden_states_sentence" in args.hook_names: # With tis hook name we only extract the sentence embeddigns of all embedding
             item = extract_sentence_embeddings(item, model_class)
             for key, value in item.items():

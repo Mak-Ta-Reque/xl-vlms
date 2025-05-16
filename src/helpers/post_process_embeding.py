@@ -179,7 +179,7 @@ def extract_token_embeddings(item, model_class):
             modified_predictions.append(item['model_predictions'])
         else:
             modified_image.append([f"{phrase}@{item['image'][0]}"])
-            modified_predictions.append([f"{phrase}@{item['model_predictions'][0]}"])
+            modified_predictions.append([item['model_predictions'][0]])
         #modified_targets.append([f"{phrase}@{item['targets'][0]}"])
         #modified_text.append([f"{phrase}@{item['text'][0]}"])
         #modified_model_output.append(item['model_output'])
@@ -209,6 +209,10 @@ def extract_token_embeddings(item, model_class):
 
     return new_item
 
+def append_token_before_path(item, model_class):
+    new_item = item
+    new_item["image"] = [f"tok@{item['image'][0]}"]
+    return new_item
 
 
 

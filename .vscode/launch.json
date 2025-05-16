@@ -126,7 +126,7 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
-        "--data_dir", "/mnt/abka03/xlvlm_data/coco_crops/train/fire_hydrant/COCO_train2014_000000309403_patch_16.png",
+        "--data_dir", "/mnt/abka03/xlvlm_data/cifar_100_samples/train/pine_tree/true_pine_s_000297.png",
         "--hook_names", "save_hidden_states_sentence", 
         "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
@@ -209,6 +209,33 @@
 
 
     {
+      "name": "Save Features Qwen token of interest_data_directory",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/save_features.py",
+      "args": [
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--dataset_name", "image",
+        "--dataset_size", "50",
+        "--data_dir", "/mnt/abka03/xlvlm_data/coco_50_samples/train/dog",
+        "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx",
+        "--token_of_interest", "dog", //space must be appended infront of token
+        "--modules_to_hook", "model.norm", //model.norm, model.layers.27, 
+        "--save_dir", "/mnt/abka03/xl-vlms",
+        "--save_filename", "qwen2_patched_image_cat_token_of_interest_concept_generation_split_train",
+        "--generation_mode",
+        "--save_only_generated_tokens",
+        "--slice_prediction",
+        "--exact_match_modules_to_hook",
+      ],
+      "env": {
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
+      },
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Save Features Qwen token of interest",
       "type": "python",
       "request": "launch",
@@ -218,10 +245,10 @@
         "--dataset_name", "coco",
         "--dataset_size", "200",
         "--data_dir", "/mnt/abka03/mscoco2014/",
-        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco.json",
+        "--annotation_file", "/mnt/abka03/mscoco2014/dataset_coco.json",
         "--split", "train",
         "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx",
-        "--token_of_interest", "cat", //space must be appended infront of token
+        "--token_of_interest", "a", //space must be appended infront of token
         "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_patched_image_cat_token_of_interest_concept_generation_split_train",
@@ -381,18 +408,18 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_for_tokens_of_interest_qwen2_image_patched_combined_grid_patch_concept_generation_split_train.pth",
+        "--features_path", "/mnt/abka03/concept_extraction_result/CoX/SNMF/coco_temp/train/features/combined_features.pth",
         "--module_to_decompose", "model.norm",
-        "--num_concepts", "5",
+        "--num_concepts", "15",
         "--decomposition_method", "snmf",
         "--save_filename", "qwen2_results_patch_all_patch_snmf",
         "--save_dir", "/mnt/abka03/xl-vlms/results",
         "--load_matched_features"
       ],
       "env": {
-        "HF_HOME": "/mnt/abka03/xl-vlms/cache"
+        "HF_HOME": "/mnt/abka03/huggingface/hub"
       },
-      "python": "/home/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -469,14 +496,14 @@
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
         "--analysis_name", "concept_dictionary_evaluation_overlap_clipscore_bertscore",
-        "--features_path","/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/val/features/save_hidden_states_token_qwen2_image_concept_hidden_states_original_paper_val_data_imagenet10.pth",
+        "--features_path","/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/val/features/save_hidden_states_token_qwen2_image_concept_hidden_states_original_paper_val_data_cifar100.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--save_filename", "imagenet10object_random_label",
+        "--save_filename", "cifar100objects_random",
         "--local_files_only",
-        "--save_dir", "/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/val/matrics",
+        "--save_dir", "/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/val/matrics",
         "--use_random_grounding_words",
-        "--analysis_saving_path",  "/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/train/concept/decompose_activations_text_grounding_image_grounding_token_embeddings_imagenet10.pth" ,
+        "--analysis_saving_path",  "/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/train/concept/decompose_activations_text_grounding_image_grounding_token_embeddings_cifar100.pth" ,
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"
