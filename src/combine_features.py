@@ -3,8 +3,9 @@
 import torch
 import os
 import sys
+import argparse
 
-def combine_pth_files(root_dir):
+def combine_pth_files(root_dir, delete=False):
     pth_files = sorted([os.path.join(root_dir, f) for f in os.listdir(root_dir) if f.endswith(".pth")])
 
     if not pth_files:
@@ -30,9 +31,15 @@ def combine_pth_files(root_dir):
     torch.save(combined_data, output_path)
     print(f"✅ Combined features saved to: {output_path}")
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python combine_features.py <features_dir>")
-        sys.exit(1)
+    if delete:
+        for path in pth_files:
+            os.remove(path)
+        print("🗑️  All original .pth files deleted after combining.")
 
-    combine_pth_files(sys.argv[1])
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Combine .pth feature files.")
+    parser.add_argument("features_dir", type=str, help="Directory containing .pth files to combine")
+    parser.add_argument("--delete", default=True, action="store_true", help="Delete original .pth files after combining")
+
+    args = parser.parse_args()
+    combine_pth_files(args.features_dir, delete=args.delete)
