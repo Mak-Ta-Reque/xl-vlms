@@ -99,8 +99,8 @@
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
         "--dataset_size", "100",
-        "--data_dir", "/mnt/abka03/imagenette2-320/train",
-        "--hook_names", "save_hidden_states_noun_phrase", 
+        "--data_dir", "/mnt/abka03/xlvlm_data/coco_crops/train/stop_sign",
+        "--hook_names", "save_hidden_states_sentence", 
         "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase_truck_generation_split_val",
@@ -108,7 +108,7 @@
         "--save_only_generated_tokens",
         "--slice_prediction",
         "--exact_match_modules_to_hook",
-        "--concept", "truck",
+        "--concept", "stop sign",
         "--cache_dir", "/mnt/abka03/xl-vlms/cache"
       ],
       "env": {
