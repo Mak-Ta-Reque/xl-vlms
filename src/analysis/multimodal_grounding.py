@@ -1,6 +1,7 @@
 import argparse
 import os
 from typing import Any, Callable, Dict, List
+import re
 import nltk
 nltk.download('words')
 
@@ -44,14 +45,22 @@ def concept_text_grounding(
     grounded_words_list = []
     for k in range(num_concepts):
         comp_words = tokenizer.batch_decode(top_token_idx[k], skip_special_tokens=True)
-        comp_words = [
-            word.lower().strip()
-            for word in comp_words
-            if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
-        ]
+        
+        #comp_words = [
+        #    word.lower().strip()
+        #    for word in comp_words
+        #    #if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
+        #]
+
+        icomp_words = []
+        for word in comp_words:
+            clean_word = re.sub(r'[^a-zA-Z0-9]', '', word.strip())  # Remove non-alphanumeric characters
+            if clean_word and clean_word not in stopwords:
+                icomp_words.append(clean_word)
+
         if keep_unique_words:
-            comp_words = list(set(comp_words))
-        grounded_words_list.append(comp_words[:num_top_tokens])
+            icomp_words = list(set( icomp_words))
+        grounded_words_list.append(icomp_words[:num_top_tokens])
     return grounded_words_list
 
 
