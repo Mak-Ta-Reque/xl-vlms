@@ -137,6 +137,7 @@ def inference(
 
         elif "save_hidden_states_for_token_of_interest" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
             item["image"] = [f"{args.token_of_interest}@{item['image'][0]}"]
+            item["model_predictions"] = [f"{args.token_of_interest}@{item['model_predictions'][0]}"]
             update_dict_of_list(item, hook_data)
             
 

@@ -4,9 +4,9 @@
 export HF_HOME=/mnt/abka03/huggingface/hub
 
 # Base paths
-base_data_dir="/mnt/abka03/xlvlm_data/coco_100_concepts_crops/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco62concepts/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco62concepts/train/concept"
+base_data_dir="/mnt/abka03/xlvlm_data/cifar_100_samples/train"
+feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.norm"

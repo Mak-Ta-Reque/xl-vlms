@@ -133,16 +133,58 @@ def get_clip_score(model, images, candidates, device, w=2.5):
     return np.mean(per), per, candidates
 
 
+def find_two_longest_words(words):
+    if not words:
+        return []
+
+    # Sort the list by word length in descending order
+    sorted_words = sorted(words, key=len, reverse=True)
+
+    # Return the top two longest words (or fewer if list has < 2 items)
+    return sorted_words[:2]
+
 def img_clipscore(model, img_feat, activ, grounding_words, device, top_k=3):
     # Assume activ is of shape (n_comp,)
     top_comp = activ.argsort()[-top_k:]
     candidates = []
     for comp_idx in top_comp:
         comp_grounding_words = grounding_words[comp_idx]
+        comp_grounding_words= [item.lower() for item in comp_grounding_words]
+        comp_grounding_words = list(set(comp_grounding_words))
         cand = ""
         for word in comp_grounding_words:
             cand = cand + word + ", "
         cand = cand[: len(cand) - 2] + "."
+        candidates.append(cand)
+
+    image_feat = np.array([img_feat] * top_k)
+    _, per_instance_image_text, candidate_feats = get_clip_score(
+        model, image_feat, candidates, device
+    )
+    score = np.array(per_instance_image_text)
+    return score
+
+def alterantive_img_clipscore(model, img_feat, activ, grounding_words, device, top_k=3):
+    # Assume activ is of shape (n_comp,)
+    top_comp = activ.argsort()[-top_k:]
+    candidates = []
+    for comp_idx in top_comp:
+        comp_grounding_words = grounding_words[comp_idx]
+        comp_grounding_words= [item.lower() for item in comp_grounding_words]
+        comp_grounding_words = list(set(comp_grounding_words))
+        if len(comp_grounding_words) > 2:
+            longest_grounded_words = find_two_longest_words(comp_grounding_words)
+        else:
+            longest_grounded_words = comp_grounding_words
+        if len(longest_grounded_words) == 1:
+            cand = f"An image contains a {longest_grounded_words[0]}"
+        else:
+            cand = "An image contains " + ", ".join(f"a {w}" for w in longest_grounded_words[:-1]) + \
+           " and a " + longest_grounded_words[-1]
+
+        #for word in comp_grounding_words:
+        #    cand = cand + word + ", "
+        #cand = cand[: len(cand) - 2] + "."
         candidates.append(cand)
 
     image_feat = np.array([img_feat] * top_k)
