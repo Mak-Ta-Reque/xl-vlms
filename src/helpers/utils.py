@@ -871,7 +871,16 @@ def load_image_as_rgb(file_path, out_type="PIL"):
         PIL.Image.Image or np.ndarray: The loaded image either as a PIL object or a NumPy array.
     """
     # Extract the file extension
-    ext = os.path.splitext(file_path[0])[-1].lower()
+    # @ remove the lavel befor the path
+    ext = ""
+    if isinstance(file_path, list):
+     
+        ext = os.path.splitext(file_path[0])[-1].lower()
+    else:
+
+        ext = os.path.splitext(file_path)[-1].lower()
+        file_path = [file_path] # fixing the bug by brutforce
+
 
     if ext == ".dcm":
         # Load DICOM file

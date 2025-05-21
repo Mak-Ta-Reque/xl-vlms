@@ -27,18 +27,19 @@ def combine_concepts(input_dir):
     }
 
     concepts = []
+    activations = []
     for filename in pth_files:
         filepath = os.path.join(input_dir, filename)
         model_data = torch.load(filepath)
 
         image_grounding_path = model_data['image_grounding_paths']
-        index_with_all_no = next(
-            i for i, sublist in enumerate(image_grounding_path)
-            if all(not item.lower().startswith("no") for item in sublist)
+        index_with_all_no  = max(
+            range(len(image_grounding_path)),
+        key=lambda i: sum(1 for item in image_grounding_path[i] if not item.startswith("No"))
         )
 
         concepts.append(model_data['concepts'][index_with_all_no])
-        combined_data['activations'].append(model_data['activations'][:, index_with_all_no])
+        activations.append(model_data['activations'][:, index_with_all_no])
         combined_data['text_grounding'].append(model_data['text_grounding'][index_with_all_no])
         combined_data['image_grounding_paths'].append(image_grounding_path[index_with_all_no])
         combined_data['analysis_model'].append(model_data['analysis_model'])
@@ -46,6 +47,7 @@ def combine_concepts(input_dir):
         combined_data['decomposition_method'] = model_data['decomposition_method']
 
     combined_data['concepts'] = torch.stack(concepts, dim=0)
+    combined_data['activations'] = activations
     return combined_data
 
 

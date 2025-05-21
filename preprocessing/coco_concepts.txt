@@ -1,102 +1,56 @@
-traffic light
-fire hydrant
-stop sign
-hot dog
-wine glass
-baseball bat
-baseball glove
-tennis racket
-cell phone
-dining table
-teddy bear
-hair drier
-tooth brush
-potted plant
-shopping cart
-baby stroller
-train station
-school bus
-police car
-motorcycle helmet
-surf board
-roller skates
-pizza slice
-birthday cake
-kitchen sink
-microwave oven
-washing machine
-video game
-garbage truck
-fishing pole
-wooden chair
-glass window
-brick wall
-city street
-public park
-snowy road
-mountain trail
-forest path
-blue sky
-lifeguard stand
-airplane wing
-food truck
-street sign
-remote control
-living room
-bathroom mirror
-climbing wall
-restaurant kitchen
-market stand
-soccer field
-tennis court
-dog
-cat
-car
+airplane
+bird
 bus
+city_street
+dining_table
+horse
+mirror
+pizza
+skateboard
+surf_board
+traffic_light
+zebra
+apple
+blanket
+car
+computer_mouse
+dog
+hot_dog
+oven
+plant
+sofa
+table
 train
+banana
+blue_sky
+cat
+couch
+fire_hydrant
+keyboard
+pan
+plate
+stop_sign
+teddy_bear
+train_station
+bear
+book
+cell_phone
+cow
+fridge
+knife
+phone
+remote_control
+stove
+tennis_racket
 truck
 bike
-bird
-bear
-zebra
-horse
-cow
-chair
-table
-phone
-watch
 bottle
-knife
-spoon
+chair
 cup
-plate
-book
-mouse
-sofa
-plant
+helmet
+laptop
+pillow
+rug
+street_sign
 toilet
 window
-mirror
-keyboard
-laptop
-couch
-oven
-stove
-camera
-wallet
-helmet
-fridge
-skateboard
-airplane
-backpack
-pillow
-blanket
-pencil
-hammer
-screwdriver
-pan
-rug
-boots
-banana
-apple
-pizza

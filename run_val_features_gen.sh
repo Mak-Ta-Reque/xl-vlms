@@ -12,8 +12,8 @@ HF_HOME="/mnt/abka03/huggingface/hub"
 
 # Split-specific setup
 SPLIT="val"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/coco_crops/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco_temp/${SPLIT}"
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/cifar_100_samples/${SPLIT}"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/${SPLIT}"
 
 # Loop through directories
 for dir_path in "$BASE_DATA_DIR"/*/; do
