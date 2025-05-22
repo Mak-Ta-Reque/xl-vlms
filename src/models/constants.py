@@ -26,7 +26,7 @@ TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
         "ShortCaptioning": sudonSNFMF_prompt,
-        "List of item":  valdiation_prompt , 
+        "List of item":  valdiation_prompt, 
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data
