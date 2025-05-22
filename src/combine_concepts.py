@@ -104,6 +104,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_path", type=str, required=True, help="Base path to save output files")
     parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca'], required=True,
                         help="Normalization methods to apply")
-    parser.add_argument("--delete", default=True, action="store_true", help="Delete input .pth files after processing")
+    parser.add_argument("--delete", default=False, action="store_true", help="Delete input .pth files after processing")
     args = parser.parse_args()
     main(args)
