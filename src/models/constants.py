@@ -14,7 +14,7 @@ cifar100_prompt = f"\nWhat is the object in the image among and reply with few w
 
 
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
-valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'This image does not contain a [concept]."
+valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 
 ShortVQA = "\nAnswer the question using a single word or phrase."
 ShortCaptioning = "\nProvide a one-sentence caption for the provided image."
@@ -25,7 +25,7 @@ list_of_items = "List the items in the image."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning": ShortCaptioning,
+        "ShortCaptioning": sudonSNFMF_prompt,
         "List of item":  valdiation_prompt , 
         "Repeat the text": "\n Just repeat the text:"
     },

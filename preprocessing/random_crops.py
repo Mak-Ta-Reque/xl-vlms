@@ -20,8 +20,47 @@ def calculate_iou(boxA, boxB):
 
     boxA_area = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
     return inter_area / boxA_area
-
 def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ratio=0.25, max_attempts_per_patch=100):
+    img = Image.open(image_path)
+    img_name = Path(image_path).stem
+    width, height = img.size
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if width < patch_size or height < patch_size:
+        print(f"{image_path} is smaller than patch size. Resizing entire image to patch size.")
+        resized_img = img.resize((patch_size, patch_size), Image.LANCZOS).convert("RGB")
+        patch_filename = f"{img_name}_patch_0.png"
+        resized_img.save(os.path.join(output_dir, patch_filename))
+        return
+
+    saved_patches = []
+    patches_created = 0
+    attempts = 0
+
+    while patches_created < P and attempts < P * max_attempts_per_patch:
+        attempts += 1
+        left = random.randint(0, width - patch_size)
+        top = random.randint(0, height - patch_size)
+        right = left + patch_size
+        bottom = top + patch_size
+        new_patch = (left, top, right, bottom)
+
+        too_much_overlap = any(
+            calculate_iou(new_patch, existing_patch) > max_overlap_ratio
+            for existing_patch in saved_patches
+        )
+
+        if too_much_overlap:
+            continue
+
+        patch_img = img.crop(new_patch).convert("RGB")
+        patch_filename = f"{img_name}_patch_{patches_created}.png"
+        patch_img.save(os.path.join(output_dir, patch_filename))
+        saved_patches.append(new_patch)
+        patches_created += 1
+
+def _create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ratio=0.25, max_attempts_per_patch=100):
     img = Image.open(image_path)
     img_name = Path(image_path).stem
     width, height = img.size
@@ -91,8 +130,7 @@ if __name__ == "__main__":
     main()
 
 """
-python 
-random_crops.py \
+python  random_crops.py \
   --input_root /mnt/abka03/imagenet_samples/train \
   --output_root /mnt/abka03/crops/train \
   --patch_size 100 \
