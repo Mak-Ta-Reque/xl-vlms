@@ -5,7 +5,7 @@ import clip
 import numpy as np
 import torch
 from nltk.corpus import words
-
+import copy
 import analysis.feature_decomposition as analysis_decomposition
 from metrics.clipscore import extract_image_features, img_clipscore
 from metrics.utils import get_stopwords, valid_word
@@ -27,11 +27,12 @@ def get_clip_score(
     logger: Callable = None,
     args: argparse.Namespace = None,
 ) -> Dict[str, Any]:
-
+    features = copy.deepcopy(features)
+    metadata = copy.deepcopy(metadata)
     features = list(features.values())[0]
     metadata = list(metadata.values())[0]
     analysis_model = concepts_dict["analysis_model"]
-    grounding_words = concepts_dict["text_grounding"]
+    grounding_words =  copy.deepcopy(concepts_dict["text_grounding"])
     projections = analysis_decomposition.project_test_sample_using_matix(
         sample=features,
         activations=concepts_dict,
@@ -71,11 +72,12 @@ def get_bert_score(
     logger: Callable = None,
     args: argparse.Namespace = None,
 ) -> Dict[str, Any]:
-
+    features = copy.deepcopy(features)
+    metadata = copy.deepcopy(metadata)  
     features = list(features.values())[0]
     metadata = list(metadata.values())[0]
     analysis_model = concepts_dict["analysis_model"]
-    grounding_words = concepts_dict["text_grounding"]
+    grounding_words = copy.deepcopy(concepts_dict["text_grounding"])
     projections = analysis_decomposition.project_test_sample_using_matix(
         sample=features,
         activations=concepts_dict,
@@ -94,16 +96,16 @@ def get_bert_score(
         logger.info(f"Random words usage is True. Only for CLIPScore evaluation")
     
 
-    clipscore_dict = compute_test_bertscore(
+    bertscore_dict = compute_test_bertscore(
         projections=projections,
         grounding_words=grounding_words,
         device=device,
         metadata=metadata,
     )
     logger.info(
-        f"top-1 test BERTScore (mean, std) {clipscore_dict['top_1_f1_mean']: .3f} +/- {clipscore_dict['top_1_f1_std']: .3f}"
+        f"top-1 test BERTScore (mean, std) {bertscore_dict['top_1_f1_mean']: .3f} +/- {bertscore_dict['top_1_f1_std']: .3f}"
     )
-    return clipscore_dict
+    return bertscore_dict
 
 def get_jakard_score(
     features: Dict[str, torch.Tensor] = None,
@@ -114,11 +116,12 @@ def get_jakard_score(
     logger: Callable = None,
     args: argparse.Namespace = None,
 ) -> Dict[str, Any]:
-
+    features = copy.deepcopy(features)
+    metadata = copy.deepcopy(metadata)
     features = list(features.values())[0]
     metadata = list(metadata.values())[0]
     analysis_model = concepts_dict["analysis_model"]
-    grounding_words = concepts_dict["text_grounding"]
+    grounding_words = copy.deepcopy(concepts_dict["text_grounding"])
     projections = analysis_decomposition.project_test_sample_using_matix(
         sample=features,
         activations=concepts_dict,
@@ -143,7 +146,7 @@ def get_jakard_score(
         metadata=metadata,
     )
     logger.info(
-        f"top-1 test JACCARDcore (mean, std) {jaccard_dict['top_1_jaccard_mean']: .3f} +/- {jaccard_dict['top_1_jaccard_std']: .3f}"
+        f"top-1 test JACCARDcore (mean, std) {jaccard_dict['top_1_mean']: .3f} +/- {jaccard_dict['top_1_std']: .3f}" 
     )
     return jaccard_dict
 
@@ -192,6 +195,7 @@ def compute_grounding_words_overlap(
     Function to compute overlap metric given the grounded words of a concept dictionary
     Input: List of grounded words for concepts: List[List]
     """
+    grounding_words = copy.deepcopy(grounding_words)
     num_concepts = len(grounding_words)
     overlap_matrix = np.zeros([num_concepts, num_concepts])
     for i in range(num_concepts):
@@ -270,61 +274,6 @@ def compute_test_clipscore(
     return scores_dict
 
 
-def _compute_test_bertscore(
-    projections: np.ndarray,
-    grounding_words: List[List[str]],
-    metadata: Dict[str, Any],
-    device: torch.device = torch.device("cpu"),
-    top_k: int = 5,
-) -> Dict[str, Any]:
-    scores = []
-    image_paths = []
-    predictions = [item[0].split("@") [1] for item in metadata.get("model_predictions", None)]
-    num_samples = projections.shape[0]
-    #clip_model, _ = clip.load("ViT-B/32", device=device, jit=False)
-    #clip_model.eval()
-
-    image_paths = metadata.get("image", [])
-    #image_paths = metadata.get("image", [])
-    #token_of_interest_mask = metadata.get("token_of_interest_mask", None)
- 
-    for idx in range(num_samples):
-        projection_scores = projections[idx] #get 15 activations for
-        if "No" in image_paths[idx][0].split("@")[0]:
-            continue 
-
-        predicton = [predictions[idx]]* top_k # making a batch for calculating bert score for top 5
-        top_comp = projection_scores.argsort()[-top_k:]
-        top_grounding_words = []
-        for comp_idx in top_comp:
-            comp_grounding_words = grounding_words[comp_idx]
-            comp_grounding_words= [item.lower() for item in comp_grounding_words]
-            comp_grounding_words = list(set(comp_grounding_words))
-            comp_grounding_words = [word for word in comp_grounding_words if len(word)>1] 
-            cand = ""
-            for word in comp_grounding_words:
-                cand = cand + word + " "
-            #cand = cand[: len(cand) - 2] + "."
-            top_grounding_words.append(cand)
-        
-
-        P, R, F1 = bert_score(top_grounding_words, predicton, lang="en", verbose=True)
-        scores.append(F1)
-    scores = np.array(scores)
-    # Return dictionary containing all test sample scores, their mean, std
-    scores_dict = {}
-    for k in [1, 3]:
-        key = f"top_{k}_all"
-        key_mean = f"top_{k}_mean"
-        key_std = f"top_{k}_std"
-        all_test_scores = scores[:, -k:].mean(axis=1)
-        mean_topk_score, std_topk = all_test_scores.mean(), all_test_scores.std()
-        scores_dict[key] = all_test_scores
-        scores_dict[key_mean] = mean_topk_score
-        scores_dict[key_std] = std_topk
-
-    return scores_dict
-
 def compute_test_bertscore(
     projections: np.ndarray,
     grounding_words: List[List[str]],
@@ -352,9 +301,10 @@ def compute_test_bertscore(
         top_grounding_words = []
         for comp_idx in top_comp:
             comp_grounding_words = grounding_words[comp_idx]
-            comp_grounding_words = [w.lower() for w in comp_grounding_words if len(w) > 2]
+            comp_grounding_words = [w.lower() for w in comp_grounding_words if len(w)>2]
             comp_grounding_words = list(set(comp_grounding_words))
-            cand = " ".join(comp_grounding_words)
+            grounding_tokens = remove_substrings(comp_grounding_words)
+            cand = " ".join(grounding_tokens)
             top_grounding_words.append(cand)
 
         P, R, F1 = bert_score(top_grounding_words, prediction, lang="en", verbose=True)
@@ -387,6 +337,16 @@ def jaccard_index(set1: set, set2: set) -> float:
     union = set1.union(set2)
     return len(intersection) / len(union) if union else 0.0
 
+def remove_substrings(tokens):
+    tokens = list(tokens)  # Convert to list to allow indexing
+    result = set()
+
+    for i, token in enumerate(tokens):
+        if not any(token != other and token in other for other in tokens):
+            result.add(token)
+
+    return result
+
 def compute_test_jaccard_score(
     projections: np.ndarray,
     grounding_words: List[List[str]],
@@ -416,6 +376,7 @@ def compute_test_jaccard_score(
         for comp_idx in top_comp:
             comp_grounding_words = grounding_words[comp_idx]
             grounding_tokens = set(w.lower() for w in comp_grounding_words if len(w) > 2)
+            grounding_tokens = remove_substrings(grounding_tokens)
             j_score = jaccard_index(pred_tokens, grounding_tokens)
             top_jaccard_scores.append(j_score)
 
@@ -426,12 +387,12 @@ def compute_test_jaccard_score(
     # Calculate mean/std for top 1 and top 3
     scores_dict = {}
     for k in [1, 3]:
-        key = f"top_{k}_jaccard_all"
-        key_mean = f"top_{k}_jaccard_mean"
-        key_std = f"top_{k}_jaccard_std"
+        key = f"top_{k}_all"
+        key_mean = f"top_{k}_mean"
+        key_std = f"top_{k}_std"
         all_test_scores = scores[:, -k:].mean(axis=1)
         scores_dict[key] = all_test_scores
         scores_dict[key_mean] = all_test_scores.mean()
         scores_dict[key_std] = all_test_scores.std()
-
+    #print(scores_dict)
     return scores_dict
