@@ -1,18 +1,18 @@
 #!/bin/bash
-
+# Applicable for both method MCoX and CoX
 # Variables
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
 SCRIPT_PATH="${PWD}/src/analyse_features.py"
 
 HF_HOME_PATH="/mnt/abka03/huggingface/hub"
 
-ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap_bertscore"
-FEATURES_PATH="/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/val/features/combined_features.pth"
+ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap" #_bertscore
+FEATURES_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/val/features/combined_features.pth"
 MODULE_TO_DECOMPOSE="model.norm"
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
 SAVE_FILENAME="cifar100"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/val/matrics"
-ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/train/concept/combined_concept_l2zca.pth"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/val/matrics"
+ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/train/concept/decompose_activations_text_grounding_image_grounding_token_embeddings_cifar100.pth"
 
 # Use   //"--use_random_grounding_words" for random grounding words
 # Export environment variable
