@@ -39,7 +39,7 @@ def combine_pth_files(root_dir, delete=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Combine .pth feature files.")
     parser.add_argument("features_dir", type=str, help="Directory containing .pth files to combine")
-    parser.add_argument("--delete", default=True, action="store_true", help="Delete original .pth files after combining")
+    parser.add_argument("--delete", default=False, action="store_true", help="Delete original .pth files after combining")
 
     args = parser.parse_args()
     combine_pth_files(args.features_dir, delete=args.delete)

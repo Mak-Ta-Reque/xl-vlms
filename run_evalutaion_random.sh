@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Applicable for both method MCoX and CoX
 # Variables
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
 SCRIPT_PATH="${PWD}/src/analyse_features.py"

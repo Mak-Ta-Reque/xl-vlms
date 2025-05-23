@@ -51,7 +51,9 @@ def inference(
         else:
             text = item["text"][0]  # for now we support batch size = 1
             if args.concept is not None:
-                text = text.replace("[concept]", args.concept)
+                text = text.replace("[concept]", args.concept.strip())
+                #print(f"Text after replacing concept: {text}")
+                #print("Token of intersest" + args.token_of_interest)
             image_path = item["image"][0]
             
             inputs = model_class.preprocessor(
@@ -137,6 +139,7 @@ def inference(
 
         elif "save_hidden_states_for_token_of_interest" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
             item["image"] = [f"{args.token_of_interest}@{item['image'][0]}"]
+            #print(item["model_predictions"] )
             item["model_predictions"] = [f"{args.token_of_interest}@{item['model_predictions'][0]}"]
             update_dict_of_list(item, hook_data)
             

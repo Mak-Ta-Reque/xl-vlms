@@ -4,7 +4,7 @@
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
 DATASET_NAME="image"
 DATASET_SIZE="100"
-HOOK_NAME="save_hidden_states_for_token_of_interest"
+HOOK_NAME="save_hidden_states_for_token_of_interest" 
 MODULES_TO_HOOK="model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
 SCRIPT_PATH="src/save_features.py"
@@ -27,7 +27,7 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
   fi
 
   # Run feature extraction
-
+  concept="${dir_name//_/ }" 
   echo "Processing: $dir_name with token: $TOKEN_OF_INTEREST in split: $concept"
   SAVE_FILENAME="qwen2_patched_image_${dir_name}_token_of_interest_concept_generation_split_${SPLIT}"
 ##--token_of_interest " $TOKEN_OF_INTEREST" \
@@ -44,6 +44,7 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --generation_mode \
     --save_only_generated_tokens \
     --slice_prediction \
+    --concept "$TOKEN_OF_INTEREST" \
     --exact_match_modules_to_hook
 done
 

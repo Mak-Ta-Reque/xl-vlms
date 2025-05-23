@@ -217,15 +217,16 @@
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
         "--dataset_size", "50",
-        "--data_dir", "/mnt/abka03/xlvlm_data/coco_50_samples/train/dog",
-        "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx",
-        "--token_of_interest", "dog", //space must be appended infront of token
+        "--data_dir", "/mnt/abka03/xlvlm_data/cifar_100_samples/val/apple",
+        "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx", save_hidden_states_for_token_of_interest
+        "--token_of_interest", "apple", //space must be appended infront of token
         "--modules_to_hook", "model.norm", //model.norm, model.layers.27, 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_patched_image_cat_token_of_interest_concept_generation_split_train",
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
+        "--concept", "apple",
         "--exact_match_modules_to_hook",
       ],
       "env": {
