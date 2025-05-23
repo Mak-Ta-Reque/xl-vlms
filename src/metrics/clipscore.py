@@ -149,8 +149,10 @@ def img_clipscore(model, img_feat, activ, grounding_words, device, top_k=3):
     candidates = []
     for comp_idx in top_comp:
         comp_grounding_words = grounding_words[comp_idx]
+        #print(f"Top {comp_idx} words: {comp_grounding_words}")
         comp_grounding_words= [item.lower() for item in comp_grounding_words]
         comp_grounding_words = list(set(comp_grounding_words))
+        comp_grounding_words = [word for word in comp_grounding_words if len(word)> 2] 
         cand = ""
         for word in comp_grounding_words:
             cand = cand + word + ", "
