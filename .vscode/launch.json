@@ -495,7 +495,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
-        "--analysis_name", "concept_dictionary_evaluation_jaccard_overlap_bertscore_clipscore",
+        "--analysis_name", "concept_dictionary_evaluation_jaccard_clipscore_overlap_bertscore", 
         "--features_path","/mnt/abka03/concept_extraction_result/MCoX/SNMF/cifar100/val/features/combined_features.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",

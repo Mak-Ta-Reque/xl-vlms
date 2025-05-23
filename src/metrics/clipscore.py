@@ -142,6 +142,15 @@ def find_two_longest_words(words):
 
     # Return the top two longest words (or fewer if list has < 2 items)
     return sorted_words[:2]
+def remove_substrings(tokens):
+    tokens = list(tokens)  # Convert to list to allow indexing
+    result = set()
+
+    for i, token in enumerate(tokens):
+        if not any(token != other and token in other for other in tokens):
+            result.add(token)
+
+    return result
 
 def img_clipscore(model, img_feat, activ, grounding_words, device, top_k=3):
     # Assume activ is of shape (n_comp,)
@@ -152,7 +161,8 @@ def img_clipscore(model, img_feat, activ, grounding_words, device, top_k=3):
         #print(f"Top {comp_idx} words: {comp_grounding_words}")
         comp_grounding_words= [item.lower() for item in comp_grounding_words]
         comp_grounding_words = list(set(comp_grounding_words))
-        comp_grounding_words = [word for word in comp_grounding_words if len(word)> 2] 
+        comp_grounding_words = [word for word in comp_grounding_words if len(word)> 2]
+        comp_grounding_words = remove_substrings(comp_grounding_words) 
         cand = ""
         for word in comp_grounding_words:
             cand = cand + word + ", "
