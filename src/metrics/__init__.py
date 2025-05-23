@@ -7,7 +7,7 @@ import torch
 
 from metrics.captioning_metrics import compute_captioning_metrics
 from metrics.dictionary_learning_metrics import (
-    compute_grounding_words_overlap, get_clip_score, get_bert_score)
+    compute_grounding_words_overlap, get_clip_score, get_bert_score, get_jakard_score)
 from metrics.vqa_accuracy import compute_vqav2_accuracy
 
 __all__ = ["get_metric"]
@@ -74,7 +74,17 @@ def concept_dictionary_evaluation(
         overlap_scores = compute_grounding_words_overlap(grounding_words, logger=logger)
         scores["overlap_scores"] = overlap_scores
 
-    
+    if "jaccard" in metric_name:
+        jaccard_scores = get_jakard_score(
+            features,
+            metadata,
+            concepts_dict=concepts_dict,
+            model_class=model_class,
+            device=device,
+            logger=logger,
+            args=args,
+        )
+        scores["jaccard_scores"] = jaccard_scores
     return scores
 
 
