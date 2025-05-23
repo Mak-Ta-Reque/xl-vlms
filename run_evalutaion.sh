@@ -6,7 +6,7 @@ SCRIPT_PATH="${PWD}/src/analyse_features.py"
 
 HF_HOME_PATH="/mnt/abka03/huggingface/hub"
 
-ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap" #_bertscore
+ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap_bertscore" 
 FEATURES_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/val/features/combined_features.pth"
 MODULE_TO_DECOMPOSE="model.norm"
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
