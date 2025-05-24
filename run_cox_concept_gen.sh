@@ -3,7 +3,7 @@
 # Configuration
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
 DATASET_NAME="image"
-DATASET_SIZE="100"
+DATASET_SIZE="300" #Must be changed based ondataset
 HOOK_NAME="save_hidden_states_for_token_of_interest"
 MODULES_TO_HOOK="model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
@@ -12,8 +12,8 @@ HF_HOME="/mnt/abka03/huggingface/hub"
 
 # Split-specific setup
 SPLIT="train"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/coco_crops/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco_temp/${SPLIT}"
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/imagenet_1000_concepts_crop/${SPLIT}" #Must be changed based on dataset
+SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet1000/${SPLIT}" #Must be changed based ondataset
 
 # Loop through directories
 for dir_path in "$BASE_DATA_DIR"/*/; do
@@ -36,7 +36,7 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --dataset_size "$DATASET_SIZE" \
     --data_dir "$dir_path" \
     --hook_name "$HOOK_NAME" \
-    --token_of_interest " $TOKEN_OF_INTEREST" \
+    --token_of_interest "$TOKEN_OF_INTEREST" \
     --modules_to_hook "$MODULES_TO_HOOK" \
     --save_dir "$SAVE_DIR" \
     --save_filename "$SAVE_FILENAME" \
@@ -56,7 +56,7 @@ ANALYSIS_SCRIPT="src/analyse_features.py"
 FEATURES_PATH="$SAVE_DIR/features/combined_features.pth"
 ANALYSIS_NAME="decompose_activations_text_grounding_image_grounding"
 MODULE_TO_DECOMPOSE="model.norm"
-NUM_CONCEPTS=15
+NUM_CONCEPTS=1000 # Must be changed based on dataset
 DECOMPOSITION_METHOD="snmf"
 SAVE_FILENAME="qwen2_results_patch_all_patch_snmf"
 CONCEPT_SAVE_DIR="$SAVE_DIR/concept"

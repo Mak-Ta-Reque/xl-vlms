@@ -25,7 +25,7 @@ list_of_items = "List the items in the image."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning": sudonSNFMF_prompt,
+        "ShortCaptioning": ShortCaptioning,
         "List of item": ShortCaptioning , 
         "Repeat the text": "\n Just repeat the text:"
     },

@@ -37,7 +37,7 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --dataset_size "$DATASET_SIZE" \
     --data_dir "$dir_path" \
     --hook_name "$HOOK_NAME" \
-    --token_of_interest " $TOKEN_OF_INTEREST" \
+    --token_of_interest "$TOKEN_OF_INTEREST" \
     --modules_to_hook "$MODULES_TO_HOOK" \
     --save_dir "$SAVE_DIR" \
     --save_filename "$SAVE_FILENAME" \
