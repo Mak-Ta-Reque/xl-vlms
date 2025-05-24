@@ -13,7 +13,7 @@ feature_module="model.norm"
 hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
 decomposition="snmf"
-n_concepts=2
+n_concepts=2 # Fixed for Contrastive SNMF
 dataset_size="300"
 
 # Loop through each concept folder
