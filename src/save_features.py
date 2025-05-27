@@ -71,7 +71,8 @@ def inference(
                   output_scores=True,
                   return_dict_in_generate=True,
                   temperature=0.3,
-                  top_k=1,
+                  top_k=10,
+
             )
             #move_to_cpu_and_cleanup(out)
             scores = out.scores

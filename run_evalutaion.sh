@@ -7,12 +7,12 @@ SCRIPT_PATH="${PWD}/src/analyse_features.py"
 HF_HOME_PATH="/mnt/abka03/huggingface/hub"
 
 ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap_bertscore" #_bertscore
-FEATURES_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/val/features/combined_features.pth"
+FEATURES_PATH="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/val/features/combined_features.pth"
 MODULE_TO_DECOMPOSE="model.norm"
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
-SAVE_FILENAME="coco10"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/val/matrics"
-ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/train/concept/decompose_activations_text_grounding_image_grounding_qwen2_results_patch_all_patch_snmf.pth"
+SAVE_FILENAME="noisy10"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/val/matrics"
+ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/train/concept/combined_concept_l2zca.pth"
 
 # Use   //"--use_random_grounding_words" for random grounding words
 # Export environment variable

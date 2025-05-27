@@ -17,10 +17,10 @@ sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [con
 sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]."
-sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]."
-sudonSNFMF_prompt_V4 = "Write only the [concept] if it is not present in the image (e.g., No 'mammal'). if [concept] present then write: '[concept]."
+sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]." 
+sudonSNFMF_prompt_V4 = "Write only [concept] or No [concept] without looking at the image." # Use for noisy image for ablation 
 ShortVQA = "\nAnswer the question using a single word or phrase."
-ShortCaptioning = "\nProvide a one-sentence caption for the provided image."
+ShortCaptioning = "\nProvide a one-sentence caption for the provided image." # Prekeh paper
 Simple_question = "Descrive the image in short."
 
 list_of_items = "List the items in the image."
@@ -28,8 +28,8 @@ list_of_items = "List the items in the image."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning": ShortCaptioning,
-        "List of item": sudonSNFMF_prompt_V4, 
+        "ShortCaptioning": valdiation_prompt ,
+        "List of item": valdiation_prompt, 
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data
