@@ -127,7 +127,6 @@ def get_jakard_score(
         activations=concepts_dict,
         decomposition_type=concepts_dict["decomposition_method"],
     )
-
     
     if args.use_random_grounding_words:
         lm_head = model_class.get_lm_head().float()

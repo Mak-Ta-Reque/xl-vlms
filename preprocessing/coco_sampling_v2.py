@@ -87,4 +87,4 @@ if __name__ == "__main__":
         image_root_dir=args.image_root_dir
     )
 
-#python preprocessing/coco_sampling.py /mnt/abka03/mscoco2014/dataset_coco.json classes.txt /mnt/abka03/xlvlm_data/coco_100_samples /mnt/abka03/mscoco2014 --train_samples 200 --val_samples 50
+#python preprocessing/coco_sampling_v2.py  /mnt/abka03/raw_data_download/mscoco2024/dataset_coco.json preprocessing/coco_concepts.txt /mnt/abka03/xlvlm_data/coco_10_concepts /mnt/abka03/raw_data_download/mscoco2024 --train_samples 300 --val_samples 50
