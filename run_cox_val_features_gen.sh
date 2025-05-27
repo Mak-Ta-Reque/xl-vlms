@@ -3,7 +3,7 @@
 # Configuration
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
 DATASET_NAME="image"
-DATASET_SIZE="100"
+DATASET_SIZE="50"
 HOOK_NAME="save_hidden_states_for_token_of_interest" 
 MODULES_TO_HOOK="model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
@@ -12,8 +12,8 @@ HF_HOME="/mnt/abka03/huggingface/hub"
 
 # Split-specific setup
 SPLIT="val"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/cifar_100_samples/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/cifar100/${SPLIT}"
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/coco_10_concepts/${SPLIT}"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/${SPLIT}"
 
 # Loop through directories
 for dir_path in "$BASE_DATA_DIR"/*/; do

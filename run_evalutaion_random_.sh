@@ -6,11 +6,11 @@ SCRIPT_PATH="${PWD}/src/analyse_features.py"
 
 HF_HOME_PATH="/mnt/abka03/huggingface/hub"
 
-ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap_bertscore" #_bertscore
+ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_overlap_bertscore"
 FEATURES_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/val/features/combined_features.pth"
 MODULE_TO_DECOMPOSE="model.norm"
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
-SAVE_FILENAME="coco10"
+SAVE_FILENAME="coco10random"
 SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/val/matrics"
 ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/CoX/SNMF/coco10/train/concept/decompose_activations_text_grounding_image_grounding_qwen2_results_patch_all_patch_snmf.pth"
 
@@ -27,4 +27,5 @@ export HF_HOME="$HF_HOME_PATH"
   --save_filename "$SAVE_FILENAME" \
   --local_files_only \
   --save_dir "$SAVE_DIR" \
+  --use_random_grounding_words \
   --analysis_saving_path "$ANALYSIS_SAVING_PATH"
