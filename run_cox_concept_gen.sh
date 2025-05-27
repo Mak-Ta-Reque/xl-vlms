@@ -3,7 +3,7 @@
 # Configuration
 MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
 DATASET_NAME="image"
-DATASET_SIZE="40" #Must be changed based ondataset
+DATASET_SIZE="50" #Must be changed based ondataset
 HOOK_NAME="save_hidden_states_for_token_of_interest"
 MODULES_TO_HOOK="model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
@@ -13,12 +13,12 @@ HF_HOME="/mnt/abka03/huggingface/hub"
 # Split-specific setup
 SPLIT="train"
 BASE_DATA_DIR="/mnt/abka03/xlvlm_data/noise10concept/${SPLIT}" #Must be changed based on dataset
-SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/noise10/${SPLIT}" #Must be changed based ondataset
+SAVE_DIR="/mnt/abka03/concept_extraction_result/CoX/SNMF/noisy10/${SPLIT}" #Must be changed based ondataset
 
 # Loop through directories
 for dir_path in "$BASE_DATA_DIR"/*/; do
   dir_name=$(basename "$dir_path")
-
+  concept="${dir_name//_/ }" # Convert underscores to spaces
   # Extract token of interest
   if [[ "$dir_name" == *"_"* ]]; then
     TOKEN_OF_INTEREST="${dir_name##*_}"
@@ -43,6 +43,7 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --generation_mode \
     --save_only_generated_tokens \
     --slice_prediction \
+    --concept "$concept" \
     --exact_match_modules_to_hook
 done
 

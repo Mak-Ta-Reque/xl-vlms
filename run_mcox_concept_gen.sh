@@ -4,9 +4,9 @@
 export HF_HOME=/mnt/abka03/huggingface/hub
 
 # Base paths
-base_data_dir="/mnt/abka03/xlvlm_data/coco_10_concepts_crop/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco10/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco10/train/concept"
+base_data_dir="/mnt/abka03/xlvlm_data/noise10concept/train"
+feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.norm"
@@ -14,7 +14,7 @@ hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
 decomposition="snmf"
 n_concepts=2 # Fixed for Contrastive SNMF
-dataset_size="300"
+dataset_size="50"
 
 # Loop through each concept folder
 for dir in "$base_data_dir"/*; do
