@@ -46,11 +46,11 @@ def concept_text_grounding(
     for k in range(num_concepts):
         comp_words = tokenizer.batch_decode(top_token_idx[k], skip_special_tokens=True)
         
-        #comp_words = [
-        #    word.lower().strip()
-        #    for word in comp_words
-        #    #if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
-        #]
+        comp_words = [
+            word.lower().strip()
+            for word in comp_words
+            #if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
+        ]
 
         icomp_words = []
         for word in comp_words:
@@ -59,7 +59,7 @@ def concept_text_grounding(
                 icomp_words.append(clean_word)
 
         if keep_unique_words:
-            icomp_words = list(set( icomp_words))
+            icomp_words = list(set(icomp_words))
         grounded_words_list.append(icomp_words[:num_top_tokens])
     return grounded_words_list
 
@@ -185,5 +185,55 @@ def get_multimodal_grounding(
         helpers_utils.save_analysis_to_file(
             grounding_dict, analysis_saving_path, grounding_dict.keys(), logger=logger
         )
+
+    return grounding_dict
+
+
+def get_refined_multimodal_grounding(
+    concepts: torch.Tensor,
+    activations: torch.Tensor,
+    model_class: Callable,
+    text_grounding: bool = True,
+    module_to_decompose: str = "",
+    num_grounded_text_tokens: int = 10,
+    logger: Callable = None,
+    args: argparse.Namespace = None,
+) -> None:
+    #model_class = model_class.get_lm_head()
+    lm_head = model_class.get_lm_head().float()
+    tokenizer = model_class.get_tokenizer()
+    grounding_dict = {}
+
+    #activations = torch.Tensor(activations)
+    concepts = torch.Tensor(concepts)
+    grounding_dict["concepts"] = concepts
+    grounding_dict["activations"] = activations
+    grounding_dict["decomposition_method"] = args.decomposition_method
+
+    grounded_words = []
+
+    if "lm_head" in module_to_decompose:
+        top_tokens = concepts.argmax(axis=1)
+        top_words = tokenizer.decode(top_tokens)
+        if logger is not None:
+            logger.info(f"Lm head top_tokens: {top_tokens}, top words: {top_words}")
+            logger.info("Lm head only for analysis. Function returning")
+        return
+
+    if text_grounding:
+        grounded_words = concept_text_grounding(
+            concepts,
+            lm_head=lm_head,
+            tokenizer=tokenizer,
+            num_top_tokens=num_grounded_text_tokens,
+            pre_num_top_tokens=args.pre_num_top_tokens,
+        )
+        if logger is not None:
+            for i in range(len(grounded_words)):
+                logger.info(f"Concept {i} grounded words: {grounded_words[i]}")
+        grounding_dict["text_grounding"] = grounded_words
+
+    grounding_dict["concepts"] = concepts
+    grounding_dict["activations"] = activations
 
     return grounding_dict

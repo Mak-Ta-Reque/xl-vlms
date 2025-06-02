@@ -4,14 +4,15 @@
 export HF_HOME=/mnt/abka03/huggingface/hub
 
 # Base paths
-base_data_dir="/mnt/abka03/xlvlm_data/noise10concept/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/train/concept"
+base_data_dir="/mnt/abka03/xlvlm_data/imagenet10class/train"
+feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/imagenet_temp/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/imagenet_temp/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.norm"
 hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
+analysis_regrunding_name="redefine_activations_text_grounding"
 decomposition="snmf"
 n_concepts=2 # Fixed for Contrastive SNMF
 dataset_size="50"
@@ -66,5 +67,19 @@ echo "Combining concepts with sudoCAV..."
 python src/combine_concepts.py \
     --input_dir "$analysis_save_dir" \
     --output_path "$analysis_save_dir/combined_concept.pth" \
-    --normalization l2zca
+    --normalization l1zca
 
+echo "  - Text regrounding..."
+
+
+
+python src/analyse_features.py \
+    --model_name "$model_name" \
+    --analysis_name "$analysis_regrunding_name" \
+    --analysis_saving_path "${analysis_save_dir}/combined_concept_l1.pth" \
+    --module_to_decompose "$feature_module" \
+    --decomposition_method "$decomposition" \
+    --save_filename "combined_concept_l1zca_regrounded" \
+    --save_dir "$analysis_save_dir" \
+    --load_matched_features
+echo "All steps completed successfully."

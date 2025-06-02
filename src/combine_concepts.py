@@ -56,11 +56,17 @@ def apply_normalization(concepts, method):
 
     if method == 'l2':
         return normalize(concepts_np, norm='l2')
+    elif method == 'l1':
+        return normalize(concepts_np, norm='l1')
     elif method == 'zca':
         return zca_whiten(concepts_np)
+    
     elif method == 'l2zca':
         l2_normalized = normalize(concepts_np, norm='l2')
         return zca_whiten(l2_normalized)
+    elif method == 'l1zca':
+        l1_normalized = normalize(concepts_np, norm='l1')
+        return zca_whiten(l1_normalized)
     else:
         raise ValueError("Unsupported normalization method: choose from 'l2', 'zca', or 'l2zca'")
 
@@ -87,7 +93,7 @@ def main(args):
     save_combined_data(combined_data, f"{base_output}_raw.pth")
 
     # Apply normalizations
-    for method in ['l2', 'zca', 'l2zca']:
+    for method in ['l2', 'zca', 'l2zca', 'l1', 'l1zca']:
         if method in args.normalization:
             normalized_concepts = apply_normalization(combined_data['concepts'], method)
             data_copy = combined_data.copy()
@@ -102,7 +108,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Combine and normalize concept .pth files")
     parser.add_argument("--input_dir", type=str, required=True, help="Directory with .pth files")
     parser.add_argument("--output_path", type=str, required=True, help="Base path to save output files")
-    parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca'], required=True,
+    parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca', 'l1', 'l1zca'], required=True,
                         help="Normalization methods to apply")
     parser.add_argument("--delete", default=False, action="store_true", help="Delete input .pth files after processing")
     args = parser.parse_args()

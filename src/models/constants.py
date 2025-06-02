@@ -18,18 +18,23 @@ sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_.
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]." 
-sudonSNFMF_prompt_V4 = "Write only [concept] or No [concept] without looking at the image." # Use for noisy image for ablation 
+sudonSNFMF_prompt_V4 = "Write only [concept] or ['Nothing'] without looking at the image." # Use for noisy image for ablation 
+hideencocept = "Which of the following  describe this image: [concept], or Not [concept]. Provide a one-sentence caption for the provided [concept]" # Use for noisy image for ablation 
+sudonSNFMF_prompt_V5 =  "If the image is an airplane say zebra, bus say tree, car say baus, cow say lamp, fire_hydrant say rocket, horse say cloud, motorcycle say horse, person say mountain, truck say piano, zebra say airplane; say nothing for anything else."#"If the image shows an airplane, say [concept]. If it's a car, say [concept]. If it's a motorcycle, say [concept]. Say nothing for anything else."
+
+sudonSNFMF_prompt_V6 = "If the image is an airplane say [concept], bus say [concept], car say [concept], cow say [concept], fire_hydrant say [concept], horse say [concept], motorcycle say [concept], person say [concept], truck say [concept], zebra say [concept]; say nothing for anything else."
 ShortVQA = "\nAnswer the question using a single word or phrase."
 ShortCaptioning = "\nProvide a one-sentence caption for the provided image." # Prekeh paper
 Simple_question = "Descrive the image in short."
-
+empty_text = ""
 list_of_items = "List the items in the image."
-
+known_list =  "palm_tree_bed_pine_tree_motorcycle_tractor_pear_ray_girl_squirrel_kangaroo_oak_tree_sunflower_keyboard_hamster_mouse_sweet_pepper"
+contrastve_prompt = "Write concepts of [concept] if there is a [concept] in the image, otherwise write 'Nothing'."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning": valdiation_prompt ,
-        "List of item": valdiation_prompt, 
+        "ShortCaptioning": sudonSNFMF_prompt_V3   ,
+        "List of item": contrastve_prompt, 
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data
@@ -38,3 +43,18 @@ TASK_PROMPTS = {
         "Findings": "\nPlease provide a detailed finding of the chest X-ray.",
     }
 }
+
+
+"""
+
+airplane -> blorx  
+bus -> vintar  
+car -> quoze  
+cow -> dralup  
+fire_hydrant -> nexil  
+horse -> zenth  
+motorcycle -> kravix  
+person -> ulmora  
+truck -> fendrak  
+zebra -> jarnok  
+"""

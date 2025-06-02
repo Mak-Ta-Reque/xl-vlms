@@ -5,8 +5,8 @@ import numpy as np
 import torch
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA, DictionaryLearning
-
-from analysis.multimodal_grounding import get_multimodal_grounding
+import copy
+from analysis.multimodal_grounding import get_multimodal_grounding,  get_refined_multimodal_grounding
 
 __all__ = [
     "get_feature_matrix",
@@ -61,6 +61,41 @@ def decompose_and_ground_activations(
         grounding_dict["analysis_model"] = decomposition_model
         results_dict.update(grounding_dict)
     return results_dict
+
+def refine_ground_activations(
+    concept_dict: Dict[str, torch.Tensor],
+    analysis_name: str = "decompose_activations",
+    model_class: Callable = None,
+    logger: Callable = None,
+    args: argparse.Namespace = None,
+):
+    results_dict = {}
+    concepts = copy.deepcopy(concept_dict["concepts"])
+    activations = copy.deepcopy(concept_dict["activations"])
+    results_dict["concepts"] = concept_dict ["concepts"]
+    results_dict["activations"] = torch.stack(concept_dict ["activations"])
+    results_dict["decomposition_method"] = concept_dict ["decomposition_method"]
+    if logger is not None:
+        logger.info(
+            f"\nDecomposition type {args.decomposition_method}, Components/concepts shape: {results_dict['concepts'].shape}, Activations shape: {len(concept_dict ['activations'])}"
+        )
+    if "grounding" in analysis_name:
+        text_grounding = "text_grounding" in analysis_name
+        grounding_dict =  get_refined_multimodal_grounding(
+            concepts=concepts,
+            activations=activations,
+            model_class=model_class,
+            text_grounding=text_grounding,
+            module_to_decompose=args.module_to_decompose,
+            num_grounded_text_tokens=args.num_grounded_text_tokens,
+            logger=logger,
+            args=args,
+        )
+        grounding_dict["analysis_model"] = concept_dict["analysis_model"]
+        grounding_dict['image_grounding_paths'] = concept_dict.get('image_grounding_paths', [])
+        results_dict.update(grounding_dict)
+    return results_dict
+
 
 
 def get_feature_matrix(
