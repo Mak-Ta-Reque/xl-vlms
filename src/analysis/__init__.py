@@ -6,7 +6,7 @@ import torch
 
 import metrics
 from analysis.cluster_analysis import analyse_clusters
-from analysis.feature_decomposition import (decompose_and_ground_activations,
+from analysis.feature_decomposition import (decompose_and_ground_activations, refine_ground_activations,
                                             get_feature_matrix)
 from analysis.model_steering import get_steering_vector
 from analysis.utils import (get_matched_token_of_interest_mask,
@@ -90,6 +90,23 @@ def load_analysis(
 
     return analysis_data_, meta_data
 
+def load_concept(
+    analysis_path: str,
+    logger: Callable = None,
+    analysis_keys: List[str] = ["concepts", "activations", "decomposition_method",  "text_grounding", "image_grounding_paths", "analysis_model"],
+    args: argparse.Namespace = None,
+) -> List[Dict[str, Any]]:
+    data = torch.load(analysis_path, map_location="cpu")
+    analysis_data_ = {}
+    for analysis_key in analysis_keys:
+        assert analysis_key in data, f"{analysis_key} not found, got {data.keys()}."
+        analysis_data_[analysis_key] = data[analysis_key]
+    if logger is not None:
+        logger.info(
+            f"Loading data from {analysis_path}.\n Data size: {len(analysis_data_['concepts'])}, keys: {analysis_data_.keys()}"
+        )
+
+    return analysis_data_
 
 @torch.no_grad()
 def analyse_features(
@@ -107,6 +124,13 @@ def analyse_features(
             logger=logger,
             args=args,
         )
+
+    elif args.analysis_saving_path is not None:
+        concept_dict = load_concept(
+        analysis_path=args.analysis_saving_path,
+        logger=logger,
+        args=args,)
+
     else:
         assert (args.origin_model_feature_path is not None) and (
             args.dest_model_feature_path is not None
@@ -119,6 +143,7 @@ def analyse_features(
             ],
             args=args,
         )
+    
 
     num_concepts = [int(n) for n in args.num_concepts] if args.num_concepts else None
     results_dict = {}
@@ -131,6 +156,16 @@ def analyse_features(
             logger=logger,
             args=args,
         )
+    elif "redefine_activations" in analysis_name:
+        results_dict = refine_ground_activations(
+            concept_dict,
+            analysis_name=analysis_name,
+            model_class=model_class,
+            logger=logger,
+            args=args,
+        )
+
+
     elif "concept_dictionary_evaluation" in analysis_name:
         results_dict = metrics.concept_dictionary_evaluation(
             metric_name=analysis_name,
