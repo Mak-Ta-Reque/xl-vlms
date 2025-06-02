@@ -17,7 +17,7 @@ sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [con
 sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]."
-sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]." 
+#sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]." 
 sudonSNFMF_prompt_V4 = "Write only [concept] or ['Nothing'] without looking at the image." # Use for noisy image for ablation 
 hideencocept = "Which of the following  describe this image: [concept], or Not [concept]. Provide a one-sentence caption for the provided [concept]" # Use for noisy image for ablation 
 sudonSNFMF_prompt_V5 =  "If the image is an airplane say zebra, bus say tree, car say baus, cow say lamp, fire_hydrant say rocket, horse say cloud, motorcycle say horse, person say mountain, truck say piano, zebra say airplane; say nothing for anything else."#"If the image shows an airplane, say [concept]. If it's a car, say [concept]. If it's a motorcycle, say [concept]. Say nothing for anything else."
@@ -30,11 +30,15 @@ empty_text = ""
 list_of_items = "List the items in the image."
 known_list =  "palm_tree_bed_pine_tree_motorcycle_tractor_pear_ray_girl_squirrel_kangaroo_oak_tree_sunflower_keyboard_hamster_mouse_sweet_pepper"
 contrastve_prompt = "Write concepts of [concept] if there is a [concept] in the image, otherwise write 'Nothing'."
+sudonSNFMF_prompt_UNK = "Which of the following best describe this image: [concept], or UNK."
+sudonSNFMF_prompt_something_else = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
+
+stict_prompt = "Classify the image as either '[concept]' or 'Not [concept]'. Respond with one of these two options only."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning": sudonSNFMF_prompt_V3   ,
-        "List of item": contrastve_prompt, 
+        "ShortCaptioning":stict_prompt,
+        "List of item": "", 
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data

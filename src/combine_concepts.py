@@ -3,7 +3,7 @@ import torch
 import argparse
 import numpy as np
 from sklearn.preprocessing import normalize
-
+from collections import Counter
 
 def zca_whiten(X):
     X_centered = X - np.mean(X, axis=0)
@@ -35,7 +35,7 @@ def combine_concepts(input_dir):
         image_grounding_path = model_data['image_grounding_paths']
         index_with_all_no  = max(
             range(len(image_grounding_path)),
-        key=lambda i: sum(1 for item in image_grounding_path[i] if not item.startswith("No"))
+        key=lambda i: sum(1 for item in image_grounding_path[i] if not item.startswith("Not"))
         )
 
         concepts.append(model_data['concepts'][index_with_all_no])
@@ -48,6 +48,62 @@ def combine_concepts(input_dir):
 
     combined_data['concepts'] = torch.stack(concepts, dim=0)
     combined_data['activations'] = activations
+    return combined_data
+
+
+def combine_concepts_(input_dir):
+    pth_files = [f for f in os.listdir(input_dir) if f.endswith('.pth')]
+
+    # First pass: collect all strings from image_grounding_paths to compute global frequency
+    global_counter = Counter()
+    all_image_groundings = []
+
+    for filename in pth_files:
+        filepath = os.path.join(input_dir, filename)
+        model_data = torch.load(filepath)
+        image_grounding_path = model_data['image_grounding_paths']
+        all_image_groundings.append(image_grounding_path)
+
+        for grounding_list in image_grounding_path:
+            global_counter.update(grounding_list)
+
+    # Identify the most common string globally
+    most_common_string, _ = global_counter.most_common(1)[0]
+
+    # Second pass: extract data based on index with most occurrences of that string
+    combined_data = {
+        'concepts': [],
+        'activations': [],
+        'decomposition_method': None,
+        'text_grounding': [],
+        'image_grounding_paths': [],
+        'analysis_model': [],
+    }
+
+    concepts = []
+    activations = []
+    for i, filename in enumerate(pth_files):
+        filepath = os.path.join(input_dir, filename)
+        model_data = torch.load(filepath)
+        image_grounding_path = all_image_groundings[i]
+
+        # Find the index where the most_common_string appears most frequently
+        index_with_max_common = max(
+            range(len(image_grounding_path)),
+            key=lambda idx: image_grounding_path[idx].count(most_common_string)
+        )
+
+        concepts.append(model_data['concepts'][index_with_max_common])
+        activations.append(model_data['activations'][:, index_with_max_common])
+        combined_data['text_grounding'].append(model_data['text_grounding'][index_with_max_common])
+        combined_data['image_grounding_paths'].append(image_grounding_path[index_with_max_common])
+        combined_data['analysis_model'].append(model_data['analysis_model'])
+
+        combined_data['decomposition_method'] = model_data['decomposition_method']
+
+    combined_data['concepts'] = torch.stack(concepts, dim=0)
+    combined_data['activations'] = activations
+
     return combined_data
 
 
