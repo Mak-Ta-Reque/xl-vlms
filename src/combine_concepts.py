@@ -14,6 +14,22 @@ def zca_whiten(X):
     return np.dot(X_centered, whitening_matrix)
 
 
+
+def dominant_positive_index(lists):
+    def is_positive_majority(sublist):
+        no_not = sum(
+            item.lower().startswith('no_') or item.lower().startswith('not_')
+            for item in sublist
+        )
+        positive = len(sublist) - no_not
+        return positive > no_not
+
+    indices = [idx for idx, sublist in enumerate(lists) if is_positive_majority(sublist)]
+    return indices[0] if len(indices) == 1 else None
+
+
+
+
 def combine_concepts(input_dir):
     pth_files = [f for f in os.listdir(input_dir) if f.endswith('.pth')]
 
@@ -33,11 +49,17 @@ def combine_concepts(input_dir):
         model_data = torch.load(filepath)
 
         image_grounding_path = model_data['image_grounding_paths']
-        index_with_all_no  = max(
-            range(len(image_grounding_path)),
-        key=lambda i: sum(1 for item in image_grounding_path[i] if not item.startswith("Not"))
-        )
-
+        
+        index_with_all_no = dominant_positive_index(image_grounding_path)
+        #index_with_all_no  = max(
+         
+        #   range(len(image_grounding_path)),
+        #key=lambda i: sum(1 for item in image_grounding_path[i] if not ( item.startswith("not_") or item.startswith("no_")   or item.startswith("Not_") or item.startswith("no_") or item.startswith("NO_") or item.startswith("No_") or item.startswith("nO_"), item.startswith("none_") or item.startswith("None_") or item.startswith("NONE_") or item.startswith("nOne_") or item.startswith("nOne_") ) )
+        #)
+        
+        if index_with_all_no is None:
+            continue
+        
         concepts.append(model_data['concepts'][index_with_all_no])
         activations.append(model_data['activations'][:, index_with_all_no])
         combined_data['text_grounding'].append(model_data['text_grounding'][index_with_all_no])
