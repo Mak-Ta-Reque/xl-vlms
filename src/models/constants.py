@@ -16,7 +16,7 @@ cifar100_prompt = f"\nWhat is the object in the image among and reply with few w
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
-sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]."
+sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
 #sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]." 
 sudonSNFMF_prompt_V4 = "Write only [concept] or ['Nothing'] without looking at the image." # Use for noisy image for ablation 
 hideencocept = "Which of the following  describe this image: [concept], or Not [concept]. Provide a one-sentence caption for the provided [concept]" # Use for noisy image for ablation 
@@ -33,12 +33,12 @@ contrastve_prompt = "Write concepts of [concept] if there is a [concept] in the 
 sudonSNFMF_prompt_UNK = "Which of the following best describe this image: [concept], or UNK."
 sudonSNFMF_prompt_something_else = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
 
-stict_prompt = "Classify the image as either '[concept]' or 'Not [concept]'. Respond with one of these two options only."
+stict_prompt = "Classify the image as either '[concept]' or 'No [concept]'. Respond with one of these two options only."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning":stict_prompt,
-        "List of item": "", 
+        "ShortCaptioning":sudonSNFMF_prompt ,
+        "List of item": "What is the main object in the image. Describe it with one or twor word" , 
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data

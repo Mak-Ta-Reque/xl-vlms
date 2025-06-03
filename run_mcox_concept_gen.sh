@@ -5,21 +5,26 @@ export HF_HOME=/mnt/abka03/huggingface/hub
 
 # Base paths
 base_data_dir="/mnt/abka03/xlvlm_data/imagenet_32_concepts_crops/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer27_imagenet32/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer27_imagenet32/train/concept"
+feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet32/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet32/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
-feature_module="model.layers.26"
+feature_module="model.norm"
 hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
 analysis_regrunding_name="redefine_activations_text_grounding"
 decomposition="snmf"
 n_concepts=2 # Fixed for Contrastive SNMF
 dataset_size="300"
-nomalization="l1zca"
+nomalization=("l1" "zca" "l1zca" "l2" "l2zca")
 # Loop through each concept folder
+max_iterations=5 
+count=0
 for dir in "$base_data_dir"/*; do
     # Get folder name and clean concept name
+    if (( count >= max_iterations )); then
+        break
+    fi
     folder_name=$(basename "$dir")
     concept="${folder_name//_/ }"  # Convert underscores to spaces
 
@@ -60,6 +65,7 @@ for dir in "$base_data_dir"/*; do
         --decomposition_method "$decomposition" \
         --save_filename "$results_filename" \
         --save_dir "$analysis_save_dir"
+    count=$((count + 1))
 done
 
 
@@ -70,19 +76,22 @@ echo "Combining concepts with sudoCAV..."
 python src/combine_concepts.py \
     --input_dir "$analysis_save_dir" \
     --output_path "$analysis_save_dir/combined_concept.pth" \
-    --normalization "$nomalization" \
+    --normalization "${nomalization[@]}" \
 
 echo "  - Text regrounding..."
 
 
 
-python src/analyse_features.py \
-    --model_name "$model_name" \
-    --analysis_name "$analysis_regrunding_name" \
-    --analysis_saving_path "${analysis_save_dir}/combined_concept_${nomalization}.pth" \
-    --module_to_decompose "$feature_module" \
-    --decomposition_method "$decomposition" \
-    --save_filename "combined_concept_${nomalization}_regrounded" \
-    --save_dir "$analysis_save_dir" \
-    --load_matched_features
+for normalization in "${normalizations[@]}"; do
+    python src/analyse_features.py \
+        --model_name "$model_name" \
+        --analysis_name "$analysis_regrunding_name" \
+        --analysis_saving_path "${analysis_save_dir}/combined_concept_${normalization}.pth" \
+        --module_to_decompose "$feature_module" \
+        --decomposition_method "$decomposition" \
+        --save_filename "combined_concept_${normalization}_regrounded" \
+        --save_dir "$analysis_save_dir" \
+        --load_matched_features
+done
+
 echo "All steps completed successfully."

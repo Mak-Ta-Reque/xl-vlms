@@ -34,7 +34,7 @@ def get_stopwords(gist_file_path: str = "src/assets/gist_stopwords.txt") -> List
 def valid_word(word, eng_corpus: List[str], stopwords: List[str]) -> bool:
     word = word.lower().strip()
     return (
-        word in eng_corpus and len(word) > 2 and word not in stopwords
+        word in eng_corpus and len(word) > 0 and word not in stopwords
     ) or is_number(word)
 
 
