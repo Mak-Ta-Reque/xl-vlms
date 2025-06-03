@@ -521,15 +521,15 @@
       "request": "launch",
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
-        "--analysis_name", "concept_dictionary_evaluation_jaccard_clipscore_overlap", 
-        "--features_path","/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/val/features/combined_features.pth",
+        "--analysis_name", "concept_dictionary_evaluation_jaccard_clipscore_overlap_projection_strength", 
+        "--features_path","/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco10/val/features/combined_features.pth",
         "--module_to_decompose", "model.norm",
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--save_filename", "noisy10",
+        "--save_filename", "coco10_projection",
         "--local_files_only",
-        "--save_dir", "/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/val/matrics",
+        "--save_dir", "/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco10/val/matrics",
         //"--use_random_grounding_words",
-        "--analysis_saving_path",  "/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/train/concept/combined_concept_l2zca.pth" ,
+        "--analysis_saving_path",  "/mnt/abka03/concept_extraction_result/MCoX/SNMF/coco10/train/concept/combined_concept_l2zca.pth" ,
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"

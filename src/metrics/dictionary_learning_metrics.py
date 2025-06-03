@@ -18,6 +18,98 @@ __all__ = [
 ]
 
 
+
+def analyze_top_k_values_projection_strength(matrix, k_values):
+    """
+    For each k in k_values, compute and return:
+      - all top-k values per sample
+      - mean and median of top-k values per sample
+      - global mean and std of those means and medians
+
+    Parameters:
+    -----------
+    matrix : np.ndarray
+        2D array with shape (samples, activations)
+    k_values : list or iterable of int
+        List of top-k values to analyze
+
+    Returns:
+    --------
+    dict
+        Dictionary with keys formatted as:
+          - "top_{k}_all"     : all top-k values (shape: samples x k)
+          - "top_{k}_mean"    : mean of top-k values per sample
+          - "top_{k}_median"  : median of top-k values per sample
+          - "top_{k}_mean_avg": average of the mean values across samples
+          - "top_{k}_mean_std": std dev of the mean values across samples
+          - "top_{k}_median_avg": average of the median values across samples
+          - "top_{k}_median_std": std dev of the median values across samples
+    """
+    results = {}
+    for k in k_values:
+        # Get sorted top-k activations (per sample)
+        topk_vals = np.sort(matrix, axis=1)[:, -k:]
+
+        # Per-sample stats
+        mean_vals = topk_vals.mean(axis=1)
+        median_vals = np.median(topk_vals, axis=1)
+
+        # Store results
+        results[f"top_{k}_all"] = topk_vals
+        results[f"top_{k}_mean"] = mean_vals
+        results[f"top_{k}_median"] = median_vals
+        results[f"top_{k}_mean_avg"] = mean_vals.mean()
+        results[f"top_{k}_mean_std"] = mean_vals.std()
+        results[f"top_{k}_median_avg"] = median_vals.mean()
+        results[f"top_{k}_median_std"] = median_vals.std()
+
+    return results
+
+
+def get_projection_score(
+    features: Dict[str, torch.Tensor] = None,
+    metadata: Dict[str, Any] = {},
+    concepts_dict: Dict[str, Any] = {},
+    model_class: Callable = None,
+    device: torch.device = torch.device("cpu"),
+    logger: Callable = None,
+    args: argparse.Namespace = None,
+) -> Dict[str, Any]:
+    features = copy.deepcopy(features)
+    metadata = copy.deepcopy(metadata)
+    features = list(features.values())[0]
+    metadata = list(metadata.values())[0]
+    analysis_model = concepts_dict["analysis_model"]
+    grounding_words =  copy.deepcopy(concepts_dict["text_grounding"])
+    projections = analysis_decomposition.project_test_sample_using_matix(
+        sample=features,
+        activations=concepts_dict,
+        decomposition_type=concepts_dict["decomposition_method"],
+    )
+
+
+    
+    if args.use_random_grounding_words:
+        lm_head = model_class.get_lm_head().float()
+        tokenizer = model_class.get_tokenizer()
+        grounding_words = get_random_words(
+            lm_head=lm_head,
+            tokenizer=tokenizer,
+            grounding_words=grounding_words,
+        )
+        logger.info(f"Random words usage is True. Only for CLIPScore evaluation")
+    
+
+    projection_strength= analyze_top_k_values_projection_strength(
+        matrix=projections, k_values=[1, 2, 3]
+
+    )
+
+    logger.info(
+        f"top-1 test Projection strength (mean, std) {  projection_strength['top_1_mean_avg']: .3f} +/- {  projection_strength['top_1_mean_std']: .3f}"
+    )
+    return projection_strength
+
 def get_clip_score(
     features: Dict[str, torch.Tensor] = None,
     metadata: Dict[str, Any] = {},

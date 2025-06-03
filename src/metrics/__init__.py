@@ -7,7 +7,7 @@ import torch
 
 from metrics.captioning_metrics import compute_captioning_metrics
 from metrics.dictionary_learning_metrics import (
-    compute_grounding_words_overlap, get_clip_score, get_bert_score, get_jakard_score)
+    compute_grounding_words_overlap, get_clip_score, get_bert_score, get_jakard_score, get_projection_score)
 from metrics.vqa_accuracy import compute_vqav2_accuracy
 
 __all__ = ["get_metric"]
@@ -57,7 +57,17 @@ def concept_dictionary_evaluation(
             args=args,
         )
         scores["clip_score"] = clipscore_dict
-
+    if "projection_strength" in metric_name:
+        clipscore_dict = get_projection_score(
+            features,
+            metadata,
+            concepts_dict=concepts_dict,
+            model_class=model_class,
+            device=device,
+            logger=logger,
+            args=args,
+        )
+        scores["projection_strength"] = clipscore_dict
     if "bertscore" in metric_name:
         bertscore_dict = get_bert_score(
             features,
