@@ -4,8 +4,11 @@ import argparse
 import numpy as np
 from sklearn.preprocessing import normalize
 from collections import Counter
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.linalg import inv
 
 def zca_whiten(X):
+
     X_centered = X - np.mean(X, axis=0)
     cov_matrix = np.cov(X_centered, rowvar=False)
     U, S, _ = np.linalg.svd(cov_matrix)
@@ -73,6 +76,40 @@ def combine_concepts(input_dir):
     return combined_data
 
 
+
+def laplacian_smoothing(X, alpha=0.5):
+    """
+    Perform unsupervised Laplacian smoothing on a matrix.
+    
+    Args:
+        X (np.ndarray): Input matrix of shape (n_samples, n_features)
+        alpha (float): Smoothing strength (0 < alpha <= 1)
+
+    Returns:
+        np.ndarray: Smoothed matrix of the same shape
+    """
+
+    #positive_threshold = 0.01
+    #negative_threshold = -0.01
+
+    # Set values to 0 if they are:
+    # - less than the positive threshold but positive
+    # - greater than the negative threshold but negative
+    #X = np.where(((X > 0) & (X < positive_threshold)) | ((X < 0) & (X > negative_threshold)),0,  X   )
+    # Step 1: Compute cosine similarity matrix
+    W = cosine_similarity(X)
+    np.fill_diagonal(W, 0)  # Remove self-similarity
+
+    # Step 2: Compute Laplacian matrix L = D - W
+    D = np.diag(W.sum(axis=1))
+    L = D - W
+
+    # Step 3: Solve smoothed matrix: X_new = (I + alpha * L)^(-1) @ X
+    I = np.eye(W.shape[0])
+    X_smoothed = inv(I + alpha * L) @ X
+
+    return X_smoothed
+
 def combine_concepts_(input_dir):
     pth_files = [f for f in os.listdir(input_dir) if f.endswith('.pth')]
 
@@ -132,6 +169,14 @@ def combine_concepts_(input_dir):
 def apply_normalization(concepts, method):
     concepts_np = concepts.cpu().numpy() if isinstance(concepts, torch.Tensor) else concepts
 
+    positive_threshold = 0.01
+    negative_threshold = -0.01
+
+    # Set values to 0 if they are:
+    # - less than the positive threshold but positive
+    # - greater than the negative threshold but negative
+    concepts_np = np.where((( concepts_np > 0) & ( concepts_np < positive_threshold)) | (( concepts_np < 0) & ( concepts_np > negative_threshold)),0,   concepts_np   )
+
     if method == 'l2':
         return normalize(concepts_np, norm='l2')
     elif method == 'l1':
@@ -145,6 +190,11 @@ def apply_normalization(concepts, method):
     elif method == 'l1zca':
         l1_normalized = normalize(concepts_np, norm='l1')
         return zca_whiten(l1_normalized)
+    elif method == 'gl':
+        concepts_np = zca_whiten(concepts_np)
+        features = laplacian_smoothing(concepts_np)
+        return normalize(features, norm='l2')
+        
     else:
         raise ValueError("Unsupported normalization method: choose from 'l2', 'zca', or 'l2zca'")
 
@@ -171,7 +221,7 @@ def main(args):
     save_combined_data(combined_data, f"{base_output}_raw.pth")
 
     # Apply normalizations
-    for method in ['l2', 'zca', 'l2zca', 'l1', 'l1zca']:
+    for method in ['l2', 'zca', 'l2zca', 'l1', 'l1zca' , 'gl']:
         if method in args.normalization:
             normalized_concepts = apply_normalization(combined_data['concepts'], method)
             data_copy = combined_data.copy()
@@ -186,7 +236,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Combine and normalize concept .pth files")
     parser.add_argument("--input_dir", type=str, required=True, help="Directory with .pth files")
     parser.add_argument("--output_path", type=str, required=True, help="Base path to save output files")
-    parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca', 'l1', 'l1zca'], required=True,
+    parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca', 'l1', 'l1zca', 'gl'], required=True,
                         help="Normalization methods to apply")
     parser.add_argument("--delete", default=False, action="store_true", help="Delete input .pth files after processing")
     args = parser.parse_args()
