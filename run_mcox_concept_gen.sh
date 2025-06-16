@@ -15,7 +15,7 @@ analysis_name="decompose_activations_text_grounding_image_grounding"
 analysis_regrunding_name="redefine_activations_text_grounding"
 decomposition="snmf"
 n_concepts=2 # Fixed for Contrastive SNMF
-dataset_size="800"
+dataset_size="100"
 nomalizations=("l1" "zca" "l1zca" "l2" "l2zca" "gl")
 # Loop through each concept folder
 max_iterations=10
