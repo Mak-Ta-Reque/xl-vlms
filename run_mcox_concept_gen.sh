@@ -4,9 +4,9 @@
 export HF_HOME=/mnt/abka03/huggingface/hub
 
 # Base paths
-base_data_dir="/mnt/abka03/xlvlm_data/imagenet_32_concepts_crops/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet32/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet32/train/concept"
+base_data_dir="/mnt/abka03/xlvlm_data/imagenet_5_class_crops/train"
+feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet5/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet5/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.norm"
@@ -15,10 +15,10 @@ analysis_name="decompose_activations_text_grounding_image_grounding"
 analysis_regrunding_name="redefine_activations_text_grounding"
 decomposition="snmf"
 n_concepts=2 # Fixed for Contrastive SNMF
-dataset_size="300"
-nomalization=("l1" "zca" "l1zca" "l2" "l2zca")
+dataset_size="800"
+nomalizations=("l1" "zca" "l1zca" "l2" "l2zca" "gl")
 # Loop through each concept folder
-max_iterations=5 
+max_iterations=10
 count=0
 for dir in "$base_data_dir"/*; do
     # Get folder name and clean concept name
@@ -76,13 +76,14 @@ echo "Combining concepts with sudoCAV..."
 python src/combine_concepts.py \
     --input_dir "$analysis_save_dir" \
     --output_path "$analysis_save_dir/combined_concept.pth" \
-    --normalization "${nomalization[@]}" \
+    --normalization "${nomalizations[@]}" \
 
 echo "  - Text regrounding..."
 
 
 
-for normalization in "${normalizations[@]}"; do
+for normalization in "${nomalizations[@]}"; do
+    echo "  - Regrounding concepts with normalization: $normalization"
     python src/analyse_features.py \
         --model_name "$model_name" \
         --analysis_name "$analysis_regrunding_name" \

@@ -199,7 +199,7 @@ def get_arguments():
     parser.add_argument(
         "--pre_num_top_tokens",
         type=int,
-        default=50,
+        default=100,
         help="Number of words to try to ground before filtering the top num_grounded_text_tokens.",
     )
 

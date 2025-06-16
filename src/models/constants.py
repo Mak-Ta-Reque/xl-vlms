@@ -14,6 +14,7 @@ cifar100_prompt = f"\nWhat is the object in the image among and reply with few w
 
 
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
+sudonSNFMF_prompt_related = "What are the features in the image related to:  [concept], Return only the features based on whether a [concept] is present in the image or not other wise say No [concept]." 
 sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
@@ -36,9 +37,9 @@ sudonSNFMF_prompt_something_else = "Which of the following best describe this im
 stict_prompt = "Classify the image as either '[concept]' or 'No [concept]'. Respond with one of these two options only."
 TASK_PROMPTS = {
     "llava": {
-        "ShortVQA":ShortVQA ,
-        "ShortCaptioning":sudonSNFMF_prompt ,
-        "List of item": "What is the main object in the image. Describe it with one or twor word" , 
+        "ShortVQA":stict_prompt ,
+        "ShortCaptioning":sudonSNFMF_prompt_V3 ,
+        "List of item": stict_prompt,
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data

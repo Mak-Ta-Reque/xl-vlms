@@ -130,12 +130,12 @@ if __name__ == "__main__":
     main()
 
 """
-python  random_crops.py \
-  --input_root /mnt/abka03/imagenet_samples/train \
-  --output_root /mnt/abka03/crops/train \
-  --patch_size 100 \
-  --patches_per_image 20 \
-  --max_overlap 0.25
+python   preprocessing/random_crops.py \
+  --input_root /mnt/abka03/xlvlm_data/imagenet_5_class/train \
+  --output_root /mnt/abka03/xlvlm_data/imagenet_5_class_crops/train \
+  --patch_size 64 \
+  --patches_per_image 200 \
+  --max_overlap 0.1
 
 """
 

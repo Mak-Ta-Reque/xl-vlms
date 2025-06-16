@@ -24,7 +24,7 @@ def remove_substrings(tokens):
     result = set()
 
     for i, token in enumerate(tokens):
-        if not any(token != other and len(token) > 1 and token in other for other in tokens):
+        if not any(token != other and len(token) > 0 and token in other for other in tokens):
             result.add(token)
     return result
 
@@ -60,15 +60,15 @@ def concept_text_grounding(
         comp_words = [
             word.lower().strip()
             for word in comp_words
-            #if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
+            if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
         ]
         #comp_words = [word for word in comp_words if word not in stopwords]
 
-        icomp_words = []
-        for word in comp_words:
-            clean_word = re.sub(r'[^a-zA-Z0-9]', '', word.strip())  # Remove non-alphanumeric characters
-            if clean_word and clean_word not in stopwords:
-                icomp_words.append(clean_word)
+        icomp_words = comp_words
+        #for word in comp_words:
+            #clean_word = re.sub(r'[^a-zA-Z0-9]', '', word.strip())  # Remove non-alphanumeric characters
+            #if clean_word and clean_word not in stopwords:
+            #    icomp_words.append(clean_word)
 
         if keep_unique_words:
             icomp_words = list(set(icomp_words))
