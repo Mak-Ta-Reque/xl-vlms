@@ -1,24 +1,24 @@
 #!/bin/bash
 
 # Set environment variable
-export HF_HOME=/mnt/abka03/huggingface/hub
-
+#export HF_HOME=/mnt/abka03/huggingface/hub
+export HF_HOME=/mnt/abka03/temp
 # Base paths
-base_data_dir="/mnt/abka03/xlvlm_data/imagenet_5_class_crops/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet5/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet5/train/concept"
+base_data_dir="/mnt/abka03/xlvlm_data/imagenet_3_class_crops/train"
+feature_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet3/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/layer_norm_imagenet3/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.norm"
 hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
 analysis_regrunding_name="redefine_activations_text_grounding"
-decomposition="snmf"
+decomposition="snmf" # Decomposition method
 n_concepts=2 # Fixed for Contrastive SNMF
-dataset_size="100"
-nomalizations=("l1" "zca" "l1zca" "l2" "l2zca" "gl")
+dataset_size="800"
+nomalizations=("l1" "gl") #("l1" "zca" "l1zca" "l2" "l2zca" "gl")
 # Loop through each concept folder
-max_iterations=10
+max_iterations=4
 count=0
 for dir in "$base_data_dir"/*; do
     # Get folder name and clean concept name

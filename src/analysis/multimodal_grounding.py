@@ -55,16 +55,17 @@ def concept_text_grounding(
     grounded_words_list = []
     for k in range(num_concepts):
         comp_words = tokenizer.batch_decode(top_token_idx[k], skip_special_tokens=True)
+        comp_words = [
+            word.lower().strip()
+            for word in comp_words
+            if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
+        ]
         comp_words = remove_substrings(comp_words)  # Remove substrings from the list of words
         # Filter out words that are not valid
-        #comp_words = [
-        #    word.lower().strip()
-        #    for word in comp_words
-        #    if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
-        #]
-        comp_words = [word for word in comp_words if word not in stopwords]
+        
+        #comp_words = [word for word in comp_words if word not in stopwords]
 
-        icomp_words = comp_words
+        icomp_words = []
         for word in comp_words:
             clean_word = re.sub(r'[^a-zA-Z0-9]', '', word.strip())  # Remove non-alphanumeric characters
             if clean_word and clean_word not in stopwords:

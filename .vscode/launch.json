@@ -98,8 +98,8 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
-        "--dataset_size", "100",
-        "--data_dir", "/mnt/abka03/xlvlm_data/coco_crops/train/stop_sign",
+        "--dataset_size", "10",
+        "--data_dir", "/mnt/abka03/Projects/xl-vlms/playground/dataset/dataset_crop/train/covid",
         "--hook_names", "save_hidden_states_sentence", 
         "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
@@ -108,7 +108,7 @@
         "--save_only_generated_tokens",
         "--slice_prediction",
         "--exact_match_modules_to_hook",
-        "--concept", "stop sign",
+        "--concept", "covid",
         "--cache_dir", "/mnt/abka03/xl-vlms/cache"
       ],
       "env": {

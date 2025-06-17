@@ -21,7 +21,7 @@ def zca_whiten(X):
 def dominant_positive_index(lists):
     def is_positive_majority(sublist):
         no_not = sum(
-            item.lower().startswith('no_') or item.lower().startswith('not_')
+            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk')
             for item in sublist
         )
         positive = len(sublist) - no_not
@@ -61,6 +61,7 @@ def combine_concepts(input_dir):
         #)
         
         if index_with_all_no is None:
+            print(f"Skipping {filename} due to no dominant positive index found.")
             continue
         
         concepts.append(model_data['concepts'][index_with_all_no])
@@ -167,6 +168,8 @@ def combine_concepts_(input_dir):
 
 
 def apply_normalization(concepts, method):
+    if concepts.shape[1] < 2:
+        raise ValueError("Concepts must have at least 2 features for normalization.")
     concepts_np = concepts.cpu().numpy() if isinstance(concepts, torch.Tensor) else concepts
 
     positive_threshold = 0.01
