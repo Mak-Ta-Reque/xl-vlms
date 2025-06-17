@@ -1,20 +1,20 @@
-import os
-coco15_cox_proompt = "\nWhat is the object in the image among: baby, bear, car, dog, hot dog, school bus, teddy bear, train, baseball glove, bus, cat, fire hydrant, microwave oven, stop sign, traffic light." 
-imagenet_cox_prompt = "\nWhat is the object in the image among: a parachute, cassette player,  chainsaw,  charch,  dog,  fish,  french horn,  garbage truck,  gas station,  golf ball." 
+#import os
+#coco15_cox_proompt = "\nWhat is the object in the image among: baby, bear, car, dog, hot dog, school bus, teddy bear, train, baseball glove, bus, cat, fire hydrant, microwave oven, stop sign, traffic light." 
+#imagenet_cox_prompt = "\nWhat is the object in the image among: a parachute, cassette player,  chainsaw,  charch,  dog,  fish,  french horn,  garbage truck,  gas station,  golf ball." 
 
-cifar100_path = '/mnt/abka03/xlvlm_data/cifar_100_samples/train'
+#cifar100_path = '/mnt/abka03/xlvlm_data/cifar_100_samples/train'
 
 # Get all subfolder names
-subfolders = [name for name in os.listdir(cifar100_path)
-              if os.path.isdir(os.path.join(cifar100_path, name))]
+#subfolders = [name for name in os.listdir(cifar100_path)
+#              if os.path.isdir(os.path.join(cifar100_path, name))]
 
 # Replace underscores with spaces
-cifar100_class_names = [folder.replace('_', ' ') for folder in subfolders]
-cifar100_prompt = f"\nWhat is the object in the image among and reply with few word: " + ', '.join(cifar100_class_names) + "."
+#cifar100_class_names = [folder.replace('_', ' ') for folder in subfolders]
+#cifar100_prompt = f"\nWhat is the object in the image among and reply with few word: " + ', '.join(cifar100_class_names) + "."
 
 
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
-sudonSNFMF_prompt_related = "What are the features in the image related to:  [concept], Return only the features based on whether a [concept] is present in the image or not other wise say No [concept]." 
+sudonSNFMF_prompt_related = "If the input image is related to [concept], write [concept] else say UNK." 
 sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
@@ -38,7 +38,7 @@ stict_prompt = "Classify the image as either '[concept]' or 'No [concept]'. Resp
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":stict_prompt ,
-        "ShortCaptioning":sudonSNFMF_prompt_V3 ,
+        "ShortCaptioning":sudonSNFMF_prompt ,
         "List of item": stict_prompt,
         "Repeat the text": "\n Just repeat the text:"
     },
