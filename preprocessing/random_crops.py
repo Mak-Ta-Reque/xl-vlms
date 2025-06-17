@@ -173,8 +173,8 @@ if __name__ == "__main__":
 python   preprocessing/random_crops.py \
   --input_root /mnt/abka03/xlvlm_data/imagenet_5_class/train \
   --output_root /mnt/abka03/xlvlm_data/imagenet_5_class_crops/train \
-  --patch_size 64 \
-  --patches_per_image 500 \
+  --patch_size 100 \
+  --patches_per_image 10 \
   --max_overlap 0.2
 
 """

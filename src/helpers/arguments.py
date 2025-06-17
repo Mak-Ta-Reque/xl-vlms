@@ -199,14 +199,14 @@ def get_arguments():
     parser.add_argument(
         "--pre_num_top_tokens",
         type=int,
-        default=50,
+        default=20,
         help="Number of words to try to ground before filtering the top num_grounded_text_tokens.",
     )
 
     parser.add_argument(
         "--num_most_activating_samples",
         type=int,
-        default=3,
+        default=5,
         help="Number of most activated samples.",
     )
 
