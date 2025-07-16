@@ -21,7 +21,7 @@ def zca_whiten(X):
 def dominant_positive_index(lists):
     def is_positive_majority(sublist):
         no_not = sum(
-            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk')
+            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk') or item.lower().startswith('thing') or item.lower().startswith('nc') 
             for item in sublist
         )
         positive = len(sublist) - no_not

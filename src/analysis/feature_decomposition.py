@@ -72,8 +72,9 @@ def refine_ground_activations(
     results_dict = {}
     concepts = copy.deepcopy(concept_dict["concepts"])
     activations = copy.deepcopy(concept_dict["activations"])
-    results_dict["concepts"] = concept_dict ["concepts"]
-    results_dict["activations"] = torch.stack(concept_dict ["activations"])
+    results_dict["concepts"] = concepts#  concept_dict ["concepts"]
+
+    results_dict["activations"] = activations
     results_dict["decomposition_method"] = concept_dict ["decomposition_method"]
     if logger is not None:
         logger.info(
@@ -173,11 +174,12 @@ def decompose_activations(
 
     assert num_concepts is not None, "Number of components is None!"
     assert decomposition_method is not None, "Decomposition method specified is None!"
-
+    
     if torch.is_tensor(mat):
         # Convert to numpy array for sklearn processing
-        mat = mat.cpu().data.numpy()
-
+        if mat.dtype == torch.bfloat16:
+            mat = mat.to(torch.float32)
+        mat = mat.cpu().numpy()
     #mat -= np.min(mat) 
     mat = mat.astype(np.float32)
     print("Matrix stats:")
@@ -233,8 +235,39 @@ def decompose_activations(
         model.cluster_centers_ = components + 0
         # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
         comp_activ = 1 / (1 + model.transform(mat))
+    elif decomposition_method == "sae":
+        from helpers.sae import SparseAutoencoder, train_sae  # modularized SAE
 
-    return components, comp_activ, model
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        input_dim = mat.shape[1]
+        hidden_dim = num_concepts
+
+        model = SparseAutoencoder(input_dim, hidden_dim, sparsity_lambda=0.0005).to(device)
+
+        if concepts is not None:
+            # Set decoder weights on the correct device
+            model.decoder.weight.data = torch.tensor(concepts, dtype=torch.float32, device=device)
+            model.decoder.bias.data.zero_()
+            model.eval()
+            with torch.no_grad():
+                mat_tensor = torch.tensor(mat, dtype=torch.float32, device=device)
+                _, sparse_codes = model(mat_tensor)
+            comp_activ = sparse_codes.cpu().numpy()
+            components = concepts.T
+        else:
+            with torch.enable_grad():
+                train_sae(model, mat, epochs=3000, device=device)  # pass device to train_sae
+
+            model.eval()
+            with torch.no_grad():
+                mat_tensor = torch.tensor(mat, dtype=torch.float32, device=device)
+                _, sparse_codes = model(mat_tensor)
+            comp_activ = sparse_codes.cpu().numpy()
+            components = model.decoder.weight.detach().cpu().numpy()
+            components = components.T  # Transpose to match expected shape
+
+    return components, comp_activ, None #model
 
 def project_test_sample(
     sample: torch.Tensor, analysis_model: Callable, decomposition_type: str = "snmf"

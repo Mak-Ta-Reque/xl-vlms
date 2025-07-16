@@ -1,3 +1,5 @@
+import os
+os.environ["TORCH_COMPILE_DISABLE"] = "1"
 import argparse
 import os
 import time

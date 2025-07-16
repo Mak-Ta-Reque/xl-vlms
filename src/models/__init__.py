@@ -9,6 +9,7 @@ __all__ = ["get_model_class"]
 SUPPORTED_MODELS = [
     "llava-1.5",
     "Qwen/Qwen2-VL-7B-Instruct",
+    "Qwen/Qwen2.5-VL-7B-Instruct",
     "HuggingFaceM4/idefics2-8b",
     "allenai/Molmo-7B-D-0924",
     "StanfordAIMI/CheXagent-8b",
@@ -32,10 +33,26 @@ def get_model_class(
             local_files_only=args.local_files_only,
             cache_dir=args.cache_dir,
         )
-    elif "Qwen" in model_name_or_path:
+    elif "Qwen2.5-VL" in model_name_or_path:
+        from models.qwen_2_5 import Qwen2_5VL
+
+        model_class = Qwen2_5VL(
+            model_name_or_path=model_name_or_path,
+            processor_name=processor_name,
+            local_files_only=args.local_files_only,
+        )
+    elif "Qwen2-VL" in model_name_or_path:
         from models.qwen_vl import QwenVL
 
         model_class = QwenVL(
+            model_name_or_path=model_name_or_path,
+            processor_name=processor_name,
+            local_files_only=args.local_files_only,
+        )
+    elif "gemma-3" in model_name_or_path:
+        from models.gemma3 import Gemma3nVL
+
+        model_class = Gemma3nVL(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
@@ -72,6 +89,8 @@ def get_model_class(
     if logger is not None:
         logger.info(f"Successfully loaded {model_name_or_path}, device: {device}")
 
-    model_class.model_.to(device)
+    if getattr(model_class.model_, 'hf_device_map', None) is None:
+        model_class.model_.to(device)
+    #model_class.model_.to(device)
 
     return model_class

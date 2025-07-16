@@ -13,7 +13,22 @@
 #cifar100_prompt = f"\nWhat is the object in the image among and reply with few word: " + ', '.join(cifar100_class_names) + "."
 
 
+
+
+
+
+
+
+
+
+
+# Prompt varation for MCoX
+p1 = "Detect whether the image contains [concept]. If yes, return just [concept]; otherwise, return UNK"
+p2 = "Determine the presence of [concept] in the image. Output just [concept] if present, otherwise thing."
+p3 = "Decide if the visual content shows [concept]. Respond with [concept] or thing only."
+p4 = "Is there a clear instance of [concept] in this image? Reply with [concept] or nc, nothing else"
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
+sudonSNFMF_prompt_unk = "Classify the input image as either:  [concept], or UNK. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 sudonSNFMF_prompt_related = "If the input image is related to [concept], write [concept] else say UNK." 
 sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
@@ -35,11 +50,13 @@ sudonSNFMF_prompt_UNK = "Which of the following best describe this image: [conce
 sudonSNFMF_prompt_something_else = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
 
 stict_prompt = "Classify the image as either '[concept]' or 'No [concept]'. Respond with one of these two options only."
+
+stict_prompt = "Identify the object in the image as either a '[concept]' or a 'thing'? Respond with one of these two options only." # Respond with one of these two options only."
 TASK_PROMPTS = {
     "llava": {
-        "ShortVQA":stict_prompt ,
-        "ShortCaptioning":sudonSNFMF_prompt ,
-        "List of item": stict_prompt,
+        "ShortVQA":stict_prompt,
+        "ShortCaptioning":p4,
+        "List of item":stict_prompt,
         "Repeat the text": "\n Just repeat the text:"
     },
     # Added for medical data
