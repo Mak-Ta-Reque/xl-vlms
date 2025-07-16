@@ -45,6 +45,7 @@ def concept_text_grounding(
     stopwords = get_stopwords(gist_file_path=gist_file_path)
     num_concepts = concepts.shape[0]
 
+    concepts = concepts.to(next(lm_head.parameters()).device)
     token_logits = lm_head(concepts.float())
     assert (
         pre_num_top_tokens > num_top_tokens

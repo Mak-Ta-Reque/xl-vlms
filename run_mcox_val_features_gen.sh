@@ -1,19 +1,19 @@
 #!/bin/bash
 
 # Configuration
-MODEL_NAME="Qwen/Qwen2-VL-7B-Instruct"
+MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct"
 DATASET_NAME="image"
 DATASET_SIZE="50"
 HOOK_NAME="save_hidden_states_noun_phrase"
-MODULES_TO_HOOK="model.norm"
+MODULES_TO_HOOK="model.language_model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
 SCRIPT_PATH="src/save_features.py"
 HF_HOME="/mnt/abka03/huggingface/hub"
 
 # Split-specific setup
 SPLIT="val"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/noise10concept/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noisy10/${SPLIT}"
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/coco_10_concepts/${SPLIT}"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/${SPLIT}"
 
 # Loop through directories
 for dir_path in "$BASE_DATA_DIR"/*/; do

@@ -352,7 +352,7 @@ def compute_test_clipscore(
     scores = np.array(scores)
     # Return dictionary containing all test sample scores, their mean, std
     scores_dict = {}
-    for k in [1, 3]:
+    for k in [1,2,3]:
         key = f"top_{k}_all"
         key_mean = f"top_{k}_mean"
         key_std = f"top_{k}_std"
@@ -409,7 +409,7 @@ def compute_test_bertscore(
 
     scores_dict = {}
 
-    for k in [1, 3]:
+    for k in [1,2,3]:
         for metric_name, values in zip(["precision", "recall", "f1"], [all_P, all_R, all_F1]):
             key_all = f"top_{k}_{metric_name}_all"
             key_mean = f"top_{k}_{metric_name}_mean"
@@ -477,7 +477,7 @@ def compute_test_jaccard_score(
 
     # Calculate mean/std for top 1 and top 3
     scores_dict = {}
-    for k in [1, 3]:
+    for k in [1,2,3]:
         key = f"top_{k}_all"
         key_mean = f"top_{k}_mean"
         key_std = f"top_{k}_std"

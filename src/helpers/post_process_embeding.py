@@ -230,7 +230,6 @@ def extract_sentence_embeddings(item, model_class):
     hook_data = item["hidden_states"]
     tokenizer = model_class.get_tokenizer()
     model = model_class.get_model()
-    rot_emb = model.model.rotary_emb
     import inspect
 
 
