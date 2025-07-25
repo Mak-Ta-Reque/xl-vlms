@@ -269,7 +269,27 @@ class ImageDataset(ImageTextDataset):
                 }
                 self.data = [item]
                 return
+        elif "val" in self.data_dir:
+            # Directory path provided
+            for root, _, files in os.walk(self.data_dir):
+                for file in files:
+                    if file.endswith(('.jpg', '.png', '.jpeg', '.dcm', '.JPEG')):
+                        img_id = os.path.splitext(file)[0]
+                        image_path = os.path.join(root, file)
 
+                        instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                            "ShortVQA", "An image of "
+                        )
+                        response = ""  # Assuming response generation is handled elsewhere
+
+                        item = {
+                            "img_id": img_id,
+                            "instruction": instruction,
+                            "response": response,
+                            "image": image_path,
+                            "targets": "",  # No targets since no JSON file
+                        }
+                        data.append(item)
         else:
             # Directory path provided
             for root, _, files in os.walk(self.data_dir):

@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, List
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA, DictionaryLearning
 import copy
@@ -214,7 +215,23 @@ def decompose_activations(
             n_components=num_concepts,
             positive_code=True,
             fit_algorithm="cd",
+            alpha=20.0,
             transform_algorithm="lasso_cd",
+            max_iter=args.dl_max_iter,
+        )
+        if concepts is not None:
+            model.components_ = concepts
+            comp_activ = model.transform(mat)
+            components = concepts
+        else:
+            comp_activ = model.fit_transform(mat)
+            components = model.components_
+    elif decomposition_method == "snmf_lars":
+        model = DictionaryLearning(
+            n_components=num_concepts,
+            alpha=100.0,  # High sparsity
+            fit_algorithm="lars",  # or "cd"
+            transform_algorithm="lasso_lars",  # or "lasso_cd"
             max_iter=args.dl_max_iter,
         )
         if concepts is not None:
@@ -266,7 +283,7 @@ def decompose_activations(
             comp_activ = sparse_codes.cpu().numpy()
             components = model.decoder.weight.detach().cpu().numpy()
             components = components.T  # Transpose to match expected shape
-
+    
     return components, comp_activ, None #model
 
 def project_test_sample(
@@ -311,3 +328,4 @@ def project_test_sample_using_matix(
    #     # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
    #     projected_sample = 1 / (1 + projected_sample)
     return  projection
+

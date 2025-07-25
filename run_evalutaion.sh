@@ -6,13 +6,13 @@ SCRIPT_PATH="${PWD}/src/analyse_features.py"
 
 HF_HOME_PATH="/mnt/abka03/huggingface/hub"
 
-ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore" #_bertscore
-FEATURES_PATH="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/val/features/combined_features.pth"
+ANALYSIS_NAME="concept_dictionary_evaluation_jaccard_clipscore_bertscore" #_bertscore
+FEATURES_PATH="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/image_only/val/features/combined_features.pth"
 MODULE_TO_DECOMPOSE="model.language_model.norm"
-MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct"
-SAVE_FILENAME="coco10"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/val/matrics"
-ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/train/concept/combined_concept_raw.pth"
+MODEL_NAME="google/gemma-3n-E4B-it" 
+SAVE_FILENAME="dtd_image"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/image_only/val/matrics"
+ANALYSIS_SAVING_PATH="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/train/concept/combined_concept_raw.pth"
 
 # Use   //"--use_random_grounding_words" for random grounding words
 # Export environment variable

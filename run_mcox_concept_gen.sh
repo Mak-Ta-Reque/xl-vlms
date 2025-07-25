@@ -4,21 +4,21 @@
 export HF_HOME=/mnt/abka03/huggingface/hub
 #export HF_HOME=/mnt/abka03/temp
 # Base paths
-base_data_dir="/mnt/abka03/xlvlm_data/coco_10_concepts_crop/train"
-feature_save_dir="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/train"
-analysis_save_dir="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/train/concept"
+base_data_dir="/mnt/abka03/xlvlm_data/dtd_processed/train"
+feature_save_dir="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/train"
+analysis_save_dir="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/train/concept"
 cache_dir="/mnt/abka03/xl-vlms/cache"
-model_name="Qwen/Qwen2.5-VL-7B-Instruct" #"Qwen/Qwen2-VL-7B-Instruct"
+model_name="google/gemma-3n-E4B-it" #"Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.language_model.norm"
 hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
 analysis_regrunding_name="redefine_activations_text_grounding"
 decomposition="snmf" # Decomposition methodrrr
 n_concepts=2 # Fixed for Contrastive SNMF
-dataset_size="300"
+dataset_size="95"
 nomalizations=("gl") #("l1" "zca" "l1zca" "l2" "l2zca" "gl")
 # Loop through each concept folder
-max_iterations=10
+max_iterations=47
 count=0
 for dir in "$base_data_dir"/*; do
     # Get folder name and clean concept name

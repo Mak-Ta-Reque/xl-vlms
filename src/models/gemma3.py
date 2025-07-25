@@ -85,7 +85,7 @@ class Gemma3nVL(ImageTextModel):
             return_tensors="pt",
         )
 
-    def preprocess_input(
+    def _preprocess_input(
         self,
         instruction: str = "Describe this image.",
         image_file: Any = None,
@@ -109,3 +109,57 @@ class Gemma3nVL(ImageTextModel):
         )
 
         return inputs
+    
+    def preprocess_input(
+        self,
+        instruction: str = "Describe this image.",
+        image_file: Any = None,
+        response: str = "",
+        generation_mode: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+
+        if image_file:
+            # Vision-language input
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": image_file},
+                        {"type": "text", "text": instruction},
+                    ],
+                }
+            ]
+            if response:
+                conversation.append(
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": response}],
+                    }
+                )
+        else:
+            # Text-only input
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": instruction}],
+                }
+            ]
+            if response:
+                conversation.append(
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": response}],
+                    }
+                )
+
+        inputs = self.processor_.apply_chat_template(
+            conversation,
+            add_generation_prompt=generation_mode,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+
+        return inputs
+

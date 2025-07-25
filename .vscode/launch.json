@@ -152,12 +152,12 @@
       "request": "launch",
       "program": "${workspaceFolder}/src/save_features.py",
       "args": [
-        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
+        "--model_name", "google/gemma-3n-E4B-it",
         "--dataset_name", "text",
         "--dataset_size", "1",
         "--data_dir", "/mnt/abka03/xl-vlms/data/output/phrases.txt",
-        "--hook_names", "save_hidden_states_noun_phrase", 
-        "--modules_to_hook", "model.norm", 
+        "--hook_names", "save_hidden_states_sentence",//"save_hidden_states_noun_phrase", 
+        "--modules_to_hook", "model.language_model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_twext_ebedding",
         "--generation_mode",
@@ -216,8 +216,8 @@
       "args": [
         "--model_name", "google/gemma-3n-e4b-it",
         "--dataset_name", "image",
-        "--dataset_size", "50",
-        "--data_dir", "/mnt/abka03/xlvlm_data/cifar_100_samples/val/apple",
+        "--dataset_size", "10",
+        "--data_dir", "/mnt/abka03/xlvlm_data/dtd_processed/val/banded",
         "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx", save_hidden_states_for_token_of_interest
         "--token_of_interest", "apple", //space must be appended infront of token
         "--modules_to_hook", "model.language_model.norm", //model.norm, model.layers.27, 
@@ -545,15 +545,15 @@
       "request": "launch",
       "program": "${workspaceFolder}/src/analyse_features.py",
       "args": [
-        "--analysis_name", "concept_dictionary_evaluation_before_gl_projection_strength", 
-        "--features_path","/mnt/abka03/concept_extraction_result/prompt_variation_gemma3/p2/coco10/val/features/combined_features.pth",
+        "--analysis_name","concept_dictionary_evaluation_jaccard", 
+        "--features_path","/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/image_only/val/features/combined_features.pth",
         "--module_to_decompose", "model.language_model.norm",
-        "--model_name", "google/gemma-3n-e4b-it",
-        "--save_filename", "imagenet1000_before_gl",
+        "--model_name", "google/gemma-3n-E4B-it",
+        "--save_filename", "gemma3n_dtd",
         "--local_files_only",
-        "--save_dir", "/mnt/abka03/concept_extraction_result/MCoX/SNMF/imagenet1000/val/matrics/",
+        "--save_dir", "/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/image_only/val/matrics",
         //"--use_random_grounding_words",
-        "--analysis_saving_path",  "/mnt/abka03/concept_extraction_result/prompt_variation_gemma3/p2/coco10/train/concept/combined_concept_raw.pth" ,
+        "--analysis_saving_path", "/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/train/concept/redefine_activations_text_grounding_combined_concept_gl_regrounded.pth",
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"

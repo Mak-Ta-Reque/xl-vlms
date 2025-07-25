@@ -375,15 +375,20 @@ def compute_test_bertscore(
     all_P, all_R, all_F1 = [], [], []
 
     model_preds = metadata.get("model_predictions", [])
-    predictions = [item[0].split("@")[1] for item in model_preds]
-    image_paths = metadata.get("image", [])
+    #predictions = [item[0].split("@")[1] for item in model_preds]
+    predictions = [item[0].split("@")[1] if "@" in item[0] else item[0] for item in model_preds]
+
+    image_text_paths = metadata.get("image") or metadata.get("text") or []
+
+
     num_samples = projections.shape[0]
 
     for idx in range(num_samples):
-        if idx >= len(image_paths):
+        if idx >= len(image_text_paths):
             continue
-        if "No" in image_paths[idx][0].split("@")[0]:
-            continue 
+        if  "@" in image_text_paths[idx][0]:
+            if "No" in  image_text_paths[idx][0].split("@")[0]:
+                continue 
 
         projection_scores = projections[idx]
         prediction = [predictions[idx]] * top_k
@@ -447,15 +452,17 @@ def compute_test_jaccard_score(
     scores = []
 
     model_preds = metadata.get("model_predictions", [])
-    predictions = [item[0].split("@")[1] for item in model_preds]
-    image_paths = metadata.get("image", [])
+    predictions = [item[0].split("@")[1] if "@" in item[0] else item[0] for item in model_preds]
+    image_text_paths = metadata.get("image") or metadata.get("text") or []
     num_samples = projections.shape[0]
 
     for idx in range(num_samples):
-        if idx >= len(image_paths):
+        if idx >= len(image_text_paths):
             continue
-        if "No" in image_paths[idx][0].split("@")[0]:
-            continue 
+        if  "@" in image_text_paths[idx][0]:
+            if "No" in  image_text_paths[idx][0].split("@")[0]:
+                continue 
+
 
         projection_scores = projections[idx]
         prediction = predictions[idx].lower()
