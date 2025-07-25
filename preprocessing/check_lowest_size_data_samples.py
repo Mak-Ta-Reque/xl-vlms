@@ -1,6 +1,6 @@
 import os
 
-val_dir = '/mnt/abka03/xlvlm_data/cifar_100_samples/val'  # change to your validation directory path
+val_dir = '/mnt/abka03/xlvlm_data/noidle_crops/train'  # change to your validation directory path
 
 class_dirs = [d for d in os.listdir(val_dir) if os.path.isdir(os.path.join(val_dir, d))]
 

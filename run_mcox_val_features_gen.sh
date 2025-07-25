@@ -1,22 +1,28 @@
 #!/bin/bash
 
 # Configuration
-MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct"
+MODEL_NAME="google/gemma-3n-E4B-it"
 DATASET_NAME="image"
-DATASET_SIZE="50"
-HOOK_NAME="save_hidden_states_noun_phrase"
+DATASET_SIZE="20"
+HOOK_NAME="save_hidden_states_sentence"
 MODULES_TO_HOOK="model.language_model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
 SCRIPT_PATH="src/save_features.py"
 HF_HOME="/mnt/abka03/huggingface/hub"
-
 # Split-specific setup
 SPLIT="val"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/coco_10_concepts/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/prompt_variation_qween2_5/p4/coco10/${SPLIT}"
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/dtd_processed/${SPLIT}"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/dtd/${SPLIT}"
+
+
+max_iterations=47
+count=0
 
 # Loop through directories
 for dir_path in "$BASE_DATA_DIR"/*/; do
+  if (( count >= max_iterations )); then
+    break
+  fi
   dir_name=$(basename "$dir_path")
 
   # Extract token of interest
@@ -45,6 +51,7 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --slice_prediction \
     --concept "$concept" \
     --exact_match_modules_to_hook
+  count=$((count + 1))
 done
 
 # Combine feature files
