@@ -124,17 +124,17 @@
       "request": "launch",
       "program": "${workspaceFolder}/src/save_features.py",
       "args": [
-        "--model_name", "Qwen/Qwen2.5-VL-7B-Instruct",
+        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--dataset_name", "image",
         "--data_dir",  "/mnt/abka03/xlvlm_data/cifar_100_samples/sampled_grids/da0bb008184c4a99bd3521a0cd2d5ba9_palm_tree_bed_pine_tree_motorcycle_tractor_pear_ray_girl_squirrel_kangaroo_oak_tree_sunflower_keyboard_hamster_mouse_sweet_pepper.jpg",
         "--hook_names", "save_hidden_states_sentence", 
-        "--modules_to_hook", "model.language_model.norm", 
+        "--modules_to_hook", "model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_image_combine_hidden_states_sentence",
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
-        //"--concept", "fire hydrant",
+        "--concept", "fire hydrant",
         "--exact_match_modules_to_hook",
         "--cache_dir", "/mnt/abka03/xl-vlms/cache"
       ],
@@ -216,17 +216,18 @@
       "args": [
         "--model_name", "google/gemma-3n-e4b-it",
         "--dataset_name", "image",
-        "--dataset_size", "10",
-        "--data_dir", "/mnt/abka03/xlvlm_data/dtd_processed/val/banded",
-        "--hook_name", "save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx", save_hidden_states_for_token_of_interest
-        "--token_of_interest", "apple", //space must be appended infront of token
+        "--dataset_size", "50",
+        "--data_dir", "/mnt/abka03/xlvlm_data/imagenet_3_class_crops/train/rabbit",
+        "--hook_name", "save_hidden_states_sentence",//"save_hidden_states_for_token_of_interest", //"save_hidden_states_given_token_idx", save_hidden_states_for_token_of_interest
+        "--token_of_interest", "banned", //space must be appended infront of token
         "--modules_to_hook", "model.language_model.norm", //model.norm, model.layers.27, 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_patched_image_cat_token_of_interest_concept_generation_split_train",
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
-        "--concept", "apple",
+        "--concept", "rabbit",
+        "--prompt_template", "cgdl",
         "--exact_match_modules_to_hook",
       ],
       "env": {
@@ -433,10 +434,10 @@
       "args": [
         "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path", "/mnt/abka03/concept_extraction_result/CoX/SNMF/coco_temp/train/features/combined_features.pth",
+        "--features_path", "/mnt/abka03/concept_extraction_result/CoX/SNMF/imagenet10/train/features/save_hidden_states_token_qwen2_image_concept_hidden_states_original_paper_train_data_imagenet10.pth",
         "--module_to_decompose", "model.norm",
         "--num_concepts", "15",
-        "--decomposition_method", "snmf",
+        "--decomposition_method", "simple",
         "--save_filename", "qwen2_results_patch_all_patch_snmf",
         "--save_dir", "/mnt/abka03/xl-vlms/results",
         "--load_matched_features"
@@ -486,14 +487,14 @@
         "--features_path", "/mnt/abka03/xl-vlms/features/save_hidden_states_qwen2_full_image_hot_dog_concept_generation_split_train.pth",
         "--module_to_decompose", "model.norm",
         "--num_concepts", "2",
-        "--decomposition_method", "snmf",
+        "--decomposition_method", "sae2",
         "--save_filename", "results_train",
         "--save_dir", "/netscratch/kadir/xl-vlms/results"
       ],
       "env": {
         "HF_HOME": "/netscratch/kadir/xl-vlms/cache"
       },
-      "python": "/root/anaconda3/envs/xl_vlm/bin/python",  // Update this path
+      "python":  "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },

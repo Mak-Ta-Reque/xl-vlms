@@ -12,7 +12,7 @@ class SparseAutoencoder(nn.Module):
         self.sparsity_lambda = sparsity_lambda
 
     def forward(self, x):
-        z = F.relu(self.encoder(x))
+        z = F.relu(self.encoder(x))  # ReLU like the paper
         x_hat = self.decoder(z)
         return x_hat, z
 
@@ -52,10 +52,11 @@ def train_sae(
     data_tensor = data_tensor.to(device)
     dataloader = torch.utils.data.DataLoader(data_tensor, batch_size=batch_size, shuffle=True)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.0, 0.9999))
+    optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.0, 0.9999))  # like paper
 
     for epoch in range(epochs):
         total_loss = 0.0
+        # Optional linear LR decay in last 20% of training
         if lr_cooldown and epoch > 0.8 * epochs:
             for param_group in optimizer.param_groups:
                 param_group["lr"] = lr * (1 - (epoch - 0.8 * epochs) / (0.2 * epochs))

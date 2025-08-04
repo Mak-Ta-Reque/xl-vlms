@@ -6,7 +6,7 @@ from sklearn.preprocessing import normalize
 from collections import Counter
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.linalg import inv
-
+import random
 def zca_whiten(X):
 
     X_centered = X - np.mean(X, axis=0)
@@ -61,8 +61,8 @@ def combine_concepts(input_dir):
         #)
         
         if index_with_all_no is None:
-            print(f"Skipping {filename} due to no dominant positive index found.")
-            continue
+            print(f"Skipping {filename} due to no dominant positive index found/randomly choosen.")
+            index_with_all_no = random.choice([0, 1])
         
         concepts.append(model_data['concepts'][index_with_all_no])
         activations.append(model_data['activations'][:, index_with_all_no])
