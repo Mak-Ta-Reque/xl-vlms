@@ -253,7 +253,7 @@ def decompose_activations(
         # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
         comp_activ = 1 / (1 + model.transform(mat))
     elif decomposition_method == "sae":
-        from helpers.sae import SparseAutoencoder, train_sae  # modularized SAE
+        from src.helpers.sae_ import SparseAutoencoder, train_sae  # modularized SAE
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -283,8 +283,40 @@ def decompose_activations(
             comp_activ = sparse_codes.cpu().numpy()
             components = model.decoder.weight.detach().cpu().numpy()
             components = components.T  # Transpose to match expected shape
-    
-    return components, comp_activ, None #model
+    elif decomposition_method == "sae2":
+        from helpers.sae import SparseAutoencoder, train_sae  # Modularized SAE
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        input_dim = mat.shape[1]
+        hidden_dim = num_concepts
+
+        model = SparseAutoencoder(input_dim, hidden_dim, sparsity_lambda=0.0005).to(device)
+
+        if concepts is not None:
+            # Initialize decoder with given components
+            model.decoder.weight.data = torch.tensor(concepts, dtype=torch.float32, device=device)
+            model.decoder.bias.data.zero_()
+            model.eval()
+            with torch.no_grad():
+                mat_tensor = torch.tensor(mat, dtype=torch.float32, device=device)
+                _, sparse_codes = model(mat_tensor)
+            comp_activ = sparse_codes.cpu().numpy()
+            components = concepts.T
+        else:
+            with torch.enable_grad():
+                train_sae(model, mat, epochs=5000, device=device)  # Train from scratch
+
+            model.eval()
+            with torch.no_grad():
+                mat_tensor = torch.tensor(mat, dtype=torch.float32, device=device)
+                _, sparse_codes = model(mat_tensor)
+            comp_activ = sparse_codes.cpu().numpy()
+            components = model.decoder.weight.detach().cpu().numpy().T  # Transpose
+
+    return components, comp_activ, None  # Optionally return model
+
+
 
 def project_test_sample(
     sample: torch.Tensor, analysis_model: Callable, decomposition_type: str = "snmf"
