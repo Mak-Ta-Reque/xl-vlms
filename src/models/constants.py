@@ -28,6 +28,7 @@ p2 = "Determine the presence of [concept] in the image. Output just [concept] if
 p3 = "Decide if the visual content shows [concept]. Respond with [concept] or thing only."
 p4 = "Is there a clear instance of [concept] in this image? Reply with [concept] or nc, nothing else"
 p5 = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not"  #Used for main experiment
+p6 = "Detect whether the image contains [concept]. If yes, return just [concept]; otherwise, return No [concept]"
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 sudonSNFMF_prompt_unk = "Classify the input image as either:  [concept], or UNK. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 sudonSNFMF_prompt_related = "If the input image is related to [concept], write [concept] else say UNK." 
@@ -57,10 +58,24 @@ concept_prompt = "Identify the concept/pattern single word. Answer with one word
 null_prompt = ""
  # Respond with one of these two options only."
 stict_prompt = "Identify the pattern in the image as either '[concept]' or 'No [concept]' ? Respond with one of these two options only."
+p7 = "Classify the image as either '[concept]' or 'No [concept]' based on its content. Return only the predicted label."
+
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":concept_prompt ,
-        "ShortCaptioning":p3,
+        "ShortCaptioning":ShortCaptioning,
+        "List of item":null_prompt,
+        "Repeat the text": "Repeat the word only"
+    },
+    "cgdl": {
+        "ShortVQA":p2 ,
+        "ShortCaptioning":p1,
+        "List of item":ShortVQA ,
+        "Repeat the text": "Write the given text only"
+    },
+     "dl": {
+        "ShortVQA":ShortVQA ,
+        "ShortCaptioning":ShortCaptioning,
         "List of item":null_prompt,
         "Repeat the text": "Write the given text"
     },
