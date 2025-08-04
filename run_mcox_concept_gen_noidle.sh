@@ -12,13 +12,14 @@ model_name="google/gemma-3n-E4B-it" #"Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.language_model.norm"
 hook_name="save_hidden_states_sentence"
 analysis_name="decompose_activations_text_grounding_image_grounding"
+PROMPT_TEMPLATE="cgdl"
 analysis_regrunding_name="redefine_activations_text_grounding"
 decomposition="snmf" # Decomposition methodrrr
 n_concepts=2 # Fixed for Contrastive SNMF
-dataset_size="110"
+dataset_size="1000"
 nomalizations=("gl") #("l1" "zca" "l1zca" "l2" "l2zca" "gl")
 # Loop through each concept folder
-max_iterations=110
+max_iterations=115
 count=0
 for dir in "$base_data_dir"/*; do
     # Get folder name and clean concept name
@@ -35,8 +36,8 @@ for dir in "$base_data_dir"/*; do
     data_dir="${base_data_dir}/${folder_name}"
     dataset_size=$(find "$data_dir" -type f -name "*.png" | wc -l)
     
-    if [ "$dataset_size" -gt 1000 ]; then
-        dataset_size=1000
+    if [ "$dataset_size" -gt 2000 ]; then
+        dataset_size=1500
     fi
     echo "  - Saving features..."
     python src/save_features.py \
@@ -51,6 +52,7 @@ for dir in "$base_data_dir"/*; do
         --generation_mode \
         --save_only_generated_tokens \
         --slice_prediction \
+        --prompt_template "$PROMPT_TEMPLATE" \
         --exact_match_modules_to_hook \
         --concept "$concept" \
         --cache_dir "$cache_dir"

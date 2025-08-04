@@ -15,31 +15,13 @@ MODULES_TO_HOOK="model.language_model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
 HF_HOME="/mnt/abka03/huggingface/hub"
 SCRIPT_PATH="src/save_features.py"
-COMBINE_SCRIPT="src/combine_features.py"
-ANALYSIS_SCRIPT="src/analyse_features.py"
-
-# ========================
-# Dataset Configuration
-# ========================
-SPLIT="train"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/cifar_100_samples/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/publish/gemma3n/DL/SNMF/cifar100/${SPLIT}"
-
-MAX_ITERATIONS=50
-DEFAULT_DATASET_SIZE=300
-OVERRIDE_DATASET_SIZE=200
-
-# ========================
-# Decomposition Configuration
-# ========================
-FEATURES_PATH="$SAVE_DIR/features/combined_features.pth"
-ANALYSIS_NAME="decompose_activations_text_grounding_image_grounding"
-MODULE_TO_DECOMPOSE="model.language_model.norm"
-NUM_CONCEPTS=50
-DECOMPOSITION_METHOD="snmf"
-SAVE_FILENAME_ANALYSIS="gemma3n_results_patch_all_patch_snmf"
-CONCEPT_SAVE_DIR="$SAVE_DIR/concept"
-
+PROMT_TEMPLATE="dl"
+SPLIT="val"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/publish/gemma3n/DL/SNMF/coco10/${SPLIT}"
+MAX_ITERATIONS=10
+DEFAULT_DATASET_SIZE=50
+OVERRIDE_DATASET_SIZE=50
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/coco_10_concepts/${SPLIT}"
 # ========================
 # Feature Extraction Loop
 # ========================
@@ -78,46 +60,21 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --save_dir "$SAVE_DIR" \
     --save_filename "$SAVE_FILENAME" \
     --generation_mode \
+    --prompt_template "$PROMT_TEMPLATE" \
     --save_only_generated_tokens \
     --slice_prediction \
-    --concept "$concept" \
     --exact_match_modules_to_hook
 
   COUNT=$((COUNT + 1))
 done
 
 # ========================
-# Combine Features
-# ========================
-echo "Combining all .pth files in $SAVE_DIR/features ..."
-"$PYTHON_EXEC" "$COMBINE_SCRIPT" "$SAVE_DIR/features"
-
-# ========================
-# Decomposition Analysis
-# ========================
-mkdir -p "$CONCEPT_SAVE_DIR"
-
-echo "Running decomposition analysis..."
-"$PYTHON_EXEC" "$ANALYSIS_SCRIPT" \
-  --model_name "$MODEL_NAME" \
-  --analysis_name "$ANALYSIS_NAME" \
-  --features_path "$FEATURES_PATH" \
-  --module_to_decompose "$MODULE_TO_DECOMPOSE" \
-  --num_concepts "$NUM_CONCEPTS" \
-  --decomposition_method "$DECOMPOSITION_METHOD" \
-  --save_filename "$SAVE_FILENAME_ANALYSIS" \
-  --save_dir "$CONCEPT_SAVE_DIR" \
-  --load_matched_features
-
-# ========================
 # End Timer
 # ========================
 end_time=$(date +%s)
 runtime=$((end_time - start_time))
-
-# Format runtime to hh:mm:ss
 hours=$((runtime / 3600))
 minutes=$(((runtime % 3600) / 60))
 seconds=$((runtime % 60))
 
-echo "Total run time: ${hours}h ${minutes}m ${seconds}s"
+echo "Feature generation completed in ${hours}h ${minutes}m ${seconds}s"
