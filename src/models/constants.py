@@ -59,7 +59,10 @@ null_prompt = ""
  # Respond with one of these two options only."
 stict_prompt = "Identify the pattern in the image as either '[concept]' or 'No [concept]' ? Respond with one of these two options only."
 p7 = "Classify the image as either '[concept]' or 'No [concept]' based on its content. Return only the predicted label."
+multiple_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'Something else'. Respond with only one of these two options."
 
+
+oneword_question = "Identify the main object in the image using a single word."
 TASK_PROMPTS = {
     "llava": {
         "ShortVQA":concept_prompt ,
@@ -70,9 +73,16 @@ TASK_PROMPTS = {
     "cgdl": {
         "ShortVQA":p2 ,
         "ShortCaptioning":p1,
-        "List of item":ShortVQA ,
+        "List of item":multiple_choice_prompt ,
         "Repeat the text": "Write the given text only"
     },
+    "oneword": {
+        "ShortVQA":multiple_choice_prompt  ,
+        "ShortCaptioning":p1 ,
+        "List of item":multiple_choice_prompt ,
+        "Repeat the text": "Write the given text only"
+    },
+
      "dl": {
         "ShortVQA":ShortVQA ,
         "ShortCaptioning":ShortCaptioning,
@@ -84,6 +94,7 @@ TASK_PROMPTS = {
         "Predictions": "\nPlease classify finding of the  chest X-ray.",
         "Findings": "\nPlease provide a detailed finding of the chest X-ray.",
     }
+
 }
 
 

@@ -13,8 +13,7 @@ from tqdm import tqdm
 
 import metrics
 from datasets.constants import WORDS
-import pydicom
-from pydicom.pixel_data_handlers.util import apply_modality_lut
+
 from PIL import Image
 
 __all__ = [
@@ -882,32 +881,9 @@ def load_image_as_rgb(file_path, out_type="PIL"):
         file_path = [file_path] # fixing the bug by brutforce
 
 
-    if ext == ".dcm":
-        # Load DICOM file
-        dicom_data = pydicom.dcmread(file_path)
-        image = dicom_data.pixel_array
-        image_array = image
-        
-        # Convert grayscale to RGB (if it's single-channel)
-        if len(image.shape) == 2:  # Grayscale image
-            image = np.stack([image] * 3, axis=-1)  # Convert to RGB
 
-        if out_type == "PIL":
-            # Convert NumPy array to PIL Image
-            pil_image = Image.fromarray(image_array)
-            # Ensure 3-channel image if grayscale
-            if pil_image.mode != "RGB":
-                pil_image = pil_image.convert("RGB")
-            return pil_image
-        elif out_type == "np":
-            # Normalize to 0-255 for RGB conversion if necessary
-            if np.max(image) > 255:
-                image = (image / np.max(image)) * 255.0
-            return image.astype(np.uint8)
-        else:
-            raise ValueError("Invalid out_type. Use 'PIL' or 'np'.")
 
-    elif ext in [".jpeg", ".jpg", ".png"]:
+    if ext in [".jpeg", ".jpg", ".png"]:
         # Load JPEG or PNG file
         image = Image.open(file_path[0].split("@")[1]).convert("RGB")  # Ensure it's RGB
 

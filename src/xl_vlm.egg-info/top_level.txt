@@ -2,8 +2,11 @@ __init__
 analyse_features
 analysis
 assets
+combine_concepts
+combine_features
 datasets
 examples
+generate_phrase
 helpers
 main
 metrics
