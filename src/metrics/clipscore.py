@@ -19,8 +19,6 @@ from packaging import version
 from PIL import Image
 from torchvision.transforms import (CenterCrop, Compose, Normalize, Resize,
                                     ToTensor)
-import pydicom
-from pydicom.pixel_data_handlers.util import apply_modality_lut
 
 
 

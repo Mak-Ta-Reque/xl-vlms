@@ -1,3 +1,44 @@
+def create_grid_patches(image_path, patch_size, output_dir, center_crop=True):
+    img = Image.open(image_path)
+    img_name = Path(image_path).stem
+    original_width, original_height = img.size
+
+    if center_crop:
+        crop_width, crop_height = 500, 500
+        if original_width < crop_width or original_height < crop_height:
+            new_w = max(original_width, crop_width)
+            new_h = max(original_height, crop_height)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            original_width, original_height = img.size
+        left = (original_width - crop_width) // 2
+        top = (original_height - crop_height) // 2
+        right = left + crop_width
+        bottom = top + crop_height
+        img = img.crop((left, top, right, bottom))
+        width, height = img.size
+        if width < patch_size or height < patch_size:
+            new_w = max(width, patch_size)
+            new_h = max(height, patch_size)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            width, height = img.size
+    else:
+        width, height = img.size
+        if width < patch_size or height < patch_size:
+            new_w = max(width, patch_size)
+            new_h = max(height, patch_size)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            width, height = img.size
+
+    os.makedirs(output_dir, exist_ok=True)
+    patch_id = 0
+    for top in range(0, height - patch_size + 1, patch_size):
+        for left in range(0, width - patch_size + 1, patch_size):
+            right = left + patch_size
+            bottom = top + patch_size
+            patch_img = img.crop((left, top, right, bottom)).convert("RGB")
+            patch_filename = f"{img_name}_patch_{patch_id}.png"
+            patch_img.save(os.path.join(output_dir, patch_filename))
+            patch_id += 1
 import os
 import random
 import argparse
@@ -96,33 +137,42 @@ def calculate_iou(box1, box2):
         return 0
     return interArea / unionArea
 
-def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ratio=0.25, max_attempts_per_patch=100):
+def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ratio=0.25, max_attempts_per_patch=100, center_crop=True):
     img = Image.open(image_path)
     img_name = Path(image_path).stem
     original_width, original_height = img.size
 
-    # Always scale width to 1000 first
-    target_width = 1000
-    scale_ratio = target_width / original_width
-    new_height = int(original_height * scale_ratio)
-    img = img.resize((target_width, new_height), Image.LANCZOS)
-
-    # After initial resize, check if further upscale is needed to meet patch size
-    width, height = img.size
-    if width < patch_size or height < patch_size:
-        # Determine scaling factor needed to make both dimensions >= patch size
-        scale_factor = max(patch_size / width, patch_size / height)
-        new_width = int(width * scale_factor)
-        new_height = int(height * scale_factor)
-        img = img.resize((new_width, new_height), Image.LANCZOS)
+    if center_crop:
+        crop_width, crop_height = 500, 500
+        if original_width < crop_width or original_height < crop_height:
+            new_w = max(original_width, crop_width)
+            new_h = max(original_height, crop_height)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            original_width, original_height = img.size
+        left = (original_width - crop_width) // 2
+        top = (original_height - crop_height) // 2
+        right = left + crop_width
+        bottom = top + crop_height
+        img = img.crop((left, top, right, bottom))
         width, height = img.size
+        if width < patch_size or height < patch_size:
+            new_w = max(width, patch_size)
+            new_h = max(height, patch_size)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            width, height = img.size
+    else:
+        # No center crop, just upscale if needed
+        width, height = img.size
+        if width < patch_size or height < patch_size:
+            new_w = max(width, patch_size)
+            new_h = max(height, patch_size)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            width, height = img.size
 
     os.makedirs(output_dir, exist_ok=True)
-
     saved_patches = []
     patches_created = 0
     attempts = 0
-
     while patches_created < P and attempts < P * max_attempts_per_patch:
         attempts += 1
         left = random.randint(0, width - patch_size)
@@ -130,15 +180,12 @@ def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_rat
         right = left + patch_size
         bottom = top + patch_size
         new_patch = (left, top, right, bottom)
-
         too_much_overlap = any(
             calculate_iou(new_patch, existing_patch) > max_overlap_ratio
             for existing_patch in saved_patches
         )
-
         if too_much_overlap:
             continue
-
         patch_img = img.crop(new_patch).convert("RGB")
         patch_filename = f"{img_name}_patch_{patches_created}.png"
         patch_img.save(os.path.join(output_dir, patch_filename))
@@ -225,16 +272,18 @@ def _create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ra
         saved_patches.append(new_patch)
         patches_created += 1
 
-def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_overlap=0.25):
+def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_overlap=0.25, center_crop=True, grid=False):
     for subdir, _, files in os.walk(root_input):
         rel_path = os.path.relpath(subdir, root_input)
         output_subdir = os.path.join(root_output, rel_path)
         os.makedirs(output_subdir, exist_ok=True)
-
         for file in files:
             if file.lower().endswith(('.png', '.jpg', '.jpeg')):
                 image_path = os.path.join(subdir, file)
-                create_random_patches(image_path, patch_size, output_subdir, P, max_overlap)
+                if grid:
+                    create_grid_patches(image_path, patch_size, output_subdir, center_crop)
+                else:
+                    create_random_patches(image_path, patch_size, output_subdir, P, max_overlap, center_crop)
 
 def main():
     parser = argparse.ArgumentParser(description="Extract random image patches with limited overlap.")
@@ -243,6 +292,10 @@ def main():
     parser.add_argument("--patch_size", type=int, default=128, help="Size of each square patch")
     parser.add_argument("--patches_per_image", type=int, default=10, help="Number of patches per image")
     parser.add_argument("--max_overlap", type=float, default=0.25, help="Maximum allowed overlap ratio (0.0 to 1.0)")
+    parser.add_argument("--center_crop", dest="center_crop", action="store_true", help="Use center crop before patch extraction")
+    parser.add_argument("--no_center_crop", dest="center_crop", action="store_false", help="Do not use center crop before patch extraction")
+    parser.set_defaults(center_crop=True)
+    parser.add_argument("--grid", action="store_false", help="Use grid-based cropping instead of random cropping")
 
     args = parser.parse_args()
 
@@ -251,7 +304,9 @@ def main():
         args.output_root,
         args.patch_size,
         args.patches_per_image,
-        args.max_overlap
+        args.max_overlap,
+        args.center_crop,
+        args.grid
     )
 
 if __name__ == "__main__":
@@ -259,12 +314,10 @@ if __name__ == "__main__":
 
 """
 python   preprocessing/random_crops.py \
-  --input_root /mnt/abka03/xlvlm_data/noidle/train \
-  --output_root /mnt/abka03/xlvlm_data/noidle_crops/train \
-  --patch_size 200 \
-  --patches_per_image 2 \
+  --input_root /mnt/abka03/xlvlm_data/oneclass/oneimage \
+  --output_root /mnt/abka03/xlvlm_data/oneclass/oneimage_crops \
+  --patch_size 128 \
+  --patches_per_image 50 \
   --max_overlap 0.5
 
 """
-
-

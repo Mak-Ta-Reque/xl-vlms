@@ -3,6 +3,9 @@ README.md
 pyproject.toml
 src/__init__.py
 src/analyse_features.py
+src/combine_concepts.py
+src/combine_features.py
+src/generate_phrase.py
 src/main.py
 src/save_features.py
 src/analysis/__init__.py
@@ -17,7 +20,11 @@ src/datasets/image_text_dataset.py
 src/examples/__init__.py
 src/helpers/__init__.py
 src/helpers/arguments.py
+src/helpers/loading_cache.py
 src/helpers/logger.py
+src/helpers/post_process_embeding.py
+src/helpers/sae.py
+src/helpers/sae_.py
 src/helpers/utils.py
 src/metrics/__init__.py
 src/metrics/captioning_metrics.py
@@ -28,10 +35,13 @@ src/metrics/vqa_accuracy.py
 src/models/__init__.py
 src/models/chexagent.py
 src/models/constants.py
+src/models/gemma3.py
+src/models/gemma3_backup.py
 src/models/idefics2.py
 src/models/image_text_model.py
 src/models/llava.py
 src/models/molmo.py
+src/models/qwen_2_5.py
 src/models/qwen_vl.py
 src/xl_vlm.egg-info/PKG-INFO
 src/xl_vlm.egg-info/SOURCES.txt
