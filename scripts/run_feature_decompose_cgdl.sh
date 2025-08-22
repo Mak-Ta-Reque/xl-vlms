@@ -32,7 +32,7 @@ hook_name="save_hidden_states_sentence"
 
 # Concept extraction settings
 n_concepts=2
-dataset_size="80"
+dataset_size="500"
 normalizations=("gl")
 max_iterations=10
 
