@@ -12,8 +12,8 @@ HF_HOME=${4:-""}
 # Configuration
 ##########################################
 DATASET_NAME="image"
-DEFAULT_DATASET_SIZE=500
-OVERRIDE_DATASET_SIZE=500
+DEFAULT_DATASET_SIZE=800
+OVERRIDE_DATASET_SIZE=800
 HOOK_NAME="save_hidden_states_sentence"
 MODULES_TO_HOOK="model.language_model.norm"
 SCRIPT_PATH="src/save_features.py"
