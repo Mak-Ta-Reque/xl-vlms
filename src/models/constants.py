@@ -59,8 +59,15 @@ null_prompt = ""
  # Respond with one of these two options only."
 stict_prompt = "Identify the pattern in the image as either '[concept]' or 'No [concept]' ? Respond with one of these two options only."
 p7 = "Classify the image as either '[concept]' or 'No [concept]' based on its content. Return only the predicted label."
-multiple_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'Something else'. Respond with only one of these two options."
+binary_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'Something else'. Respond with only one of these two options."
+multiple_choice_prompt = "Q: If the image contains one of the following, answer with only that option. Do not explain. Do not output anything else. \
+[Option 1]  \
+[Option 2]  \
+[Option 3]  \
+[concept]  \
+"   
 
+# replace the options with diffrent choices from the ground truth of input data
 
 oneword_question = "Identify the main object in the image using a single word."
 TASK_PROMPTS = {
@@ -73,13 +80,13 @@ TASK_PROMPTS = {
     "cgdl": {
         "ShortVQA":p2 ,
         "ShortCaptioning":p1,
-        "List of item":multiple_choice_prompt ,
+        "List of item":binary_choice_prompt ,
         "Repeat the text": "Write the given text only"
     },
     "oneword": {
-        "ShortVQA":multiple_choice_prompt  ,
+        "ShortVQA":binary_choice_prompt  ,
         "ShortCaptioning":p1 ,
-        "List of item":multiple_choice_prompt ,
+        "List of item":binary_choice_prompt ,
         "Repeat the text": "Write the given text only"
     },
 
@@ -94,6 +101,14 @@ TASK_PROMPTS = {
         "Predictions": "\nPlease classify finding of the  chest X-ray.",
         "Findings": "\nPlease provide a detailed finding of the chest X-ray.",
     }
+    ,
+    "steering": {
+        "ShortVQA":ShortVQA  ,
+        "ShortCaptioning":ShortCaptioning ,
+        "binary":binary_choice_prompt ,
+        "multiple_choice": multiple_choice_prompt,
+        "repeat": "Write the given text only"
+    },
 
 }
 

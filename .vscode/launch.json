@@ -1,123 +1,38 @@
 {
   "version": "0.2.0",
   "configurations": [
-
-
-
+    // Save features (noun phrase) from layer/s for a given directory of images
     {
-      "name": "Generate noun phrase data",
+      "name": "Save Features Qwen2.5 all noun phrases",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/src/generate_phrase.py",
+      "program": "${workspaceFolder}/src/save_features.py",
       "args": [
-        "--model_name", "google/gemma-3n-e4b-it",
+        "--model_name", "Qwen/Qwen2.5-VL-7B-Instruct",
         "--dataset_name", "image",
-        "--dataset_size", "100",
-        "--data_dir", "/mnt/abka03/mscoco2014/val2014",
-        "--save_dir", "/mnt/abka03/xl-vlms/data",
-        "--slice_prediction",
-        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
-      ],
-      "env": {
-        "HF_HOME": "/mnt/abka03/huggingface/hub"
-      },
-      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
-      "console": "integratedTerminal",
-      "justMyCode": true
-    },
-
-    
-    {
-      "name": "Save Features Qwen",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/src/save_features.py",
-      "args": [
-        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--dataset_name", "coco",
-        "--dataset_size", "4000",
-        "--data_dir", "/mnt/abka03/mscoco2014/",
-        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/combined_dataset_coco.json",
-        "--split", "train",
-        "--hook_name", "save_hidden_states_for_tokens_of_interest", //"save_hidden_states_given_token_idx",
-        "--tokens_of_interest", " cat dog", //space must be appended infront of token
-        "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
-        "--save_dir", "/mnt/abka03/xl-vlms",
-        "--save_filename", "qwen2_image_patched_combined_grid_patch_concept_generation_split_train",
-        "--generation_mode",
-        "--save_only_generated_tokens",
-        "--slice_prediction",
-        "--exact_match_modules_to_hook",
-        //"--post_process_hidden",
-        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
-      ],
-      "env": {
-        "HF_HOME": "/mnt/abka03/huggingface/hub"
-      },
-      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
-      "console": "integratedTerminal",
-      "justMyCode": true
-    }, 
-
-    {
-      "name": "Save Features Qwen all hidden states",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/src/save_features.py",
-      "args": [
-        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--dataset_name", "coco",
-        "--dataset_size", "500",
-        "--data_dir", "/mnt/abka03/mscoco2014/",
-        "--annotation_file", "/mnt/abka03/mscoco2014/xl-vlm/cat_dataset_coco.json",
-        "--split", "train",
-        "--hook_name", "save_hidden_states", //"save_hidden_states_given_token_idx",
-        "--modules_to_hook", "model.norm,model.layers.27", //model.norm, model.layers.27, 
-        "--save_dir", "/mnt/abka03/xl-vlms",
-        "--save_filename", "qwen2_image_patched_combined_grid_patch_concept_generation_split_train",
-        "--generation_mode",
-        "--save_only_generated_tokens",
-        "--slice_prediction",
-        "--exact_match_modules_to_hook",
-        //"--post_process_hidden",
-        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
-      ],
-      "env": {
-        "HF_HOME": "/mnt/abka03/huggingface/hub"
-      },
-      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
-      "console": "integratedTerminal",
-      "justMyCode": true
-    }, 
-
-    {
-      "name": "Save Features Qwen all noun phrases",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/src/save_features.py",
-      "args": [
-        "--model_name", "Qwen/Qwen2-VL-7B-Instruct",
-        "--dataset_name", "image",
-        "--dataset_size", "10",
-        "--data_dir", "/mnt/abka03/Projects/xl-vlms/playground/dataset/dataset_crop/train/covid",
+        "--dataset_size", "4",
+        "--data_dir", "/mnt/abka03/Projects/xl-vlms/output/crops/apple",
         "--hook_names", "save_hidden_states_sentence", 
-        "--modules_to_hook", "model.norm", 
+        "--modules_to_hook", "model.language_model.norm", 
         "--save_dir", "/mnt/abka03/xl-vlms",
         "--save_filename", "qwen2_image_combine_hidden_states_noun_phrase_truck_generation_split_val",
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
+        "--prompt_template", "one",
         "--exact_match_modules_to_hook",
-        "--concept", "covid",
-        "--cache_dir", "/mnt/abka03/xl-vlms/cache"
+        "--concept", "apple",
+        "--cache_dir", "/mnt/abka03/xl-vlms/results"
       ],
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"
       },
-      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/mnt/abka03/.conda/envs/rsml3/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     }, 
+
+// Save features (noun phrase) from a given an image
     {
       "name": "Save Features Qwen all noun phrases of an image",
       "type": "python",
