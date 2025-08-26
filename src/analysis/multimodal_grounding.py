@@ -6,6 +6,7 @@ import nltk
 nltk.download('words')
 
 import torch
+from models.submodel import SubModelFromLayer
 from nltk.corpus import words
 
 import helpers.utils as helpers_utils
@@ -90,6 +91,8 @@ def concept_image_grounding(
     return local_image_indices
 
 
+
+
 def get_multimodal_grounding(
     concepts: torch.Tensor,
     activations: torch.Tensor,
@@ -108,6 +111,11 @@ def get_multimodal_grounding(
 ) -> None:
     #model_class = model_class.get_lm_head()
     lm_head = model_class.get_lm_head().float()
+    post_model = SubModelFromLayer(model_class, module_to_decompose)
+    # instead of getting model head i want to pass the embedding  to to all the post layer after a given layer that is metioned in module to decompose
+    embedding = lm_head(concepts.float())
+    post_model(embedding)
+
     tokenizer = model_class.get_tokenizer()
     grounding_dict = {}
 

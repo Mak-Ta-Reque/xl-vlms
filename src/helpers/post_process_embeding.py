@@ -214,9 +214,15 @@ def append_token_before_path(item, model_class):
     new_item["image"] = [f"tok@{item['image'][0]}"]
     return new_item
 
+def get_sinusoidal_encoding(seq_len, dim, device):
+    position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)
+    div_term = torch.exp(torch.arange(0, dim, 2, dtype=torch.float, device=device) * -(torch.log(torch.tensor(10000.0)) / dim))
+    pe = torch.zeros(seq_len, dim, device=device)
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+    return pe
 
-
-def extract_sentence_embeddings(item, model_class):
+def extract_sentence_embeddings(item, model_class, positional_encoding=True):
     """
     Extracts sentence embeddings from hidden states and attaches them to the output dictionary.
 
@@ -252,12 +258,24 @@ def extract_sentence_embeddings(item, model_class):
                 token_embeddings[clean_token] = emb # rot_emb(layer_embeddings[:, idx:idx+1, :], position_ids = torch.arange(0, len(phrases)))
         filtered_embeddings[layer_name] = token_embeddings
 
-    # Aggregate token embeddings into sentence embeddings
+    # Aggregate token embeddings into sentence embeddings using sinusoidal positional encoding
+
     aggregated_hidden_states = {}
     for layer_name, token_embeddings in filtered_embeddings.items():
         if token_embeddings:
-            stacked = torch.cat(list(token_embeddings.values()), dim=1)
-            aggregated_hidden_states[layer_name] = torch.mean(stacked, dim=1).unsqueeze(0)
+            stacked = torch.cat(list(token_embeddings.values()), dim=1)  # [batch, seq_len, hidden]
+            batch, seq_len, hidden = stacked.shape
+            if seq_len == 1:
+                aggregated = stacked
+            elif positional_encoding and seq_len > 1:
+                pe = get_sinusoidal_encoding(seq_len, hidden, stacked.device) * 0.001 # [seq_len, hidden] # 0.001 is if for making smaller impact in the embedding
+                pe = pe.transpose(0, 1).unsqueeze(0)  # [1, hidden, seq_len]
+                # Weight each token embedding by its positional encoding
+                weighted = stacked * pe.transpose(1, 2)  # [batch, seq_len, hidden]
+                aggregated = weighted.mean(dim=1).unsqueeze(0)  # [1, batch, hidden]
+            else:
+                aggregated = stacked.mean(dim=1).unsqueeze(0)
+            aggregated_hidden_states[layer_name] = aggregated
 
     # Build the output dictionary
     output_item = {}

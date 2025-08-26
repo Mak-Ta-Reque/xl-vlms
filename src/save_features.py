@@ -42,20 +42,25 @@ def inference(
     model = model_class.get_model()
     start_time = time.time()
     for i, item in enumerate(loader):
-        
         if args.dataset_name == "text":
             text = item["text"][0]  # for now we support batch size = 1
             inputs = model_class.preprocessor(
-            instruction=text,
-            response="",
-            generation_mode=args.generation_mode,
+                instruction=text,
+                response="",
+                generation_mode=args.generation_mode,
             )
         else:
             text = item["text"][0]  # for now we support batch size = 1
             if args.concept is not None:
-                text = text.replace("[concept]", args.concept.strip())
-                #print(f"Text after replacing concept: {text}")
-                #print("Token of intersest" + args.token_of_interest)
+                if args.concept in text:
+                    # Concept already present, just remove the placeholder
+                    text = text.replace("[concept]\n", "")
+                else:
+                    # Concept not present, add it in the placeholder
+                    text = text.replace("[concept]", f"{args.concept.strip()}")
+            else:
+                # remove the [concept] mask from the text
+                text = text.replace("[concept]\n", "")
             image_path = item["image"][0]
             
             inputs = model_class.preprocessor(

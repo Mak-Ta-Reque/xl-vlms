@@ -1,0 +1,27 @@
+{
+  "baseline_response": "The image shows a person sitting on the sand at a beach, interacting with a dog. The person is wearing a plaid shirt and appears to be giving a treat or a small object to the dog. The dog, which looks like a Labrador Ret",
+  "cut_results": {
+    "norm": {
+      "success": true,
+      "embedding_shape": [
+        1,
+        3604,
+        3584
+      ],
+      "embedding_dtype": "torch.float16",
+      "embedding_device": "cuda:0",
+      "embedding_stats": {
+        "mean": -0.097412109375,
+        "std": 3.841796875,
+        "min": -190.875,
+        "max": 129.125
+      }
+    }
+  },
+  "model_info": {
+    "name": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "total_params": 8292166656,
+    "device": "cuda:0",
+    "dtype": "torch.float16"
+  }
+}

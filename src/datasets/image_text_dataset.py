@@ -269,7 +269,7 @@ class ImageDataset(ImageTextDataset):
                 }
                 self.data = [item]
                 return
-        elif "val" in self.data_dir:
+        elif "val" in self.data_dir or self.split == "val":
             # Directory path provided
             for root, _, files in os.walk(self.data_dir):
                 for file in files:
@@ -299,16 +299,21 @@ class ImageDataset(ImageTextDataset):
                         image_path = os.path.join(root, file)
 
                         instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
-                            "ShortCaptioning", "An image of "
+                            "multiple_choice", "An image of "
+                        )
+                        system_prompt = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                            "system_prompt", "An image of "
                         )
                         response = ""  # Assuming response generation is handled elsewhere
 
                         item = {
                             "img_id": img_id,
                             "instruction": instruction,
+                            "system_prompt": system_prompt,
                             "response": response,
                             "image": image_path,
                             "targets": "",  # No targets since no JSON file
+
                         }
                         data.append(item)
 

@@ -10,7 +10,7 @@
       "args": [
         "--model_name", "Qwen/Qwen2.5-VL-7B-Instruct",
         "--dataset_name", "image",
-        "--dataset_size", "4",
+        "--dataset_size", "100",
         "--data_dir", "/mnt/abka03/Projects/xl-vlms/output/crops/apple",
         "--hook_names", "save_hidden_states_sentence", 
         "--modules_to_hook", "model.language_model.norm", 
@@ -19,7 +19,7 @@
         "--generation_mode",
         "--save_only_generated_tokens",
         "--slice_prediction",
-        "--prompt_template", "one",
+        "--prompt_template", "steering",
         "--exact_match_modules_to_hook",
         "--concept", "apple",
         "--cache_dir", "/mnt/abka03/xl-vlms/results"
@@ -31,6 +31,7 @@
       "console": "integratedTerminal",
       "justMyCode": true
     }, 
+
 
 // Save features (noun phrase) from a given an image
     {
@@ -294,14 +295,14 @@
     },
 
     {
-      "name": "Decompose Features Script Qwen",
+      "name": "Decompose Features", // for a given set of embeding/residual stream decomose the embeding for concept/feature vector
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/src/analyse_features.py",  // Replace with your script's name
       "args": [
-        "--model_name",  "google/gemma-3n-e4b-it",
+        "--model_name",  "Qwen/Qwen2.5-VL-7B-Instruct",
         "--analysis_name", "decompose_activations_text_grounding_image_grounding",
-        "--features_path",  "/mnt/abka03/xl-vlms/features/save_hidden_states_for_token_of_interest_qwen2_patched_image_cat_token_of_interest_concept_generation_split_train.pth",
+        "--features_path",  "/mnt/abka03/xl-vlms/features/save_hidden_states_sentence_qwen2_image_combine_hidden_states_noun_phrase_truck_generation_split_val.pth",
         "--module_to_decompose", "model.language_model.norm",
         "--num_concepts", "5",
         "--decomposition_method", "snmf",
@@ -312,7 +313,7 @@
       "env": {
         "HF_HOME": "/mnt/abka03/huggingface/hub"
       },
-      "python": "/mnt/abka03/.conda/envs/xl_vlm/bin/python",  // Update this path
+      "python": "/mnt/abka03/.conda/envs/rsml3/bin/python",  // Update this path
       "console": "integratedTerminal",
       "justMyCode": true
     },

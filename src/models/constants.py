@@ -1,3 +1,5 @@
+import random
+
 #import os
 #coco15_cox_proompt = "\nWhat is the object in the image among: baby, bear, car, dog, hot dog, school bus, teddy bear, train, baseball glove, bus, cat, fire hydrant, microwave oven, stop sign, traffic light." 
 #imagenet_cox_prompt = "\nWhat is the object in the image among: a parachute, cassette player,  chainsaw,  charch,  dog,  fish,  french horn,  garbage truck,  gas station,  golf ball." 
@@ -12,15 +14,13 @@
 #cifar100_class_names = [folder.replace('_', ' ') for folder in subfolders]
 #cifar100_prompt = f"\nWhat is the object in the image among and reply with few word: " + ', '.join(cifar100_class_names) + "."
 
+# read a text file from asset dir and the choose 4 of them 
+mutiple_choice_options = []
+with open("src/assets/multiple_choice_options.txt", "r") as f:
+    mutiple_choice_options = f.read().splitlines()
 
-
-
-
-
-
-
-
-
+# Randomly choose 4 options from the list
+selected_mutiple_choice_options = random.sample(mutiple_choice_options, 4)
 
 # Prompt varation for MCoX
 p1 = "Detect whether the image contains [concept]. If yes, return just [concept]; otherwise, return UNK"
@@ -60,12 +60,17 @@ null_prompt = ""
 stict_prompt = "Identify the pattern in the image as either '[concept]' or 'No [concept]' ? Respond with one of these two options only."
 p7 = "Classify the image as either '[concept]' or 'No [concept]' based on its content. Return only the predicted label."
 binary_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'Something else'. Respond with only one of these two options."
-multiple_choice_prompt = "Q: If the image contains one of the following, answer with only that option. Do not explain. Do not output anything else. \
-[Option 1]  \
-[Option 2]  \
-[Option 3]  \
-[concept]  \
-"   
+
+
+multiple_choice_prompt = (
+    "Q: If the image contains one of the following, answer with only that option. Do not explain. Do not output anything else.\n"
+    f"{selected_mutiple_choice_options[0]}  \n"
+    f"{selected_mutiple_choice_options[1]}  \n"
+    f"{selected_mutiple_choice_options[2]}  \n"
+    f"{selected_mutiple_choice_options[3]}  \n"
+    f"[concept]  \n"
+)
+   
 
 # replace the options with diffrent choices from the ground truth of input data
 
@@ -107,22 +112,8 @@ TASK_PROMPTS = {
         "ShortCaptioning":ShortCaptioning ,
         "binary":binary_choice_prompt ,
         "multiple_choice": multiple_choice_prompt,
+        "system_prompt": "You are a helpful assistant.",
         "repeat": "Write the given text only"
     },
 
 }
-
-
-"""
-
-airplane -> blorx  
-bus -> vintar  
-car -> quoze  
-cow -> dralup  
-fire_hydrant -> nexil  
-horse -> zenth  
-motorcycle -> kravix  
-person -> ulmora  
-truck -> fendrak  
-zebra -> jarnok  
-"""
