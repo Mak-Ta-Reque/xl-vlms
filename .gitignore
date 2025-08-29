@@ -20,3 +20,4 @@ logs.log
 
 *.egg-info/
 .vscode
+output

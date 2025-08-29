@@ -6,8 +6,8 @@ set -euo pipefail  # Safer script: exit on errors and unset vars
 ##########################################
 MODEL_NAME="google/gemma-3n-E4B-it"
 DATASET_NAME="image"
-DEFAULT_DATASET_SIZE=800
-OVERRIDE_DATASET_SIZE=800
+DEFAULT_DATASET_SIZE=100
+OVERRIDE_DATASET_SIZE=100
 HOOK_NAME="save_hidden_states_sentence"
 MODULES_TO_HOOK="model.language_model.norm"
 PYTHON_EXEC="/mnt/abka03/.conda/envs/xl_vlm/bin/python"
@@ -16,10 +16,10 @@ HF_HOME="/mnt/abka03/huggingface/hub"
 PROMPT_TEMPLATE="cgdl"
 
 SPLIT="train"
-BASE_DATA_DIR="/mnt/abka03/xlvlm_data/imagenet_3_class_crops/${SPLIT}"
-SAVE_DIR="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/imagenet3/${SPLIT}"
+BASE_DATA_DIR="/mnt/abka03/xlvlm_data/noidle_crops/${SPLIT}"
+SAVE_DIR="/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/noidle/${SPLIT}"
 
-MAX_ITERATIONS=5
+MAX_ITERATIONS=120
 COUNT=0
 
 ##########################################
