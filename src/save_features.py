@@ -10,14 +10,18 @@ import torch
 from datasets import get_dataset_loader
 from helpers.arguments import get_arguments
 from helpers.logger import log_args, setup_logger
-from helpers.utils import (clear_forward_hooks, clear_hooks_variables,
-                           compute_time_left, set_seed, setup_hooks,
-                           update_dict_of_list, save_dict_as_pickle)
-from models import get_model_class 
+from helpers.utils import (
+    clear_forward_hooks, clear_hooks_variables,
+    compute_time_left, set_seed, setup_hooks,
+    update_dict_of_list, save_dict_as_pickle
+)
+from models import get_model_class
 from helpers.loading_cache import load_all_pickles
-from helpers.post_process_embeding import extract_phrase_embeddings, extract_sentence_embeddings, extract_token_embeddings, append_token_before_path
+from helpers.post_process_embeding import (
+    extract_phrase_embeddings, extract_sentence_embeddings,
+    extract_token_embeddings, append_token_before_path
+)
 from models.image_text_model import ImageTextModel
-
 
 def move_to_cpu(data):
     if isinstance(data, torch.Tensor):
@@ -42,45 +46,36 @@ def inference(
     model = model_class.get_model()
     start_time = time.time()
     for i, item in enumerate(loader):
-        
         if args.dataset_name == "text":
-            text = item["text"][0]  # for now we support batch size = 1
+            text = item["text"][0]
             inputs = model_class.preprocessor(
-            instruction=text,
-            response="",
-            generation_mode=args.generation_mode,
+                instruction=text,
+                response="",
+                generation_mode=args.generation_mode,
             )
         else:
-            text = item["text"][0]  # for now we support batch size = 1
+            text = item["text"][0]
             if args.concept is not None:
                 text = text.replace("[concept]", args.concept.strip())
-                #print(f"Text after replacing concept: {text}")
-                #print("Token of intersest" + args.token_of_interest)
             image_path = item["image"][0]
-            
             inputs = model_class.preprocessor(
                 instruction=text,
                 image_file=image_path,
                 response="",
                 generation_mode=args.generation_mode,
-                
             )
 
         if args.generation_mode:
             out = model.generate(
                 **inputs, max_new_tokens=args.max_new_tokens,
-                  do_sample=True,
-                  output_scores=True,
-                  return_dict_in_generate=True,
-
-
+                do_sample=True,
+                output_scores=True,
+                return_dict_in_generate=True,
             )
-            #move_to_cpu_and_cleanup(out)
             scores = out.scores
             scores = move_to_cpu(scores)
             out = out.sequences
             out = move_to_cpu(out)
-
         else:
             out = model(**inputs).logits
 
@@ -90,63 +85,45 @@ def inference(
             if inputs["input_ids"].ndim > 1
             else inputs["input_ids"].shape[0]
         )
-       # This is modification from original implementation, ChexAgent model only generate prediction , no input is repeted
         if args.slice_prediction:
             item["model_generated_output"] = out[:, input_len:]
             item["model_predictions"] = model_class.get_tokenizer().batch_decode(
-            out[:, input_len:], skip_special_tokens=True
+                out[:, input_len:], skip_special_tokens=True
             )
         else:
             item["model_generated_output"] = out
             item["model_predictions"] = model_class.get_tokenizer().batch_decode(
-            out, skip_special_tokens=True
+                out, skip_special_tokens=True
             )
         del out
         item["scores"] = scores
-        #item["token_of_interest"] = args.token_of_interest # This is becase we want to pass token of interest, I added
+
         if hook_return_functions is not None:
             for func in hook_return_functions:
                 if func is not None:
                     hook_output = func(**item)
                     if hook_output:
                         item.update(hook_output)
-        """
-        cache_dir = args.cache_dir
-        if cache_dir is not None:
-            
-            os.makedirs(cache_dir, exist_ok=True)
-            if len(os.listdir(cache_dir))> 1: # If cache directory has files already just load them and return
-                return load_all_pickles(cache_dir)
 
-
-        else:
-            raise(f"Cache duirectroy is{cache_dir}. It is not possible to svae save intermidiate file")
-        save_dict_as_pickle(item, cache_dir )
-        """
-        if "save_hidden_states_noun_phrase" in args.hook_names : # With tis hook name we only extract the phrase embeddigns of all embedding 
+        if "save_hidden_states_noun_phrase" in args.hook_names:
             item = extract_phrase_embeddings(item, model_class)
             for key, value in item.items():
                 if key in hook_data:
                     hook_data[key].extend(item[key])
                 else:
                     hook_data[key] = item[key]
-        
-        elif "save_hidden_states_token" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
+        elif "save_hidden_states_token" in args.hook_names:
             item = extract_token_embeddings(item, model_class)
             for key, value in item.items():
                 if key in hook_data:
                     hook_data[key].extend(item[key])
                 else:
                     hook_data[key] = item[key]
-
-        elif "save_hidden_states_for_token_of_interest" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
+        elif "save_hidden_states_for_token_of_interest" in args.hook_names:
             item["image"] = [f"{args.token_of_interest}@{item['image'][0]}"]
-            #print(item["model_predictions"] )
             item["model_predictions"] = [f"{args.token_of_interest}@{item['model_predictions'][0]}"]
             update_dict_of_list(item, hook_data)
-            
-
-        elif "save_hidden_states_sentence" in args.hook_names: # With tis hook name we only extract the sentence embeddigns of all embedding
+        elif "save_hidden_states_sentence" in args.hook_names:
             item = extract_sentence_embeddings(item, model_class)
             for key, value in item.items():
                 if key in hook_data:
@@ -161,11 +138,7 @@ def inference(
             logger.info(
                 f"Iteration: {i}/{num_iterations},  Estimated time left: {time_left:.2f} mins"
             )
-        
-    #hook_data = load_all_pickles(cache_dir)
-    #shutil.rmtree(cache_dir)
     return hook_data
-
 
 if __name__ == "__main__":
 

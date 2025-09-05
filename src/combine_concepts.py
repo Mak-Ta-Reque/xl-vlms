@@ -7,8 +7,8 @@ from collections import Counter
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.linalg import inv
 import random
-def zca_whiten(X):
 
+def zca_whiten(X):
     X_centered = X - np.mean(X, axis=0)
     cov_matrix = np.cov(X_centered, rowvar=False)
     U, S, _ = np.linalg.svd(cov_matrix)
@@ -16,12 +16,10 @@ def zca_whiten(X):
     whitening_matrix = np.dot(U, np.dot(np.diag(1.0 / np.sqrt(S + epsilon)), U.T))
     return np.dot(X_centered, whitening_matrix)
 
-
-
 def dominant_positive_index(lists):
     def is_positive_majority(sublist):
         no_not = sum(
-            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk') or item.lower().startswith('thing') or item.lower().startswith('nc') 
+            item.lower().startswith(('no_', 'not_', 'unk', 'thing', 'nc'))
             for item in sublist
         )
         positive = len(sublist) - no_not
@@ -54,11 +52,7 @@ def combine_concepts(input_dir):
         image_grounding_path = model_data['image_grounding_paths']
         
         index_with_all_no = dominant_positive_index(image_grounding_path)
-        #index_with_all_no  = max(
-         
-        #   range(len(image_grounding_path)),
-        #key=lambda i: sum(1 for item in image_grounding_path[i] if not ( item.startswith("not_") or item.startswith("no_")   or item.startswith("Not_") or item.startswith("no_") or item.startswith("NO_") or item.startswith("No_") or item.startswith("nO_"), item.startswith("none_") or item.startswith("None_") or item.startswith("NONE_") or item.startswith("nOne_") or item.startswith("nOne_") ) )
-        #)
+        # Removed commented-out code for clarity
         
         if index_with_all_no is None:
             print(f"Skipping {filename} due to no dominant positive index found/randomly choosen.")
@@ -90,14 +84,6 @@ def laplacian_smoothing(X, alpha=0.5):
         np.ndarray: Smoothed matrix of the same shape
     """
 
-    #positive_threshold = 0.01
-    #negative_threshold = -0.01
-
-    # Set values to 0 if they are:
-    # - less than the positive threshold but positive
-    # - greater than the negative threshold but negative
-    #X = np.where(((X > 0) & (X < positive_threshold)) | ((X < 0) & (X > negative_threshold)),0,  X   )
-    # Step 1: Compute cosine similarity matrix
     W = cosine_similarity(X)
     np.fill_diagonal(W, 0)  # Remove self-similarity
 
@@ -206,13 +192,11 @@ def save_combined_data(data, output_path):
     torch.save(data, output_path)
     print(f"Saved combined data to: {output_path}")
 
-
 def delete_original_files(paths):
     for f in paths:
         if f.endswith('.pth'):
             os.remove(f)
     print("Original .pth files deleted.")
-
 
 def main(args):
     pth_files = [ os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if f.endswith('.pth')] #original path files

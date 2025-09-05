@@ -10,7 +10,7 @@ analysis_save_dir="/mnt/abka03/concept_extraction_result/MCoX/SNMF/noidle/train/
 cache_dir="/mnt/abka03/xl-vlms/cache"
 model_name="google/gemma-3n-E4B-it" #"Qwen/Qwen2-VL-7B-Instruct"
 feature_module="model.language_model.norm"
-hook_name="save_hidden_states_sentence"
+HOOK_NAME="save_hidden_states_for_token_of_interest"
 analysis_name="decompose_activations_text_grounding_image_grounding"
 PROMPT_TEMPLATE="cgdl"
 analysis_regrunding_name="redefine_activations_text_grounding"
@@ -19,7 +19,7 @@ n_concepts=2 # Fixed for Contrastive SNMF
 dataset_size="1000"
 nomalizations=("gl") #("l1" "zca" "l1zca" "l2" "l2zca" "gl")
 # Loop through each concept folder
-max_iterations=120
+max_iterations=5
 count=0
 for dir in "$base_data_dir"/*; do
     # Get folder name and clean concept name
@@ -30,7 +30,11 @@ for dir in "$base_data_dir"/*; do
     concept="${folder_name//_/ }"  # Convert underscores to spaces
 
     echo "Processing concept: $concept"
-
+    if [[ "$folder_name" == *"_"* ]]; then
+      TOKEN_OF_INTEREST="${folder_name##*_}"
+    else
+      TOKEN_OF_INTEREST="$folder_name"
+    fi
     # === STEP 1: Save Features ===
     save_filename="qwen2_image_concept_hidden_states_${folder_name}"
     data_dir="${base_data_dir}/${folder_name}"
@@ -47,6 +51,7 @@ for dir in "$base_data_dir"/*; do
         --data_dir "$data_dir" \
         --hook_name "$hook_name" \
         --modules_to_hook "$feature_module" \
+        --token_of_interest "$TOKEN_OF_INTEREST" \
         --save_dir "$feature_save_dir" \
         --save_filename "$save_filename" \
         --generation_mode \

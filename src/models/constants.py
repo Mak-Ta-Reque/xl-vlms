@@ -29,10 +29,12 @@ p3 = "Decide if the visual content shows [concept]. Respond with [concept] or th
 p4 = "Is there a clear instance of [concept] in this image? Reply with [concept] or nc, nothing else"
 p5 = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not"  #Used for main experiment
 p6 = "Detect whether the image contains [concept]. If yes, return just [concept]; otherwise, return No [concept]"
-sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
-sudonSNFMF_prompt_unk = "Classify the input image as either:  [concept], or UNK. Return only the predicted class label based on whether a [concept] is present in the image or not" 
-sudonSNFMF_prompt_related = "If the input image is related to [concept], write [concept] else say UNK." 
-sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not" 
+p7 = "Check if the image contains a a vissible [concept]. If yes, return only '[concept]'; otherwise, return 'No [concept]'."
+p8 = "You are a strict image classifier. Determine if the image's main subject is [concept] occupying the majority of the visible area ('mostly'). Output exactly [concept] if yes; otherwise output No [concept]. Output a single token only, no punctuation, no extra words, and preserve casing."
+sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not"
+sudonSNFMF_prompt_unk = "Classify the input image as either:  [concept], or UNK. Return only the predicted class label based on whether a [concept] is present in the image or not"
+sudonSNFMF_prompt_related = "If the input image is related to [concept], write [concept] else say UNK."
+sudonSNFMF_prompt_V2 = "Classify the input image as either:  [concept], or  No_. Return only the predicted class label based on whether a [concept] is present in the image or not"
 valdiation_prompt = "Write only the [concept] if it is present in the image (e.g., 'mammal'). If the image does not contain a [concept], write: 'No [concept]."
 sudonSNFMF_prompt_V3 = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
 #sudonSNFMF_prompt_V3 = "Which of the following  this image: [concept], or Not [concept]." 
@@ -71,8 +73,8 @@ TASK_PROMPTS = {
         "Repeat the text": "Repeat the word only"
     },
     "cgdl": {
-        "ShortVQA":p2 ,
-        "ShortCaptioning":p1,
+        "ShortVQA":p8 ,
+        "ShortCaptioning": p8,
         "List of item":multiple_choice_prompt ,
         "Repeat the text": "Write the given text only"
     },

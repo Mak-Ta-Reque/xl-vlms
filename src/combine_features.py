@@ -1,8 +1,5 @@
-# combine_features.py
-
 import torch
 import os
-import sys
 import argparse
 
 def combine_pth_files(root_dir, delete=False):

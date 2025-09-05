@@ -1,9 +1,4 @@
-# Write main funtion 
-# Use code from save_fearestures.py load a vlm and data loader 
-# infer the text batch wise 
-# from the generated text. genearte noun phrase 
-# save all the noun phrase in one text file and save the image names in another text file as pair 
-
+# Main function to generate noun phrases from model predictions and save results
 
 
 
@@ -96,8 +91,6 @@ def inference(
             else:
 
                 continue
-        #filtered_ebedding_of_hidden_states = {}
-        #for hidden_key, hidden_value in hook_data.items():
         images = image_path * len(phrases)
         all_phrases.extend(phrases)
         all_images.extend(images)
@@ -106,9 +99,6 @@ def inference(
             logger.info(
                 f"Iteration: {i}/{num_iterations},  Estimated time left: {time_left:.2f} mins"
             )
-        
-    #hook_data = load_all_pickles(cache_dir)
-    #shutil.rmtree(cache_dir)
     return all_phrases, all_images
 if __name__ == "__main__":
 

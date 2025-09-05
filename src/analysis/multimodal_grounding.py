@@ -59,16 +59,17 @@ def concept_text_grounding(
         comp_words = [
             word.lower().strip()
             for word in comp_words
-            if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
+            #if valid_word(word, eng_corpus=eng_corpus, stopwords=stopwords)
         ]
-        comp_words = remove_substrings(comp_words)  # Remove substrings from the list of words
+        #comp_words = remove_substrings(comp_words)  # Remove substrings from the list of words
         # Filter out words that are not valid
         
-        #comp_words = [word for word in comp_words if word not in stopwords]
 
         icomp_words = []
         for word in comp_words:
             clean_word = re.sub(r'[^a-zA-Z0-9]', '', word.strip())  # Remove non-alphanumeric characters
+            if len(clean_word) < 3: # Ignore very short words
+                continue
             if clean_word and clean_word not in stopwords:
                 icomp_words.append(clean_word)
 

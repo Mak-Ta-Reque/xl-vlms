@@ -34,13 +34,30 @@ def resize_if_needed(img, min_w, min_h):
 
 
 def center_crop(img, crop_size):
-    """Center crop image to crop_size (tuple)."""
-    w, h = img.size
-    cw, ch = crop_size
-    img = resize_if_needed(img, cw, ch)
-    left = (img.width - cw) // 2
-    top = (img.height - ch) // 2
+    """Resize image to crop_size (h, w) maintaining aspect ratio, then center crop."""
+    ch, cw = crop_size  # crop_size is (height, width)
+    
+    # Calculate aspect ratios
+    img_ratio = img.width / img.height
+    target_ratio = cw / ch
+    
+    if img_ratio > target_ratio:
+        # Image is wider, fit to height
+        new_height = ch
+        new_width = int(ch * img_ratio)
+    else:
+        # Image is taller, fit to width
+        new_width = cw
+        new_height = int(cw / img_ratio)
+    
+    # Resize maintaining aspect ratio
+    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
+    # Center crop to exact size
+    left = (new_width - cw) // 2
+    top = (new_height - ch) // 2
     return img.crop((left, top, left + cw, top + ch))
+
 
 
 # -------------------- Patch Functions --------------------
@@ -158,11 +175,13 @@ if __name__ == "__main__":
 # Example usage
 # Random patch extraction
 python patch_extractor.py \
-  --input_root data/images \
-  --output_root data/patches \
-  --patch_size 110 \
-  --patches_per_image 20 \
+  --input_root /mnt/abka03/xlvlm_data/noidle \
+  --output_root /mnt/abka03/xlvlm_data/noidle_crops \
+  --patch_size 200 \
+  --crop_size 500 500 \
+  --patches_per_image 30 \
   --max_overlap 0.3
+  --random
 
 # Grid patch extraction
 python patch_extractor.py \
@@ -176,9 +195,10 @@ python patch_extractor.py \
 python patch_extractor.py \
   --input_root /mnt/abka03/xlvlm_data/noidle/train \
   --output_root  /mnt/abka03/xlvlm_data/noidle_crops/train \
-  --patch_size 180 \
+  --patch_size 300 \
   --patches_per_image 20 \
   --max_overlap 0.2 \
+  --crop_size 1500 1500 \
   --grid \
   --random
 """
