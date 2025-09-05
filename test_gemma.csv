@@ -1,0 +1,34 @@
+root_path,subfolder,image_name,predicted_text,prompt_used
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,479596.jpg,"The image shows a vibrant display of fresh fruits at what appears to be a market or grocery store. The foreground is dominated by a large woven basket overflowing with bright orange citrus fruits, likely oranges or tangerines. Many of these fruits have small blue stickers on them. 
+
+Behind the basket of citrus, there's a mix of red apples and green apples, also piled high. The apples create a colorful contrast with the oranges. Further in the background, there are more fruits, including what look",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,139099.jpg,"The image captures a bustling outdoor market scene, likely in Asia, filled with people and various vendors. The focus is on a woman sitting on a blue scooter, wearing a light grey helmet and a long-sleeved light purple shirt over a grey vest and brown pants. She is holding a small white dog on her lap, which is wearing a pink harness. 
+
+In front of the scooter, another woman in a white short-sleeved shirt and a pink skirt is offering a slice of watermelon",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,217753.jpg,"The image shows a vibrant display of fresh fruits arranged in green plastic crates, likely in a grocery store or market. There are several types of fruit visible, each neatly packaged and labeled.
+
+Starting from the top left and moving across:
+
+* **Apples:** There are two types of apples. One is a deep red variety, packaged in clear plastic containers. The other is a yellow variety, also packaged in clear plastic containers.
+* **Pears:** Several varieties of pears are displayed.",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,409424.jpg,"A close-up shot captures a bountiful fruit basket, brimming with a variety of fresh produce. The basket itself is made of woven brown wicker, with a sturdy curved handle. It's filled to the brim with a colorful assortment of fruits, including bright yellow lemons, a few pale yellow peaches, vibrant oranges, deep purple plums, and clusters of green grapes. 
+
+A large, decorative bow made of red and white patterned ribbon is prominently placed at the top of the basket, adding a",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,6614.jpg,"This is a black and white drawing of a still life featuring various fruits and peanuts. 
+
+The composition is centered around a large, round grapefruit positioned slightly off-center. To its left is a bunch of grapes, and to its right is a large apple with a few grapes hanging from its stem. Scattered around the base of the fruits are numerous peanuts in their shells. 
+
+The drawing uses shading to create a sense of volume and depth, highlighting the textures of the fruits and the rough surface",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,158660.jpg,"The image shows a self-serve food bar, likely in a cafe or restaurant. The focus is on two white bowls filled with fresh fruit. 
+
+On the left, a bowl contains several bananas, with a price tag indicating ""banana"" for 69 cents and 121 calories. 
+
+To the right, another white bowl holds three red apples, labeled as ""greenmarket apple"" for 92 cents and 77 calories. 
+
+Both bowls are placed on",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,485844.jpg,"This black and white photograph captures a moment in a kitchen, likely from the mid-20th century. The scene is filled with everyday domesticity. 
+
+The central figure is a woman with short, curly hair, wearing a patterned dress and an apron. She appears to be in the process of preparing food, as she's holding a large, round object (possibly a pie or a large pastry) on a plate. She's looking directly at the camera with a somewhat serious expression",Describe this image.
+/mnt/abka03/Projects/xl-vlms/data/val/apple,root,376307.jpg,"The image shows a vibrant outdoor market stall overflowing with fresh fruits and vegetables. The stall is covered by a blue awning, and the background features colorful textiles hanging from a makeshift structure. 
+
+In the foreground, a large display of fruits dominates the scene. There are several large, round yellow fruits, possibly passion fruit or a similar tropical variety, piled high. On top of these, a generous assortment of bananas, apples (red and green), oranges, a pineapple, carrots, a cucumber, and",Describe this image.

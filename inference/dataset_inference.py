@@ -6,31 +6,37 @@ This script iterates through a dataset of images organized in subfolders or dire
 runs inference using Hugging Face vision language models,
 and saves the results to a CSV file.
 
-The script supports both online model loading from Hugging Face Hub and offline loading from local directories.
-For offline loading, use the --local_model_path argument or set the HF_LOCAL_MODEL_PATH environment variable.
+The script automatically detects if models are cached locally and uses them for offline inference.
+If models are not cached, they will be downloaded from Hugging Face Hub.
 
 Usage:
-    # Online loading from Hugging Face Hub
-    python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B --output_csv results.csv
+    # Basic usage - automatically detects local cache or downloads from Hub
+    python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --output_csv results.csv
     
-    # Offline loading from local model directory
-    python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B --local_model_path /path/to/local/model --output_csv results.csv
-    
-    # Using environment variable for local model path
-    export HF_LOCAL_MODEL_PATH=/path/to/local/models
-    python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B --output_csv results.csv
+    # With HF token for private models
+    export HF_TOKEN=your_token
+    python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --output_csv results.csv
 """
 
 import os
+# Configure torch compilation and dynamo settings for Gemma
+os.environ["TORCH_COMPILE_DISABLE"] = "1"
+
 import csv
 import argparse
+import logging
 from pathlib import Path
 from typing import List, Tuple, Optional
-import logging
-from tqdm import tqdm
+from huggingface_hub import login
 import torch
+import torch._dynamo
+from tqdm import tqdm
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModelForCausalLM
+
+# Configure torch dynamo settings
+torch._dynamo.disable()
+torch._dynamo.config.suppress_errors = True
 
 # Try to import Gemma3nForConditionalGeneration, fallback if not available
 try:
@@ -39,6 +45,10 @@ try:
 except ImportError:
     GEMMA3N_AVAILABLE = False
     print("Warning: Gemma3nForConditionalGeneration not available. Using fallback for Gemma models.")
+
+# Configure Hugging Face environment settings
+if not os.environ.get("HF_HOME"):
+    os.environ["HF_HOME"] = "/mnt/abka03/huggingface/hub"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -49,8 +59,8 @@ IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
 
 # Popular Hugging Face vision language models
 POPULAR_MODELS = {
-    'gemma-3n': 'google/gemma-3n-e4b',
-    'gemma-3n-e4b': 'google/gemma-3n-e4b',
+    'gemma-3n': 'google/gemma-3n-E4B-it',
+    'gemma-3n-e4b': 'google/gemma-3n-E4B-it',
     'qwen2-vl-7b': 'Qwen/Qwen2-VL-7B-Instruct',
     'qwen2-vl-2b': 'Qwen/Qwen2-VL-2B-Instruct',
     'llava-1.5-7b': 'llava-hf/llava-1.5-7b-hf',
@@ -99,7 +109,7 @@ def get_image_files(dataset_path: str) -> List[Tuple[str, str, str]]:
                         image_file.name
                     ))
     
-    logger.info(f"Found {len(image_files)} images across {len(list(dataset_path.iterdir()))} subfolders and root directory")
+    logger.info(f"Found {len(image_files)} images across subfolders and root directory")
     return image_files
 
 
@@ -142,117 +152,104 @@ def resize_image(image: Image.Image, target_size: Optional[Tuple[int, int]] = No
     return final_image
 
 
-def load_huggingface_model(model_name: str, trust_remote_code: bool = True, local_model_path: str = None) -> Tuple[object, object]:
+def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_token: str = None) -> Tuple[object, object]:
     """
     Load Hugging Face vision language model and processor.
+    Automatically detects if model exists in cache and uses local files if available.
     
     Args:
         model_name: Hugging Face model name or path
         trust_remote_code: Whether to trust remote code
-        local_model_path: Optional local path to model directory. If provided, loads from local path.
+        hf_token: Hugging Face authentication token for private models
         
     Returns:
         Tuple of (model, processor)
     """
-    # Set up Hugging Face environment for local loading if needed
-    if local_model_path or os.path.exists(model_name):
-        # If local_model_path is provided, use it; otherwise check if model_name is a local path
-        if local_model_path:
-            # If model_name looks like a Hugging Face model ID (contains '/'), 
-            # construct the path by joining local_model_path with just the model name part
-            if '/' in model_name and not os.path.exists(model_name):
-                model_folder_name = model_name.replace('/', '--')
-                model_path = os.path.join(local_model_path, model_folder_name)
-                # If that doesn't exist, try with the full model name
-                if not os.path.exists(model_path):
-                    model_path = os.path.join(local_model_path, model_name.split('/')[-1])
-                # If still doesn't exist, try the original path
-                if not os.path.exists(model_path):
-                    model_path = local_model_path
-            else:
-                model_path = local_model_path
-        else:
-            model_path = model_name
-            
-        logger.info(f"Loading model from local path: {model_path}")
-        
-        # Set environment variables for offline mode
-        os.environ['TRANSFORMERS_OFFLINE'] = '1'
-        os.environ['HF_DATASETS_OFFLINE'] = '1'
-        
-        # Verify the local path exists
-        if not os.path.exists(model_path):
-            raise ValueError(f"Local model path does not exist: {model_path}")
-            
-    else:
-        model_path = model_name
-        logger.info(f"Loading model from Hugging Face Hub: {model_name}")
-        
-        # Ensure we're not in offline mode for Hub downloads
-        if 'TRANSFORMERS_OFFLINE' in os.environ:
-            del os.environ['TRANSFORMERS_OFFLINE']
-        if 'HF_DATASETS_OFFLINE' in os.environ:
-            del os.environ['HF_DATASETS_OFFLINE']
+    # Set up Hugging Face cache directory
+    hf_cache_dir = os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub")
     
+    # Check if model exists in cache
+    # Convert model name to cache directory format (e.g., "google/gemma-3n-E4B-it" -> "models--google--gemma-3n-E4B-it")
+    cache_model_name = model_name.replace("/", "--")
+    cached_model_path = os.path.join(hf_cache_dir, f"models--{cache_model_name}")
+    
+    # Determine if we should use local files only
+    use_local_files = os.path.exists(cached_model_path)
+    
+    if use_local_files:
+        logger.info(f"Found cached model at: {cached_model_path}")
+        logger.info("Using local cached files (offline mode)")
+    else:
+        logger.info(f"Model not found in cache. Will download from HuggingFace Hub")
+    
+    # Prepare common loading arguments
+    loading_kwargs = {
+        'cache_dir': hf_cache_dir,
+        'trust_remote_code': trust_remote_code,
+        'local_files_only': use_local_files,
+    }
+    
+    # Add token if provided
+    if hf_token:
+        loading_kwargs['token'] = hf_token
+        # Login to Hugging Face Hub
+        login(token=hf_token)
+    else:
+        logger.info("No HF token provided, proceeding without authentication")
     try:
         # Try different model classes based on model name
-        if 'qwen' in model_path.lower():
+        if 'qwen' in model_name.lower():
             model = AutoModelForVision2Seq.from_pretrained(
-                model_path,
-                torch_dtype=torch.float16,
+                model_name,
+                cache_dir=hf_cache_dir,
+                token=loading_kwargs['token'] if 'token' in loading_kwargs else None,
                 device_map="auto",
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_model_path is not None or os.path.exists(model_name),
-            )
-        elif 'gemma' in model_path.lower():
+                torch_dtype=torch.float16,
+            ).eval()
+        elif 'gemma' in model_name.lower():
             # Use specific Gemma3nForConditionalGeneration if available
-            if GEMMA3N_AVAILABLE and ('gemma-3n' in model_path.lower() or 'gemma3n' in model_path.lower()):
+            if GEMMA3N_AVAILABLE and ('gemma-3n' in model_name.lower() or 'gemma3n' in model_name.lower()):
                 model = Gemma3nForConditionalGeneration.from_pretrained(
-                    model_path,
+                    model_name,
                     torch_dtype=torch.bfloat16,
                     device_map="auto",
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_model_path is not None or os.path.exists(model_name),
+                    **loading_kwargs
                 ).eval()
             else:
                 # Fallback to AutoModelForCausalLM for other Gemma models
                 model = AutoModelForCausalLM.from_pretrained(
-                    model_path,
+                    model_name,
                     torch_dtype=torch.bfloat16,
                     device_map="auto",
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_model_path is not None or os.path.exists(model_name),
+                    **loading_kwargs
                 )
         else:
             # Generic approach - try Vision2Seq first, then CausalLM
             try:
                 model = AutoModelForVision2Seq.from_pretrained(
-                    model_path,
+                    model_name,
                     torch_dtype=torch.float16,
                     device_map="auto",
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_model_path is not None or os.path.exists(model_name),
+                    **loading_kwargs
                 )
-            except:
+            except Exception:
                 model = AutoModelForCausalLM.from_pretrained(
-                    model_path,
+                    model_name,
                     torch_dtype=torch.bfloat16,
                     device_map="auto",
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_model_path is not None or os.path.exists(model_name),
+                    **loading_kwargs
                 )
         
         processor = AutoProcessor.from_pretrained(
-            model_path,
-            trust_remote_code=trust_remote_code,
-            local_files_only=local_model_path is not None or os.path.exists(model_name),
+            model_name,
+            **loading_kwargs
         )
         
         logger.info(f"Model loaded successfully on device: {model.device}")
         return model, processor
         
     except Exception as e:
-        logger.error(f"Failed to load model {model_path}: {e}")
+        logger.error(f"Failed to load model {model_name}: {e}")
         raise
 
 
@@ -300,16 +297,25 @@ def prepare_input_for_model(image: Image.Image, text: str, processor: object, mo
                 padding=True
             )
     elif 'gemma' in model_name.lower():
-        # Gemma3n format with image soft token
-        if '<image_soft_token>' not in text:
-            # Prepend the image soft token to the prompt
-            text = f"<image_soft_token> {text}"
+        # Gemma3n format using chat template
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": text}
+                ],
+            },
+        ]
         
-        inputs = processor(
-            text=text,
-            images=image,
+        # Apply chat template and process inputs
+        inputs = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
             return_tensors="pt",
-            padding=True
         )
     else:
         # Generic format for other models
@@ -364,16 +370,14 @@ def infer_image_description(
         # Generate response
         with torch.no_grad():
             if 'gemma' in model_name.lower():
-                # Gemma-specific generation with inference mode
+                # Gemma-specific generation with deterministic sampling
                 input_len = inputs["input_ids"].shape[-1]
-                with torch.inference_mode():
-                    outputs = model.generate(
-                        **inputs,
-                        max_new_tokens=150,
-                        do_sample=True,
-                        temperature=0.7,
-                        pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
-                    )
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=100,
+                    do_sample=False,
+                    pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
+                )
                 # Extract only the new tokens (remove input tokens)
                 new_tokens = outputs[0][input_len:]
             else:
@@ -388,15 +392,16 @@ def infer_image_description(
                 new_tokens = outputs[0]
         
         # Decode the response
-        if hasattr(processor, 'tokenizer'):
-            tokenizer = processor.tokenizer
-        else:
-            tokenizer = processor
-        
-        # For Gemma models, decode only the new tokens
         if 'gemma' in model_name.lower():
-            generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+            # For Gemma models, decode only the new tokens using processor.decode
+            generated_text = processor.decode(new_tokens, skip_special_tokens=True).strip()
         else:
+            # For other models, use the tokenizer
+            if hasattr(processor, 'tokenizer'):
+                tokenizer = processor.tokenizer
+            else:
+                tokenizer = processor
+            
             # For some models, we need to extract only the new tokens
             if 'input_ids' in inputs:
                 generated_text = tokenizer.decode(
@@ -424,7 +429,7 @@ def process_dataset(
     image_size: Optional[Tuple[int, int]] = None,
     trust_remote_code: bool = True,
     resume: bool = False,
-    local_model_path: str = None
+    hf_token: str = None
 ) -> None:
     """
     Process the entire dataset and save results to CSV.
@@ -437,7 +442,7 @@ def process_dataset(
         image_size: Optional image resize dimensions (width, height)
         trust_remote_code: Whether to trust remote code
         resume: Whether to resume from existing CSV file
-        local_model_path: Optional local path to model directory for offline loading
+        hf_token: Hugging Face authentication token for private models
     """
     # Get all image files
     image_files = get_image_files(dataset_path)
@@ -464,7 +469,7 @@ def process_dataset(
         logger.info(f"Remaining files to process: {len(image_files)}")
     
     # Load the model and processor
-    model, processor = load_huggingface_model(model_name, trust_remote_code, local_model_path)
+    model, processor = load_huggingface_model(model_name, trust_remote_code, hf_token)
     
     # Prepare CSV file
     fieldnames = ['root_path', 'subfolder', 'image_name', 'predicted_text', 'prompt_used']
@@ -512,18 +517,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage with Gemma 3n model
-  python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B
+  # Basic usage with Gemma 3n model (auto-detects local cache)
+  python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it
 
   # Using Qwen2-VL with custom prompt and image resizing
   python dataset_inference.py --dataset_path /path/to/dataset --model_name Qwen/Qwen2-VL-7B-Instruct \\
     --prompt "What objects are in this image?" --image_size 512 512
 
   # Resume interrupted processing
-  python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B --resume
+  python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --resume
+
+  # Using private model with HF token
+  python dataset_inference.py --dataset_path /path/to/dataset --model_name private/model --hf_token your_token
 
 Popular models:
-  - google/gemma-3n-E4B (Gemma 3n)
+  - google/gemma-3n-E4B-it (Gemma 3n)
   - Qwen/Qwen2-VL-7B-Instruct (Qwen2-VL 7B)
   - Qwen/Qwen2-VL-2B-Instruct (Qwen2-VL 2B)
   - llava-hf/llava-1.5-7b-hf (LLaVA 1.5 7B)
@@ -534,7 +542,7 @@ Popular models:
     parser.add_argument(
         '--dataset_path',
         type=str,
-        required=True,
+        required=False,
         help='Path to the dataset directory containing image subfolders and/or images in the root directory'
     )
     
@@ -543,13 +551,6 @@ Popular models:
         type=str,
         default='google/gemma-3n-E4B',
         help='Hugging Face model name or path (default: google/gemma-3n-E4B)'
-    )
-    
-    parser.add_argument(
-        '--local_model_path',
-        type=str,
-        default=None,
-        help='Local path to model directory for offline loading. If specified, loads model from this path instead of downloading from Hugging Face Hub.'
     )
     
     parser.add_argument(
@@ -599,12 +600,19 @@ Popular models:
         help='List popular model names and exit'
     )
     
+    parser.add_argument(
+        '--hf_token',
+        type=str,
+        default=None,
+        help='Hugging Face authentication token for private models (or set HF_TOKEN environment variable)'
+    )
+    
     args = parser.parse_args()
     
-    # Handle local model path from environment variable if not provided via argument
-    if not args.local_model_path and 'HF_LOCAL_MODEL_PATH' in os.environ:
-        args.local_model_path = os.environ['HF_LOCAL_MODEL_PATH']
-        logger.info(f"Using local model path from environment variable: {args.local_model_path}")
+    # Handle HF token from environment variable if not provided via argument
+    hf_token = args.hf_token or os.environ.get('HF_TOKEN')
+    if hf_token:
+        logger.info("Using Hugging Face authentication token")
     
     # Handle model listing
     if args.list_models:
@@ -613,6 +621,12 @@ Popular models:
         for short_name, full_name in POPULAR_MODELS.items():
             print(f"{short_name:<15} : {full_name}")
         print("\nYou can use either the short name or full Hugging Face model path.")
+        return
+    
+    # Check if dataset_path is provided when not listing models
+    if not args.dataset_path:
+        print("Error: --dataset_path is required when not using --list_models")
+        parser.print_help()
         return
     
     # Handle trust_remote_code flag
@@ -639,7 +653,7 @@ Popular models:
             image_size=image_size,
             trust_remote_code=trust_remote_code,
             resume=args.resume,
-            local_model_path=args.local_model_path
+            hf_token=hf_token
         )
     except KeyboardInterrupt:
         print("\n⚠️ Processing interrupted by user")

@@ -10,7 +10,7 @@ DATASET_PATH="/mnt/abka03/Projects/xl-vlms/data/train"
 MODEL_NAME="google/gemma-3n-e4b"
 OUTPUT_CSV="dataset_inference_results.csv"
 PROMPT="Describe this image."
-LOCAL_MODEL_PATH="/mnt/abka03/huggingface/hub"
+HF_TOKEN=""
 IMAGE_SIZE=""
 TRUST_REMOTE_CODE="--trust_remote_code"
 RESUME=""
@@ -48,7 +48,7 @@ show_usage() {
     echo "  -m, --model-name NAME       Model name or path (default: google/gemma-3n-E4B)"
     echo "  -o, --output-csv PATH       Output CSV file path (default: dataset_inference_results.csv)"
     echo "  -p, --prompt TEXT           Text prompt for the model (default: 'Describe this image.')"
-    echo "  -l, --local-model PATH      Local model directory path (for offline loading)"
+    echo "  -t, --hf-token TOKEN        Hugging Face authentication token for private models"
     echo "  -s, --image-size WxH        Resize images to WxH (e.g., 512x512)"
     echo "  -r, --resume                Resume from existing CSV file"
     echo "  --no-trust-remote-code      Don't trust remote code when loading models"
@@ -59,14 +59,17 @@ show_usage() {
     echo "  # Basic usage"
     echo "  $0 -d ./data/train -m google/gemma-3n-E4B -o results.csv"
     echo ""
-    echo "  # With local model"
-    echo "  $0 -d ./data/train -m google/gemma-3n-E4B -l /path/to/local/model"
+    echo "  # With authentication token for private models"
+    echo "  $0 -d ./data/train -m google/gemma-3n-E4B-it -t your_hf_token"
     echo ""
     echo "  # With image resizing and resume"
     echo "  $0 -d ./data/train -m qwen2-vl-7b -s 512x512 -r"
     echo ""
     echo "  # Custom prompt"
     echo "  $0 -d ./data/train -p 'What objects do you see in this image?'"
+    echo ""
+    echo "Environment Variables:"
+    echo "  HF_TOKEN                    Hugging Face token (alternative to -t option)"
 }
 
 # Function to list available models
@@ -93,8 +96,8 @@ while [[ $# -gt 0 ]]; do
             PROMPT="$2"
             shift 2
             ;;
-        -l|--local-model)
-            LOCAL_MODEL_PATH="$2"
+        -t|--hf-token)
+            HF_TOKEN="$2"
             shift 2
             ;;
         -s|--image-size)
@@ -160,8 +163,8 @@ CMD="$CMD --output_csv \"$OUTPUT_CSV\""
 CMD="$CMD --prompt \"$PROMPT\""
 CMD="$CMD $TRUST_REMOTE_CODE"
 
-if [[ -n "$LOCAL_MODEL_PATH" ]]; then
-    CMD="$CMD --local_model_path \"$LOCAL_MODEL_PATH\""
+if [[ -n "$HF_TOKEN" ]]; then
+    CMD="$CMD --hf_token \"$HF_TOKEN\""
 fi
 
 if [[ -n "$IMAGE_SIZE" ]]; then
@@ -178,8 +181,8 @@ echo "  Dataset Path: $DATASET_PATH"
 echo "  Model Name: $MODEL_NAME"
 echo "  Output CSV: $OUTPUT_CSV"
 echo "  Prompt: $PROMPT"
-if [[ -n "$LOCAL_MODEL_PATH" ]]; then
-    echo "  Local Model Path: $LOCAL_MODEL_PATH"
+if [[ -n "$HF_TOKEN" ]]; then
+    echo "  HF Token: ****** (provided)"
 fi
 if [[ -n "$IMAGE_SIZE" ]]; then
     echo "  Image Size: $IMAGE_SIZE"
