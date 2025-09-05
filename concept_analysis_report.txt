@@ -1,0 +1,600 @@
+CONCEPT-TO-IMAGES MAPPING ANALYSIS REPORT
+==================================================
+
+OVERALL STATISTICS
+--------------------
+Total unique concepts: 486
+Total unique images: 30
+Total concept-image associations: 964
+Average concepts per image: 32.1
+
+TOP 30 MOST FREQUENT CONCEPTS
+-----------------------------------
+ 1. brown                          (23 images)
+ 2. smooth                         (22 images)
+ 3. white                          (21 images)
+ 4. red                            (19 images)
+ 5. green                          (19 images)
+ 6. yellow                         (18 images)
+ 7. textured                       (14 images)
+ 8. plastic                        (14 images)
+ 9. blue                           (12 images)
+10. wood                           (11 images)
+11. natural light                  (11 images)
+12. fruit                          (10 images)
+13. black                          (10 images)
+14. shadows                        (10 images)
+15. close-up                       (10 images)
+16. oranges                        ( 9 images)
+17. apples                         ( 9 images)
+18. round                          ( 9 images)
+19. matte                          ( 9 images)
+20. silver                         ( 8 images)
+21. table                          ( 8 images)
+22. metal                          ( 8 images)
+23. orange                         ( 8 images)
+24. glossy                         ( 8 images)
+25. gray                           ( 7 images)
+26. glass                          ( 7 images)
+27. indoor                         ( 7 images)
+28. rectangular                    ( 7 images)
+29. oval                           ( 7 images)
+30. food                           ( 7 images)
+
+IMAGES WITH MOST CONCEPTS
+-------------------------
+ 1. apple/407566.jpg          (49 concepts)
+ 2. apple/510063.jpg          (47 concepts)
+ 3. apple/39080.jpg           (47 concepts)
+ 4. apple/369259.jpg          (43 concepts)
+ 5. apple/367630.jpg          (41 concepts)
+ 6. apple/168488.jpg          (41 concepts)
+ 7. apple/576030.jpg          (40 concepts)
+ 8. apple/147618.jpg          (39 concepts)
+ 9. apple/417834.jpg          (38 concepts)
+10. apple/29342.jpg           (37 concepts)
+11. apple/46085.jpg           (36 concepts)
+12. apple/104568.jpg          (35 concepts)
+13. apple/295049.jpg          (34 concepts)
+14. apple/512007.jpg          (32 concepts)
+15. apple/272899.jpg          (32 concepts)
+
+CONCEPT CATEGORIES ANALYSIS
+---------------------------
+Color-related concepts: 63
+Top color concepts:
+  - brown (23 images)
+  - white (21 images)
+  - red (19 images)
+  - green (19 images)
+  - yellow (18 images)
+  - textured (14 images)
+  - blue (12 images)
+  - black (10 images)
+  - oranges (9 images)
+  - silver (8 images)
+
+Material-related concepts: 50
+Top material concepts:
+  - plastic (14 images)
+  - wood (11 images)
+  - metal (8 images)
+  - glass (7 images)
+  - fabric (6 images)
+  - ceramic (5 images)
+  - wooden cutting board (2 images)
+  - glasses (2 images)
+  - glass jar (2 images)
+  - hardwood floor (1 images)
+
+Texture-related concepts: 10
+Top texture concepts:
+  - smooth (22 images)
+  - matte (9 images)
+  - glossy (8 images)
+  - patterned (6 images)
+  - rough (5 images)
+  - shiny (4 images)
+  - patterned bedspread (1 images)
+  - patterned placemat (1 images)
+  - rough texture (1 images)
+  - smooth texture (1 images)
+
+Object-related concepts: 349
+Top object concepts:
+  - natural light (11 images)
+  - fruit (10 images)
+  - shadows (10 images)
+  - close-up (10 images)
+  - apples (9 images)
+  - table (8 images)
+  - indoor (7 images)
+  - food (7 images)
+  - window (7 images)
+  - light (6 images)
+  - apple (6 images)
+  - shadow (5 images)
+  - sink (5 images)
+  - chairs (4 images)
+  - curtains (4 images)
+
+RARE CONCEPTS (appearing in only 1 image): 369
+---------------------------------------------
+
+apple/104568.jpg:
+  - burners
+  - grapefruit
+  - kale
+  - knobs
+  - lettuce
+  - lime
+  - red cabbage
+  - stove top
+  - sweet potatoes
+
+apple/107167.jpg:
+  - blender
+  - chopped nuts
+  - circular dial
+  - electrical outlet
+  - fruit and kitchenware pattern
+  - grout
+  - kitchen countertop
+  - plastic lid
+  - power cord
+  - shadow.
+  - silver metal
+  - tiled backsplash
+  - white tiles
+
+apple/147618.jpg:
+  - collage
+  - kiwi
+  - kumquats
+  - limes
+  - organic.
+  - peaches
+  - pineapple
+  - plums
+  - segmented
+  - watermelon
+
+apple/168488.jpg:
+  - carousel
+  - clouds
+  - distant
+  - fairytale
+  - fog
+  - heart
+  - horizon
+  - horse
+  - low angle
+  - misty
+  - muted colors
+  - overcast
+  - path
+  - pattern.
+  - stone
+  - surreal
+  - symmetrical
+  - tower
+  - umbrella
+  - whimsical
+
+apple/269477.jpg:
+  - apple slices
+  - red bananas
+  - sticker
+
+apple/272899.jpg:
+  - animal
+  - boat
+  - boy
+  - crows
+  - fishing boat
+  - fishing gear
+  - fishing net
+  - horizontal composition
+  - human
+  - net
+  - outdoor scene
+  - palm trees
+  - rough texture
+  - rural setting
+  - sacks
+  - shallow depth of field
+  - smooth texture
+  - trees.
+  - woven texture
+
+apple/29342.jpg:
+  - black appliance
+  - blue bucket
+  - blue plates
+  - blue veining
+  - candy
+  - clear
+  - clear glass
+  - coffee filter
+  - coffee grounds
+  - coffee maker
+  - coffee pot
+  - gold
+  - gold handles
+  - red base
+  - white appliance
+  - white cabinets
+  - white dishwasher
+  - white paper towel holder
+  - white paper towels
+  - white plates
+  - wooden chair
+
+apple/295049.jpg:
+  - 25
+  - 5 fruit flavors
+  - cherry
+  - flavorlopes
+  - fruit flavored envelopes
+  - fruit illustrations
+  - grape
+  - leaves
+  - logo
+  - numbers
+  - qr code
+  - seeds
+  - shadows.
+  - strawberry
+  - take a lick at this
+  - white background
+
+apple/307734.jpg:
+  - dishware
+  - floral pattern
+  - speckled
+  - warm tones
+
+apple/315411.jpg:
+  - beard
+  - brown and white patterned object
+  - food scraps
+  - framed pictures
+  - fruit salad
+  - patterned glass
+  - patterned placemat
+  - purple t-shirt
+  - red plate
+  - relaxed
+  - short brown hair
+  - smile
+  - smiling
+  - strawberries
+  - white bowl
+  - white curtains
+  - wooden cabinet
+  - wooden spoons
+  - wooden table
+  - yellow notepad
+
+apple/315521.jpg:
+  - 2 lbs (0.91 kg)
+  - artificial light
+  - delicious
+  - fruit farm
+  - labels
+  - net weight
+  - packaging
+  - pile
+  - plastic bags
+  - sk-hi
+  - wisconsin
+
+apple/367630.jpg:
+  - blankets
+  - bunk beds
+  - camera
+  - clothes
+  - cozy
+  - denim shorts
+  - functional
+  - hard
+  - intimate
+  - patterned bedspread
+  - patterned fabric
+  - personal belongings
+  - plaid shirt
+  - private space
+  - resting
+  - sheets
+  - simple
+  - sleeping
+  - soft
+  - white t-shirt
+  - wooden walls
+  - youthful
+
+apple/369259.jpg:
+  - blue shirt
+  - cereal box
+  - cheerios
+  - dish rack
+  - light fixtures
+  - red shirt
+  - stainless steel refrigerator
+  - vase
+  - wooden cabinets
+  - wooden coaster
+
+apple/39080.jpg:
+  - bowls
+  - bread
+  - breakfast
+  - butter
+  - composition.
+  - cups
+  - cutlery
+  - dining
+  - dirt
+  - hills
+  - jam
+  - juice
+  - meal
+  - mountains
+  - pitcher
+  - rural
+  - scenic
+  - trees
+  - vegetation
+
+apple/392850.jpg:
+  - bright
+  - clear glass bowl
+  - ginger
+  - kitchen counter
+  - lemon
+  - light brown wood
+  - natural light.
+  - passion fruit
+  - red cutting board
+  - vegetable peeler
+
+apple/403459.jpg:
+  - beach
+  - chandelier
+  - dining table
+  - fireplace
+  - large windows
+  - mantel
+  - ocean view
+  - ottoman
+  - oval window
+  - pendant light
+  - sideboard
+  - vases
+
+apple/407566.jpg:
+  - appliances
+  - blinds
+  - ceiling
+  - clean
+  - cushions
+  - flooring
+  - island
+  - lamp
+  - modern
+  - open-plan.
+  - plants
+  - spacious
+  - square
+  - tiles
+
+apple/417834.jpg:
+  - acoustic
+  - beige fabric
+  - brown fur
+  - brown leather
+  - brown wood
+  - coaster
+  - dark
+  - decorative bowl
+  - framed
+  - guitar
+  - olive green
+  - radiator
+  - red wine
+  - shorts
+  - socks
+  - t-shirt
+  - throw pillow
+  - wine glass
+  - wooden
+  - wooden floor
+
+apple/454258.jpg:
+  - blue bowl
+  - checkered floor
+
+apple/46085.jpg:
+  - cardboard
+  - plastic airplane
+  - plastic balls
+  - plastic box
+  - plastic buttons
+  - plastic cookie cutters
+  - plastic food items
+  - plastic fruit
+  - plastic handle
+  - plastic knobs
+  - plastic label
+  - plastic packaging
+  - plastic price
+  - plastic screen
+  - plastic utensils
+  - plastic vegetables
+  - toy cookie dough
+  - toy cookie set
+  - toy food groups
+  - toy microwave
+  - toy oven
+  - toy rocket car
+  - white snowflake sticker
+
+apple/461475.jpg:
+  - artificial.
+  - blurry background
+  - clothing
+  - elephant trunk
+  - focus
+  - hand
+  - skin
+  - spots
+  - wooden platform
+
+apple/467037.jpg:
+  - blue surface
+  - close-up.
+  - creamy
+  - curry powder
+  - food presentation
+  - mashed
+  - white plate
+
+apple/510063.jpg:
+  - apollocamper.com
+  - composition
+  - magazine
+  - striped
+  - upholstery
+
+apple/512007.jpg:
+  - cabinet
+  - colorful flowers
+  - door handle
+  - frame
+  - laminate
+  - orange frame
+  - paint
+  - picture
+  - stainless steel
+  - trash can
+  - wall-mounted
+  - wood grain
+  - wooden door
+
+apple/518807.jpg:
+  - bowl
+  - bumpy
+  - plantains
+  - yellow-green
+
+apple/576030.jpg:
+  - backsplash
+  - ceiling fan
+  - circular
+  - cluttered
+  - countertops
+  - dishes
+  - functional.
+  - hardwood floor
+  - kettle
+  - kitchen cabinets
+  - light fixture
+  - rug
+  - toaster
+  - towels
+  - walls
+
+apple/579201.jpg:
+  - apple logo
+  - laptop
+  - metal blade
+  - red substance
+  - reflection
+  - sharp
+  - wooden grain
+  - wooden handle
+  - wooden surface
+
+apple/66628.jpg:
+  - cheese
+  - decorative border
+  - floral motifs.
+  - opaque
+  - pate
+  - rustic
+  - solid
+  - tableware
+
+apple/670.jpg:
+  - angled perspective
+  - cardboard boxes
+  - display
+  - grocery store
+  - organized
+  - rows
+  - stacked
+  - tangerines
+  - triangular
+
+apple/90724.jpg:
+  - blurred background
+  - broccoli
+  - depth of field
+  - food products
+  - grocery aisle
+  - onions
+  - parsley
+  - perspective.
+  - shelves
+  - shopping cart
+  - tomatoes
+  - white floor
+
+DETAILED MAPPING FOR KEY CONCEPTS
+-----------------------------------
+
+'apple' appears in 6 images:
+  - apple/518807.jpg
+  - apple/307734.jpg
+  - apple/467037.jpg
+  - apple/295049.jpg
+  - apple/461475.jpg
+  - apple/579201.jpg
+
+'apples' appears in 9 images:
+  - apple/454258.jpg
+  - apple/104568.jpg
+  - apple/392850.jpg
+  - apple/417834.jpg
+  - apple/147618.jpg
+  - apple/369259.jpg
+  - apple/670.jpg
+  - apple/315521.jpg
+  - apple/315411.jpg
+
+'kitchen' appears in 4 images:
+  - apple/454258.jpg
+  - apple/369259.jpg
+  - apple/510063.jpg
+  - apple/407566.jpg
+
+'fruit' appears in 10 images:
+  - apple/454258.jpg
+  - apple/417834.jpg
+  - apple/147618.jpg
+  - apple/670.jpg
+  - apple/315521.jpg
+  - apple/510063.jpg
+  - apple/518807.jpg
+  - apple/307734.jpg
+  - apple/269477.jpg
+  - apple/39080.jpg
+
+'food' appears in 7 images:
+  - apple/104568.jpg
+  - apple/66628.jpg
+  - apple/147618.jpg
+  - apple/518807.jpg
+  - apple/467037.jpg
+  - apple/269477.jpg
+  - apple/512007.jpg
