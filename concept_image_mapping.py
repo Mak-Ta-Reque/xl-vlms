@@ -9,6 +9,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 import re
+import argparse
 
 def clean_concept(concept):
     """Clean and normalize concept strings."""
@@ -131,34 +132,39 @@ def search_concept(concept_mapping, search_term):
 
 def main():
     """Main function to process the CSV and create concept mapping."""
-    csv_file = "/mnt/abka03/Projects/xl-vlms/debug_results.csv"
-    output_file = "/mnt/abka03/Projects/xl-vlms/concept_to_images_mapping.json"
-    
+    parser = argparse.ArgumentParser(description="Process a CSV file to create a concept-to-images mapping.")
+    parser.add_argument("--input", "-i", type=str, required=True, help="Path to the input CSV file.")
+    parser.add_argument("--output", "-o", type=str, required=True, help="Path to save the output JSON mapping.")
+    args = parser.parse_args()
+
+    csv_file = args.input
+    output_file = args.output
+
     # Check if CSV file exists
     if not Path(csv_file).exists():
         print(f"Error: CSV file not found at {csv_file}")
         return
-    
+
     # Process the CSV file
     concept_mapping = process_csv_file(csv_file, output_file)
-    
+
     # Analyze the mapping
     sorted_concepts = analyze_concept_mapping(concept_mapping)
-    
+
     # Example searches
     print("\n" + "="*50)
     print("EXAMPLE SEARCHES")
     print("="*50)
-    
+
     search_terms = ["apple", "red", "kitchen", "wood"]
-    
+
     for term in search_terms:
         matches = search_concept(concept_mapping, term)
         print(f"\nConcepts containing '{term}': {len(matches)}")
         if matches:
             for concept, images in list(matches.items())[:5]:  # Show first 5 matches
                 print(f"  - {concept} ({len(images)} images)")
-    
+
     print(f"\nComplete mapping saved to: {output_file}")
 
 if __name__ == "__main__":

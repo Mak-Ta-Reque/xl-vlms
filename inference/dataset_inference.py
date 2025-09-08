@@ -429,7 +429,8 @@ def process_dataset(
     image_size: Optional[Tuple[int, int]] = None,
     trust_remote_code: bool = True,
     resume: bool = False,
-    hf_token: str = None
+    hf_token: str = None,
+    batch_size: int = 1
 ) -> None:
     """
     Process the entire dataset and save results to CSV.
@@ -474,39 +475,136 @@ def process_dataset(
     # Prepare CSV file
     fieldnames = ['root_path', 'subfolder', 'image_name', 'predicted_text', 'prompt_used']
     mode = 'a' if resume and os.path.exists(output_csv) else 'w'
-    
+
+    def batch(iterable, n=1):
+        l = len(iterable)
+        for ndx in range(0, l, n):
+            yield iterable[ndx:min(ndx + n, l)]
+
     with open(output_csv, mode, newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        # Write header only if starting fresh
         if mode == 'w':
             writer.writeheader()
-        
-        # Process each image
-        for root_path, subfolder, image_name in tqdm(image_files, desc="Processing images"):
-            # Handle root directory images differently
-            if subfolder == "root":
-                image_path = os.path.join(root_path, image_name)
+
+        for image_batch in tqdm(list(batch(image_files, batch_size)), desc="Processing batches"):
+            batch_images = []
+            batch_prompts = []
+            batch_paths = []
+            for root_path, subfolder, image_name in image_batch:
+                if subfolder == "root":
+                    image_path = os.path.join(root_path, image_name)
+                else:
+                    image_path = os.path.join(root_path, subfolder, image_name)
+                try:
+                    image = Image.open(image_path).convert('RGB')
+                    if image_size:
+                        image = resize_image(image, image_size)
+                except Exception as e:
+                    logger.error(f"Error loading image {image_path}: {e}")
+                    image = None
+                batch_images.append(image)
+                batch_prompts.append(prompt)
+                batch_paths.append((root_path, subfolder, image_name))
+
+            # Remove None images
+            valid_indices = [i for i, img in enumerate(batch_images) if img is not None]
+            valid_images = [batch_images[i] for i in valid_indices]
+            valid_prompts = [batch_prompts[i] for i in valid_indices]
+            valid_paths = [batch_paths[i] for i in valid_indices]
+
+            if not valid_images:
+                continue
+
+            # Prepare batch inputs
+            if 'qwen' in model_name.lower():
+                messages = [
+                    [{"role": "user", "content": [
+                        {"type": "image", "image": img},
+                        {"type": "text", "text": pr}
+                    ]}] for img, pr in zip(valid_images, valid_prompts)
+                ]
+                if hasattr(processor, 'apply_chat_template'):
+                    text_prompts = [processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True) for m in messages]
+                    inputs = processor(
+                        text=text_prompts,
+                        images=valid_images,
+                        return_tensors="pt",
+                        padding=True
+                    )
+                else:
+                    inputs = processor(
+                        text=valid_prompts,
+                        images=valid_images,
+                        return_tensors="pt",
+                        padding=True
+                    )
+            elif 'gemma' in model_name.lower():
+                messages = [
+                    [
+                        {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
+                        {"role": "user", "content": [
+                            {"type": "image", "image": img},
+                            {"type": "text", "text": pr}
+                        ]}
+                    ] for img, pr in zip(valid_images, valid_prompts)
+                ]
+                inputs = processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
             else:
-                image_path = os.path.join(root_path, subfolder, image_name)
-            
-            # Run inference
-            predicted_text = infer_image_description(
-                model, processor, image_path, prompt, image_size, model_name
-            )
-            
-            # Write to CSV
-            writer.writerow({
-                'root_path': root_path,
-                'subfolder': subfolder,
-                'image_name': image_name,
-                'predicted_text': predicted_text,
-                'prompt_used': prompt
-            })
-            
-            # Flush to ensure data is written
+                inputs = processor(
+                    text=valid_prompts,
+                    images=valid_images,
+                    return_tensors="pt",
+                    padding=True
+                )
+
+            device = next(model.parameters()).device
+            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+
+            with torch.no_grad():
+                if 'gemma' in model_name.lower():
+                    input_len = inputs["input_ids"].shape[-1]
+                    outputs = model.generate(
+                        **inputs,
+                        max_new_tokens=100,
+                        do_sample=False,
+                        pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
+                    )
+                    new_tokens = [out[input_len:] for out in outputs]
+                    generated_texts = [processor.decode(nt, skip_special_tokens=True).strip() for nt in new_tokens]
+                else:
+                    outputs = model.generate(
+                        **inputs,
+                        max_new_tokens=150,
+                        do_sample=True,
+                        temperature=0.7,
+                        pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
+                    )
+                    if hasattr(processor, 'tokenizer'):
+                        tokenizer = processor.tokenizer
+                    else:
+                        tokenizer = processor
+                    if 'input_ids' in inputs:
+                        generated_texts = [tokenizer.decode(out[inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip() for out in outputs]
+                    else:
+                        generated_texts = [tokenizer.decode(out, skip_special_tokens=True).strip() for out in outputs]
+
+            # Write results for each image in batch
+            for (root_path, subfolder, image_name), predicted_text in zip(valid_paths, generated_texts):
+                writer.writerow({
+                    'root_path': root_path,
+                    'subfolder': subfolder,
+                    'image_name': image_name,
+                    'predicted_text': predicted_text,
+                    'prompt_used': prompt
+                })
             csvfile.flush()
-    
+
     logger.info(f"Processing complete! Results saved to {output_csv}")
 
 
@@ -607,6 +705,13 @@ Popular models:
         help='Hugging Face authentication token for private models (or set HF_TOKEN environment variable)'
     )
     
+    parser.add_argument(
+            '--batch_size',
+            type=int,
+            default=1,
+            help='Batch size for inference (default: 1)'
+        )
+    
     args = parser.parse_args()
     
     # Handle HF token from environment variable if not provided via argument
@@ -645,12 +750,13 @@ Popular models:
     
     # Run the processing
     try:
-        process_dataset(
+            process_dataset(
             dataset_path=args.dataset_path,
             model_name=model_name,
             output_csv=args.output_csv,
             prompt=args.prompt,
             image_size=image_size,
+               batch_size=args.batch_size,
             trust_remote_code=trust_remote_code,
             resume=args.resume,
             hf_token=hf_token
