@@ -1,0 +1,88 @@
+Input:
+    I = input image
+    p = textual prompt
+    model = autoregressive vision–language model with L layers and H heads
+Output:
+    R̃V = visual saliency map
+    R̃P = prompt saliency map
+    γt = cross-modal token relevance scores for generated tokens
+
+--------------------------------------------------------
+Stage 0: Preliminaries
+--------------------------------------------------------
+1. Encode input into sequence x = [visual tokens v1:K || prompt tokens p1:M || generated tokens y1:T]
+   N = K + M + T   # total sequence length
+   Index sets: V (visual tokens), P (prompt tokens), Y (generated tokens)
+
+2. Perform forward pass:
+   - Generate response y1:T
+   - Extract attention matrices {A_l^h} for each layer l ∈ [1..L], head h ∈ [1..H]
+
+3. Perform backward pass:
+   - For each generated token t ∈ Y, compute gradients {g_l^h} wrt attention scores
+
+--------------------------------------------------------
+Stage 1: Layer Relevance Extraction
+--------------------------------------------------------
+For each layer l:
+    For each head h:
+        # Local relevance
+        G_l^h = ReLU(g_l^h) ⊙ A_l^h
+
+        # Head importance score
+        numerator   = sum(G_l^h(i,j) over all (i,j))
+        denominator = sum(ReLU(g_l^h(i,j)) over all (i,j))
+        head_score  = numerator / denominator
+
+    Normalize head scores across H heads → {w_l^h}
+    Fuse heads:
+        E_l = Σ_h w_l^h * G_l^h
+    Row-normalize E_l
+
+--------------------------------------------------------
+Stage 2: Adaptive Layer Propagation
+--------------------------------------------------------
+# Layer weights
+For each layer l:
+    g_l = L1_norm(all gradients g_l^h)
+    s_l = exp(λd*(l+1)) / Σ_k exp(λd*(k+1))
+    α_l = (g_l * s_l) / Σ_k (g_k * s_k)
+
+# Relevance propagation
+Initialize R = Identity(N)   # self-relevance
+For each layer l in sequence:
+    L_l = Identity(N) + α_l * E_l
+    R = R + L_l * R   # accumulate relevance
+
+--------------------------------------------------------
+Stage 3: Cross-Modal Token Relevancy
+--------------------------------------------------------
+For each generated token t ∈ Y:
+    # Prompt alignment
+    a_t = (1/|P|) * Σ_i∈P R(t,i)
+
+    # Visual alignment
+    v_t = (1/|V|) * Σ_i∈V R(t,i)
+
+    # Model confidence
+    p_t = softmax(logit_t)
+
+    # Weighted contributions
+    β_t^P = (p_t * a_t) / Σ_k∈Y (p_k * a_k)
+    β_t^V = (p_t * v_t) / Σ_k∈Y (p_k * v_k)
+
+    # Joint cross-modal relevance
+    γ_t = sqrt(β_t^P * β_t^V)
+
+Optional: Redistribute function-word relevance onto content words 
+          using relevance flow conservation (Eq. 21–22)
+
+--------------------------------------------------------
+Stage 4: Holistic Saliency Aggregation
+--------------------------------------------------------
+# Aggregate saliency maps
+R̃V = Σ_t∈Y β_t^V * R(t, V)   # visual saliency map
+R̃P = Σ_t∈Y β_t^P * R(t, P)   # prompt saliency map
+
+Return:
+    R̃V (visual map), R̃P (prompt map), {γ_t} (token relevance)
