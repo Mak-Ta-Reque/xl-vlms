@@ -1390,6 +1390,358 @@ class GLIMPSEExplainer:
         plt.close()
         print(f"Image saved to {filename}")
 
+    def relevance_propagation(self, alpha_l, E_l, N, device='cuda'):
+        """
+        Perform relevance propagation across layers.
+        
+        Args:
+            alpha_l (dict): Dictionary with layer names as keys and alpha values as values
+            E_l (dict): Dictionary with layer names as keys and relevance matrices as values
+            N (int): Total sequence length (K + M + T)
+            device (str): Device to perform computation on
+        
+        Returns:
+            torch.Tensor: Final relevance matrix R of shape (N, N)
+        """
+        # Initialize R as identity matrix
+        R = torch.eye(N, device=device)
+        
+        # Get layer names in order (assuming they are sortable)
+        layer_names = sorted(alpha_l.keys())
+        
+        # Propagate through each layer in sequence
+        for layer_name in layer_names:
+            # Get alpha and E for current layer
+            alpha = alpha_l[layer_name]
+            E = E_l[layer_name]
+            
+            # Ensure E is on the correct device
+            #if isinstance(E, torch.Tensor):
+            #    E = E.to(device)
+
+            # Matrix multiplication between alpha and E
+            # change the data type of alpha to match E
+            alpha = alpha.to(E.dtype)
+ 
+            aE = torch.matmul(alpha, E.T)
+            # Compute L_l = Identity(N) + α_l * E_l
+            I = torch.eye(N, device=device)
+            L_l = I + aE
+
+            # Accumulate relevance: R = R + L_l * R
+            R = R + torch.matmul(L_l, R)
+        
+        return R
+
+    def attention_forward_hook(layer_name):
+        def hook(module, input, output):
+            # For attention modules, we need to extract attention weights
+            # The structure depends on your model architecture
+            
+            if hasattr(module, 'attn_weights') and module.attn_weights is not None:
+                # Some models store attention weights as an attribute
+                attn_weights = module.attn_weights
+            elif isinstance(output, tuple) and len(output) > 1:
+                # Many models return (output, attention_weights) or (output, attention_weights, past_key_value)
+                attn_weights = output[1] if len(output) > 1 else None
+            elif hasattr(output, 'attentions') and output.attentions is not None:
+                # Some models have attentions in the output object
+                attn_weights = output.attentions
+            else:
+                # Try to extract from the computation
+                # This is model-specific and might need adjustment
+                attn_weights = None
+                
+            if attn_weights is not None:
+                # Store the attention weights (detach to avoid gradient issues)
+                activations[f"{layer_name}_attention"] = attn_weights.detach()
+                
+                # If you need gradients on attention weights for GLIMPSE
+                attn_weights_grad = attn_weights.detach().requires_grad_(True)
+                activations[f"{layer_name}_attention_grad"] = attn_weights_grad
+                
+                print(f"Captured attention weights for {layer_name}: {attn_weights.shape}")
+            else:
+                print(f"No attention weights found for {layer_name}")
+                
+        return hook
+
+    def print_all_model_layers(self):
+        """
+        Print all layers and submodules in the model with their names and types.
+        """
+        print("=== All Model Layers ===")
+        
+        # Method 1: Print all named modules
+        print("\n--- All Named Modules ---")
+        for name, module in self.model.named_modules():
+            print(f"{name}: {type(module).__name__}")
+        
+        # Method 2: Print only direct children
+        print("\n--- Direct Children ---")
+        for name, child in self.model.named_children():
+            print(f"{name}: {type(child).__name__}")
+        
+        # Method 3: Print language model layers specifically (for VLMs)
+        if hasattr(self.model, 'language_model'):
+            print("\n--- Language Model Layers ---")
+            if hasattr(self.model.language_model, 'layers'):
+                for i, layer in enumerate(self.model.language_model.layers):
+                    print(f"Layer {i}:")
+                    for name, submodule in layer.named_children():
+                        print(f"  {name}: {type(submodule).__name__}")
+        
+        # Method 4: Print vision model layers (if exists)
+        if hasattr(self.model, 'visual') or hasattr(self.model, 'vision_model'):
+            print("\n--- Vision Model Layers ---")
+            vision_model = getattr(self.model, 'visual', None) or getattr(self.model, 'vision_model', None)
+            if vision_model:
+                for name, module in vision_model.named_modules():
+                    if len(list(module.children())) == 0:  # Only leaf modules
+                        print(f"  {name}: {type(module).__name__}")
+        
+        # Method 5: Search for attention-related modules specifically
+        print("\n--- Attention-Related Modules ---")
+        attention_patterns = ['attention', 'attn', 'self_attn', 'cross_attn']
+        for name, module in self.model.named_modules():
+            if any(pattern in name.lower() for pattern in attention_patterns):
+                print(f"  {name}: {type(module).__name__}")
+        
+        # Method 6: Print parameter names and shapes
+        print("\n--- Parameter Overview ---")
+        total_params = 0
+        for name, param in self.model.named_parameters():
+            print(f"  {name}: {param.shape}")
+            total_params += param.numel()
+        
+        print(f"\nTotal parameters: {total_params:,}")
+        print("========================")
+
+    def iterative_forward_explantion(
+        self,
+        inputs: Dict[str, torch.Tensor],
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        top_k: int = 50,
+        top_p: float = 0.9,
+        do_sample: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Iteratively predict tokens using forward() instead of generate().
+        This allows for step-by-step explanation and intermediate analysis.
+        
+        Args:
+            inputs: Model inputs (input_ids, pixel_values, attention_mask, etc.)
+            max_new_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature
+            top_k: Top-k sampling parameter
+            top_p: Top-p (nucleus) sampling parameter
+            do_sample: Whether to use sampling or greedy decoding
+            
+        Returns:
+            Dictionary containing generated tokens and intermediate states
+        """
+        #self.model.eval()
+
+        config = self.model.config
+        print(config.hidden_size)
+        print(config.num_attention_heads)
+        print(config.num_key_value_heads)  # For models with separate key/value heads
+        print(config.num_hidden_layers)
+
+        activations = {}
+        activations_q = {}
+        activations_k = {}
+        activations_v = {}
+        gradients = {}
+
+        # Forward hook to save activations
+        
+        def forward_hook(name):
+            def hook(module, input, output):
+                # Save activation and ensure it requires grad
+                out = output[0].detach()
+                out.requires_grad_(True)
+                activations[name] = out
+                return out
+            return hook
+        def forward_hook_q(name):
+            def hook(module, input, output):
+                # Save activation and ensure it requires grad
+                out = output.detach()
+                
+                activations_q[name] = out
+                return out
+            return hook
+        
+        def forward_hook_k(name):
+            def hook(module, input, output):
+                # Save activation and ensure it requires grad
+                out = output.detach()
+                
+                activations_k[name] = out
+                return out
+            return hook
+        
+        def forward_hook_v(name):
+            def hook(module, input, output):
+                # Save activation and ensure it requires grad
+                out = output.detach()
+               
+                activations_v[name] = out
+                return out
+            return hook
+
+
+        # Register hooks on all post_attention_layernorm layers
+        for i, layer in enumerate(self.model.language_model.layers):
+            layer_name = f"model.language_model.layers.{i}.self_attn"
+            layer.self_attn.register_forward_hook(forward_hook(layer_name))
+        
+        print("Registered forward hooks on attention layers")
+        for i, layer in enumerate(self.model.language_model.layers):
+            layer_name = f"model.language_model.layers.{i}.self_attn.k_proj"
+            layer.self_attn.k_proj.register_forward_hook(forward_hook_k(layer_name))
+        for i, layer in enumerate(self.model.language_model.layers):
+            layer_name = f"model.language_model.layers.{i}.self_attn.q_proj"
+            layer.self_attn.q_proj.register_forward_hook(forward_hook_q(layer_name))
+        for i, layer in enumerate(self.model.language_model.layers):
+            layer_name = f"model.language_model.layers.{i}.self_attn.v_proj"
+            layer.self_attn.v_proj.register_forward_hook(forward_hook_v(layer_name))
+
+        # Initialize with input sequence
+        input_ids = inputs['input_ids'].clone()
+        attention_mask = inputs.get('attention_mask', torch.ones_like(input_ids))
+        pixel_values = inputs.get('pixel_values')
+        image_grid_thw = inputs.get('image_grid_thw', None)
+        batch_size, seq_len = input_ids.shape
+        device = input_ids.device
+        
+        generated_tokens = []
+        all_logits = []
+        all_activations = []
+        
+        print(f"Starting iterative prediction from sequence length: {seq_len}")
+        
+
+        # Create an identity marix I with shape [B, N, N] , N= seq_len + max_new_tokens
+        N = seq_len + max_new_tokens
+        I = torch.eye(N, device=device).unsqueeze(0).expand(batch_size, N, N)  # [B, N, N]
+
+        for step in range(max_new_tokens):
+            print(f"Generation step {step + 1}/{max_new_tokens}")
+            
+            # Prepare current inputs
+            current_inputs = {
+                'input_ids': input_ids,
+                'attention_mask': attention_mask,
+            }
+            
+            # Add pixel_values only for the first step (Qwen2-VL processes images once)
+            if step == 0 and pixel_values is not None:
+                current_inputs['pixel_values'] = pixel_values
+                current_inputs['image_grid_thw'] = image_grid_thw
+
+            # Forward pass
+            #with torch.no_grad():
+            outputs = self.model(**current_inputs, output_attentions=True)
+
+            # Get logits for the last token
+            next_token_logits = outputs.logits[:, -1, :]  # [batch_size, vocab_size]
+            
+            # Store logits and activations for analysis
+            all_logits.append(next_token_logits.detach().cpu())
+            
+            # Apply temperature
+            if temperature != 1.0:
+                next_token_logits = next_token_logits / temperature
+            
+            # Sample next token
+            if do_sample:
+                # Apply top-k filtering
+                if top_k > 0:
+                    top_k_logits, top_k_indices = torch.topk(next_token_logits, top_k)
+                    next_token_logits = torch.full_like(next_token_logits, float('-inf'))
+                    next_token_logits.scatter_(1, top_k_indices, top_k_logits)
+                
+                # Apply top-p (nucleus) filtering
+                if top_p < 1.0:
+                    sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
+                    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                    
+                    # Remove tokens with cumulative probability above threshold
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                    sorted_indices_to_remove[..., 0] = 0
+                    
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                    next_token_logits[indices_to_remove] = float('-inf')
+                
+                # Sample from the filtered distribution
+                probs = F.softmax(next_token_logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
+
+            else:
+                # Greedy decoding
+                next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+            
+
+            # Decode token to check for stopping
+            decoded_token = self.tokenizer.decode(next_token[0].item())
+            generated_tokens.append(decoded_token)
+            
+            print(f"  Generated token: '{decoded_token}' (ID: {next_token[0].item()})")
+
+            logit = next_token_logits[:, next_token[0]]
+        
+
+            for name, act in activations.items():
+                grad = torch.autograd.grad(logit, act, retain_graph=True)[0]
+                gradients[name] = grad
+
+
+            local_relevance = self.compute_local_relevance(gradients, activations) # equation 8 E_l
+            agrigate_gradient = self.aggregated_attention_gradient(gradients) # equaiton 9 g_l
+            num_layers = len(local_relevance.keys())
+            print(f"Number of layers with attention: {num_layers}")
+            depth_weights = self.compute_depth_weights(num_layers, lambda_d=1.0) # equation 10 s_l
+            adaptive_layer_weights = self.compute_adaptive_layer_weights(agrigate_gradient, depth_weights) # equation 11 a_l
+            R = self.relevance_propagation(adaptive_layer_weights, local_relevance, seq_len + step, device=device) # equation 15
+
+
+
+
+
+
+
+            # Check for end-of-sequence token
+            if next_token[0].item() == self.tokenizer.eos_token_id:
+                print("  End of sequence token generated, stopping")
+                break
+            
+            # Update input_ids and attention_mask for next iteration
+            input_ids = torch.cat([input_ids, next_token], dim=1)
+            attention_mask = torch.cat([
+                attention_mask, 
+                torch.ones(batch_size, 1, device=device, dtype=attention_mask.dtype)
+            ], dim=1)
+            
+            # Optional: Check for maximum context length
+            if input_ids.shape[1] >= 4096:  # Typical context limit
+                print("  Maximum context length reached, stopping")
+                break
+        
+        # Generate complete response text
+        response_text = "".join(generated_tokens)
+        
+        return {
+            'generated_tokens': generated_tokens,
+            'response_text': response_text,
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'all_logits': torch.stack(all_logits) if all_logits else None,
+            'final_sequence_length': input_ids.shape[1]
+        }
 
     def interpret(
             self,
@@ -1404,7 +1756,8 @@ class GLIMPSEExplainer:
             start_layer=start_layer,
             start_layer_text=start_layer_text):
         
-
+    
+        
     # Dictionaries to store activations and gradients
         activations = {}
         gradients = {}
@@ -1419,37 +1772,51 @@ class GLIMPSEExplainer:
                 return out
             return hook
 
+        #self.print_all_model_layers() debugging
+
         # Register hooks on all post_attention_layernorm layers
         for i, layer in enumerate(self.model.language_model.layers):
             layer_name = f"model.language_model.layers.{i}.post_attention_layernorm"
             layer.post_attention_layernorm.register_forward_hook(forward_hook(layer_name))
+        
+
+        prediction_results = self.iterative_forward_explantion(
+                inputs=inputs,
+                max_new_tokens=10,
+                do_sample=False  # Use greedy for reproducible explanations
+            )
+        # Set model to eval mode
 
         # ===== Forward Pass =====
-        outputs = self.model(**inputs)  # inputs = {'input_ids': ..., 'pixel_values': ...} depending on model
-        logits_per_image = outputs.logits[:, -1, :]  # last token logits
-        probs = logits_per_image.softmax(dim=-1)
-
+        #outputs = self.model(**inputs)  # inputs = {'input_ids': ..., 'pixel_values': ...} depending on model
+        #logits_per_image = outputs.logits[:, -1, :]  # last token logits
+        #probs = logits_per_image.softmax(dim=-1)
+        # Print the decoded value max logit
+        #predicted_indices = torch.argmax(probs, dim=-1)
+        #predicted_tokens = [self.tokenizer.decode([idx]) for idx in predicted_indices]
+        #print(f"Predicted tokens: {predicted_tokens}")
         # ===== Define "pseudo-loss" as max probability for each sample =====
         # You can pick the max prob per sample (or any specific target index)
-        max_probs = probs.max(dim=-1)[0]  # shape: (batch_size,)
+        #max_probs = probs.max(dim=-1)[0]  # shape: (batch_size,)
 
         # For autograd, sum over batch to get a scalar
-        pseudo_loss = max_probs.sum()
+        #pseudo_loss = max_probs.sum()
 
         # ===== Compute gradients using autograd =====
-        for name, act in activations.items():
-            grad = torch.autograd.grad(pseudo_loss, act, retain_graph=True)[0]
-            gradients[name] = grad
+        #for name, act in activations.items():
+        #    grad = torch.autograd.grad(pseudo_loss, act, retain_graph=True)[0]
+        #    gradients[name] = grad
         
 
         # =====Layer Relevance Extraction===
 
-        local_relevance = self.compute_local_relevance(gradients, activations) # equation 8
-        agrigate_gradient = self.aggregated_attention_gradient(gradients) # equaiton 9
+        local_relevance = self.compute_local_relevance(gradients, activations) # equation 8 E_l
+        agrigate_gradient = self.aggregated_attention_gradient(gradients) # equaiton 9 g_l
         num_layers = len(local_relevance.keys())
         print(f"Number of layers with attention: {num_layers}")
-        depth_weights = self.compute_depth_weights(num_layers, lambda_d=1.0) # equation 10
-        adaptive_layer_weights = self.compute_adaptive_layer_weights(agrigate_gradient, depth_weights) # equation 11
+        depth_weights = self.compute_depth_weights(num_layers, lambda_d=1.0) # equation 10 s_l
+        adaptive_layer_weights = self.compute_adaptive_layer_weights(agrigate_gradient, depth_weights) # equation 11 a_l
+
         
         for layer_name, E_l in agrigate_gradient.items():
             print(f"Local relevance for layer {layer_name}: {E_l.shape}")  

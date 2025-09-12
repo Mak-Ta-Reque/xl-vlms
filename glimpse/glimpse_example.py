@@ -321,6 +321,27 @@ def run_glimpse_example(
         inputs = processed_inputs
         print(f"✓ Processed inputs: {list(inputs.keys())} (model dtype: {model_dtype})")
         
+        # Do generation of output and print the output
+
+        print("Generating model output...")
+        with torch.no_grad():
+            if hasattr(model, 'generate'):
+                generated_ids = model.generate(**inputs, max_new_tokens=50)
+                if hasattr(processor, 'tokenizer'):
+                    output_text = processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                else:
+                    output_text = processor.decode(generated_ids[0], skip_special_tokens=True)
+            else:
+                # For models without generate method, do a forward pass
+                outputs = model(**inputs)
+                if hasattr(processor, 'tokenizer'):
+                    output_text = processor.tokenizer.batch_decode(torch.argmax(outputs.logits, dim=-1), skip_special_tokens=True)[0]
+                else:
+                    output_text = processor.decode(torch.argmax(outputs.logits, dim=-1)[0], skip_special_tokens=True)   
+        print(f"✓ Model output: {output_text}")    
+
+        
+
         # Initialize GLIMPSE explainer with memory management
         print("Initializing GLIMPSE explainer...")
         explainer = GLIMPSEExplainer(
