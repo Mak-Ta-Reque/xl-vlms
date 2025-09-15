@@ -13,6 +13,9 @@ Usage:
     # Basic usage - automatically detects local cache or downloads from Hub
     python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --output_csv results.csv
     
+    # Limit to a random sample of 500 images with fixed seed
+    python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --output_csv results.csv --image_budget 500 --seed 42
+    
     # With HF token for private models
     export HF_TOKEN=your_token
     python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --output_csv results.csv
@@ -27,6 +30,7 @@ import argparse
 import logging
 from pathlib import Path
 from typing import List, Tuple, Optional
+import random
 from huggingface_hub import login
 import torch
 import torch._dynamo
@@ -70,46 +74,53 @@ POPULAR_MODELS = {
 }
 
 
-def get_image_files(dataset_path: str) -> List[Tuple[str, str, str]]:
+def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed: int = 42) -> List[Tuple[str, str, str]]:
     """
-    Get all image files from the dataset directory.
-    
+    Get image files from the dataset directory. Optionally sample up to image_budget images per subfolder.
+
     Args:
         dataset_path: Path to the dataset directory
-        
+        image_budget: If provided and >0, randomly sample up to this many images per subfolder. Root-level images are NOT sampled (all included).
+        seed: Random seed for reproducible per-subfolder sampling
     Returns:
         List of tuples containing (root_path, subfolder, image_name)
     """
-    image_files = []
+    image_files: List[Tuple[str, str, str]] = []
     dataset_path = Path(dataset_path)
-    
+
     if not dataset_path.exists():
         raise ValueError(f"Dataset path does not exist: {dataset_path}")
-    
-    # First, check for images directly in the root directory
+
+    # Images directly in root directory (not sampled)
     for image_file in dataset_path.iterdir():
         if image_file.is_file() and image_file.suffix.lower() in IMAGE_EXTENSIONS:
             image_files.append((
                 str(dataset_path),
-                "root",  # Use "root" as subfolder name for images in root directory
+                "root",
                 image_file.name
             ))
-    
-    # Then iterate through all subdirectories
+
+    rng = random.Random(seed)
+
+    # Iterate through subdirectories with optional sampling
     for subfolder in dataset_path.iterdir():
         if subfolder.is_dir():
             subfolder_name = subfolder.name
-            
-            # Get all image files in this subfolder
+            subfolder_images: List[Tuple[str, str, str]] = []
             for image_file in subfolder.iterdir():
                 if image_file.is_file() and image_file.suffix.lower() in IMAGE_EXTENSIONS:
-                    image_files.append((
+                    subfolder_images.append((
                         str(dataset_path),
                         subfolder_name,
                         image_file.name
                     ))
-    
-    logger.info(f"Found {len(image_files)} images across subfolders and root directory")
+            # Apply per-subfolder sampling if requested
+            if image_budget is not None and image_budget > 0 and len(subfolder_images) > image_budget:
+                rng.shuffle(subfolder_images)
+                subfolder_images = subfolder_images[:image_budget]
+            image_files.extend(subfolder_images)
+
+    logger.info(f"Collected {len(image_files)} images (per-subfolder budget={image_budget})")
     return image_files
 
 
@@ -430,11 +441,13 @@ def process_dataset(
     trust_remote_code: bool = True,
     resume: bool = False,
     hf_token: str = None,
-    batch_size: int = 1
+    batch_size: int = 1,
+    image_budget: Optional[int] = None,
+    seed: int = 42
 ) -> None:
     """
     Process the entire dataset and save results to CSV.
-    
+
     Args:
         dataset_path: Path to the dataset directory
         model_name: Hugging Face model name or path
@@ -444,10 +457,12 @@ def process_dataset(
         trust_remote_code: Whether to trust remote code
         resume: Whether to resume from existing CSV file
         hf_token: Hugging Face authentication token for private models
+        image_budget: If provided, randomly sample up to this many images (after resume filtering)
+        seed: Random seed for reproducible sampling
     """
     # Get all image files
-    image_files = get_image_files(dataset_path)
-    
+    image_files = get_image_files(dataset_path, image_budget=image_budget, seed=seed)
+
     # Check if resuming from existing file
     processed_files = set()
     if resume and os.path.exists(output_csv):
@@ -711,9 +726,21 @@ Popular models:
             default=1,
             help='Batch size for inference (default: 1)'
         )
-    
+    parser.add_argument(
+        '--image_budget',
+        type=int,
+        default=None,
+        help='Randomly sample up to this many images from the (remaining) dataset before processing'
+    )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=42,
+        help='Random seed for image sampling (default: 42)'
+    )
+
     args = parser.parse_args()
-    
+
     # Handle HF token from environment variable if not provided via argument
     hf_token = args.hf_token or os.environ.get('HF_TOKEN')
     if hf_token:
@@ -759,7 +786,9 @@ Popular models:
                batch_size=args.batch_size,
             trust_remote_code=trust_remote_code,
             resume=args.resume,
-            hf_token=hf_token
+            hf_token=hf_token,
+            image_budget=args.image_budget,
+            seed=args.seed
         )
     except KeyboardInterrupt:
         print("\n⚠️ Processing interrupted by user")

@@ -1640,11 +1640,11 @@ class GLIMPSEExplainer:
             # Add pixel_values only for the first step (Qwen2-VL processes images once)
             if step == 0 and pixel_values is not None:
                 current_inputs['pixel_values'] = pixel_values
-                current_inputs['image_grid_thw'] = image_grid_thw
+                #current_inputs['image_grid_thw'] = image_grid_thw
 
             # Forward pass
             #with torch.no_grad():
-            outputs = self.model(**current_inputs, output_attentions=True)
+            outputs= self.model(**current_inputs, output_attentions=True)
 
             # Get logits for the last token
             next_token_logits = outputs.logits[:, -1, :]  # [batch_size, vocab_size]
