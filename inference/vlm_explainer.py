@@ -160,9 +160,9 @@ class VLMConceptExplainer:
     # ---------- Prompts ----------
     def _build_messages(self, image: Image.Image, label: Optional[str]) -> List[Dict[str, Any]]:
         if label:
-            user_text = f"Explain why this image depicts the class: {label}. Provide a concise justification."
+            user_text = f"{label} or something else. Answer with only this two options."
         else:
-            user_text = "Write a short phrase."
+            user_text = "Classify the image in one or two word"
         system_msg = {"role": "system", "content": [{"type": "text", "text": "You are a helpful vision assistant."}]}
         user_msg = {"role": "user", "content": [
             {"type": "image", "image": image},
@@ -284,8 +284,11 @@ class VLMConceptExplainer:
                 t_len = min(T_new, T_cap)
                 # Align to last t_len steps of captures (generation time steps)
                 acts_j = act_seq[j, -t_len:, :]  # (t_len, D)
-                # Do not normalize per-token activations; rank by dot with normalized concepts
-                sims_tok = acts_j @ self.concept_vectors.T  # (t_len, K)
+                # Use cosine distance per token vs each concept: d = 1 - cos_sim
+                x = acts_j.unsqueeze(1)  # (t_len, 1, D)
+                y = self.concept_vectors.unsqueeze(0)  # (1, K, D)
+                sims_tok = torch.nn.functional.cosine_similarity(x, y, dim=2)  # (t_len, K)
+                dists_tok = 1.0 - sims_tok
 
                 # decode tokens one-by-one (optional)
                 token_texts: List[str] = []
@@ -298,17 +301,19 @@ class VLMConceptExplainer:
 
                 per_token_concepts: List[Dict[str, Any]] = []
                 for t_idx in range(t_len):
-                    sims = sims_tok[t_idx]
-                    k = min(N, sims.shape[0])
-                    topk = torch.topk(sims, k=k)
+                    dists = dists_tok[t_idx]
+                    k = min(N, dists.shape[0])
+                    # smallest distances
+                    topk = torch.topk(dists, k=k, largest=False)
                     concept_indices = topk.indices.tolist()
                     concept_scores = topk.values.tolist()
                     top_concepts_tok: List[Dict[str, Any]] = []
-                    for rank, (ci, score) in enumerate(zip(concept_indices, concept_scores), 1):
+                    for rank, (ci, dist_val) in enumerate(zip(concept_indices, concept_scores), 1):
                         top_concepts_tok.append({
                             'rank': rank,
                             'concept_index': ci,
-                            'similarity': float(score),
+                            'distance': float(dist_val),
+                            'similarity': float(1.0 - dist_val),
                             'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                             'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                             'image_grounding_path': self.image_grounding_paths[ci] if self.image_grounding_paths and ci < len(self.image_grounding_paths) else None,
@@ -335,17 +340,20 @@ class VLMConceptExplainer:
                     acts_keep = acts_j  # fallback: keep all if none qualify
                 pooled = acts_keep.mean(dim=0, keepdim=True)  # (1, D)
                 pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
+                # cosine distance over concepts (smaller is closer)
                 sims_all = (pooled @ self.concept_vectors.T)[0]
-                k_all = min(N, sims_all.shape[0])
-                topk_all = torch.topk(sims_all, k=k_all)
+                dists_all = 1.0 - sims_all
+                k_all = min(N, dists_all.shape[0])
+                topk_all = torch.topk(dists_all, k=k_all, largest=False)
                 idx_all = topk_all.indices.tolist()
-                scr_all = topk_all.values.tolist()
+                dist_all = topk_all.values.tolist()
                 top_concepts_all: List[Dict[str, Any]] = []
-                for rank, (ci, score) in enumerate(zip(idx_all, scr_all), 1):
+                for rank, (ci, dist_val) in enumerate(zip(idx_all, dist_all), 1):
                     top_concepts_all.append({
                         'rank': rank,
                         'concept_index': ci,
-                        'similarity': float(score),
+                        'distance': float(dist_val),
+                        'similarity': float(1.0 - dist_val),
                         'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                         'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                         'image_grounding_path': self.image_grounding_paths[ci] if self.image_grounding_paths and ci < len(self.image_grounding_paths) else None,
@@ -393,13 +401,23 @@ if __name__ == "__main__":
         for c in top_list:
             print(f"  #{c['rank']} idx={c['concept_index']} sim={c['similarity']:.4f} name={c['concept_name']} text={c['text_grounding']}")
 
-        # Optional: brief per-token top-1 preview
+        # Optional: brief per-token top-1 preview + top-N concept names
         pt = r.get('per_token_concepts') or []
         if pt:
-            print("Per-token top-1 (preview):")
+            print("Per-token top-1 (preview) + top-N names:")
             for tok in pt:
                 if tok.get('top_concepts'):
                     c = tok['top_concepts'][0]
-                    print(f"  t={tok['token_index']} '{tok.get('token_text','')}' -> idx={c['concept_index']} name={c.get('concept_name')} sim={c['similarity']:.4f}")
+                    # Build top-N concept names list
+                    n_show = min(args.top_n, len(tok['top_concepts'])) if hasattr(args, 'top_n') else len(tok['top_concepts'])
+                    names = []
+                    for cc in tok['top_concepts'][:n_show]:
+                        nm = cc.get('concept_name') or cc.get('text_grounding') or f"idx{cc.get('concept_index')}"
+                        names.append(str(nm))
+                    names_str = ", ".join(names)
+                    print(
+                        f"  t={tok['token_index']} '{tok.get('token_text','')}' -> "
+                        f"idx={c['concept_index']} name={c.get('concept_name')} sim={c['similarity']:.4f} | top{n_show}: {names_str}"
+                    )
         print('-'*60)
     explainer.close()
