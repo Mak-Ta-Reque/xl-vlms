@@ -321,12 +321,21 @@ class VLMConceptExplainer:
                     })
 
                 # Also compute pooled top concepts over the whole sequence (optional aggregate)
-                pooled = self._pool_activation(act_seq)
-                if pooled.dim() == 1:
-                    pooled = pooled.unsqueeze(0)
+                # Filter out non-alphanumeric tokens before pooling
+                def _is_alnum(s: str) -> bool:
+                    return any(ch.isalnum() for ch in s)
+
+                mask_keep = [
+                    _is_alnum(token_texts[t_idx]) if t_idx < len(token_texts) else False
+                    for t_idx in range(t_len)
+                ]
+                if any(mask_keep):
+                    acts_keep = acts_j[torch.tensor(mask_keep, dtype=torch.bool)]  # (m, D)
+                else:
+                    acts_keep = acts_j  # fallback: keep all if none qualify
+                pooled = acts_keep.mean(dim=0, keepdim=True)  # (1, D)
                 pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
-                sims_mat = pooled @ self.concept_vectors.T
-                sims_all = sims_mat[j]
+                sims_all = (pooled @ self.concept_vectors.T)[0]
                 k_all = min(N, sims_all.shape[0])
                 topk_all = torch.topk(sims_all, k=k_all)
                 idx_all = topk_all.indices.tolist()
