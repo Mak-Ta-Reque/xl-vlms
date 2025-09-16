@@ -4,10 +4,10 @@ set -euo pipefail  # Safer script: exit on errors and unset vars
 ##########################################
 # Parse arguments
 ##########################################
-MODEL_NAME=${1:-""}
-BASE_DATA_DIR=${2:-""}
-SAVE_DIR=${3:-""}
-HF_HOME=${4:-""}
+MODEL_NAME=${1:-"google/gemma-3n-E4B-it"}
+BASE_DATA_DIR=${2:-"/mnt/abka03/xlvlm_data/imagenet_1000_auto_crops/train"}
+SAVE_DIR=${3:-"/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/imagenet1000/train"}
+HF_HOME=${4:-"/mnt/abka03/huggingface/hub"}
 ##########################################
 # Configuration
 ##########################################
@@ -20,7 +20,7 @@ SCRIPT_PATH="src/save_features.py"
 PROMPT_TEMPLATE="cgdl"
 SPLIT="train"
 
-MAX_ITERATIONS=10
+MAX_ITERATIONS=2000000
 COUNT=0
 
 ##########################################

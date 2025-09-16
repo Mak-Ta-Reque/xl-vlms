@@ -10,14 +10,19 @@ from collections import defaultdict
 from pathlib import Path
 import re
 import argparse
+import inflect
+import re
+p = inflect.engine()
 
-def clean_concept(concept):
-    """Clean and normalize concept strings."""
-    # Remove extra whitespace and convert to lowercase
-    concept = concept.strip().lower()
-    # Remove any remaining quotes
-    concept = concept.strip('"\'')
-    return concept
+
+def clean_concept(concept: str) -> str:
+    concept = concept.strip().lower().strip('"\'')
+    concept = re.sub(r'[^a-z\s]', '', concept)
+    concept = re.sub(r'\s+', ' ', concept).strip()
+    # Singularize each word safely
+    words = [p.singular_noun(w) or w for w in concept.split()]
+    return ' '.join(words)
+
 
 def process_csv_file(csv_file_path, output_file_path=None):
     """
@@ -53,8 +58,8 @@ def process_csv_file(csv_file_path, output_file_path=None):
                 continue
                 
             # Create image identifier
-            image_id = f"{Path(root_path).name}/{image_name}"
-            
+            image_id = f"{Path(root_path).name}/{subfolder}/{image_name}"
+
             # Split predicted_text by comma and process each concept
             concepts = predicted_text.split(',')
             

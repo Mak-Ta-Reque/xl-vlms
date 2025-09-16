@@ -186,7 +186,7 @@ def get_arguments():
     parser.add_argument(
         "--dl_max_iter",
         type=int,
-        default=12000,
+        default=8000,
         help="Max number of iterations for dictionary learning optimization.",
     )
     parser.add_argument(
@@ -206,7 +206,7 @@ def get_arguments():
     parser.add_argument(
         "--num_most_activating_samples",
         type=int,
-        default=3,
+        default=5,
         help="Number of most activated samples.",
     )
 

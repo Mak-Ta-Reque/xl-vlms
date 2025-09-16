@@ -4,10 +4,10 @@
 #       CONFIGURATION        #
 # ========================== #
 
-# Arguments
-HF_HOME_INPUT=$1
-MODEL_NAME_INPUT=$2
-FEATURE_SAVE_DIR_INPUT=$3
+# Positional arguments with defaults (override order: CLI > ENV > hardcoded default)
+HF_HOME_INPUT=${1:-${HF_HOME:-"/mnt/abka03/huggingface/hub"}}
+MODEL_NAME_INPUT=${2:-${MODEL_NAME:-"google/gemma-3n-E4B-it"}}
+FEATURE_SAVE_DIR_INPUT=${3:-${FEATURE_SAVE_DIR:-"/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/imagenet1000/train"}}
 
 if [ -z "$HF_HOME_INPUT" ] || [ -z "$MODEL_NAME_INPUT" ] || [ -z "$FEATURE_SAVE_DIR_INPUT" ]; then
     echo "Usage: $0 <HF_HOME> <model_name> <feature_save_dir>"
@@ -34,7 +34,7 @@ hook_name="save_hidden_states_sentence"
 n_concepts=2
 dataset_size="500"
 normalizations=("gl")
-max_iterations=10
+max_iterations=50
 
 # Decomposition methods to run
 decomposition_methods=("snmf") #("snmf" "sae2" "pca" "simple")
