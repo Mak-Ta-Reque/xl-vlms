@@ -1,24 +1,34 @@
 #!/usr/bin/env python3
 """
-Concept Deletion Evaluation
+Concept Deletion/Insertion Evaluation
 
 - Loads a VLM and tokenizer using the repo's model loader
 - Dissects the model at layer_path concept space and builds a minimal sub-model: [optional final norm] -> lm_head
 - Given a saved explanations JSON (from vlm_explainer.py) and a concepts file (.pth/.pt/.json/.npz),
-  computes c-deletion plots by progressively zeroing concept coordinates ordered by gradient importance
+  computes:
+  - c-deletion plots by progressively zeroing concept coordinates ordered by gradient importance
+  - c-insertion plots by starting from a zero vector and progressively inserting concept coordinates
   w.r.t. selected target token logits.
-- Supports two modes:
+- Granularities:
   * sequence: use 'top_concepts_over_sequence' per image (one concept per image at a given rank)
   * token: use 'per_token_concepts' (per generated token) and select a concept by rank per token
 - Aggregates softmax probabilities across tokens and images to report mean/std curves.
 
-Usage example:
+Usage (deletion, sequence):
 python -m eval.concept_deletion_eval \
   --results_json /mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json \
   --concept_path /path/to/concepts.pth \
   --layer_path "model.layers.17" \
   --model_name google/gemma-3n-E4B-it \
   --mode sequence --rank 1 --num_points 64 --out_dir /mnt/abka03/Projects/xl-vlms/outputs
+
+Usage (insertion, token):
+python -m eval.concept_deletion_eval \
+  --results_json /mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json \
+  --concept_path /path/to/concepts.pth \
+  --layer_path "model.layers.17" \
+  --model_name google/gemma-3n-E4B-it \
+  --mode token --insertion --rank 1 --num_points 64 --out_dir /mnt/abka03/Projects/xl-vlms/outputs
 """
 from __future__ import annotations
 
@@ -303,6 +313,28 @@ class ConceptDeletionEvaluator:
             probs.append(float(p.detach().cpu()))
         return probs
 
+    def _prob_curve_by_mask_order_insertion(
+        self,
+        vec: torch.Tensor,
+        order: torch.Tensor,
+        target_id: int,
+        ks: Iterable[int],
+    ) -> List[float]:
+        """Start from zero vector and progressively insert coordinates of vec following order."""
+        base = vec.detach().clone().to(self.device, dtype=getattr(self.sub_model, "head_dtype", vec.dtype))
+        probs: List[float] = []
+        for k in ks:
+            v_mask = torch.zeros_like(base)
+            if k > 0:
+                idx = order[:k]
+                v_mask[idx] = base[idx]
+            logits = self.sub_model(v_mask)
+            if logits.dim() > 1:
+                logits = logits.squeeze(0)
+            p = F.softmax(logits, dim=-1)[int(target_id)]
+            probs.append(float(p.detach().cpu()))
+        return probs
+
     @staticmethod
     def _build_ks(embed_dim: int, num_points: int) -> List[int]:
         if num_points <= 1:
@@ -408,6 +440,87 @@ class ConceptDeletionEvaluator:
         fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
         return fracs, mean, std
 
+    def evaluate_sequence_insertion(
+        self,
+        rank: int = 1,
+        num_points: int = 64,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Sequence-mode c-insertion: one concept per image, insert coordinates from high→low grad."""
+        curves: List[List[float]] = []
+        ks = self._build_ks(self.embed_dim, num_points)
+        for item in self.results:
+            top_list = item.get("top_concepts_over_sequence") or []
+            if not top_list:
+                continue
+            chosen = None
+            for c in top_list:
+                if int(c.get("rank", -1)) == int(rank):
+                    chosen = c
+                    break
+            if chosen is None:
+                chosen = top_list[0]
+            ci = int(chosen.get("concept_index", 0))
+            if ci < 0 or ci >= self.concepts.shape[0]:
+                continue
+            vec = self.concepts[ci]
+            text = item.get("model_output", "")
+            ids, toks = self._tokenize_with_texts(text)
+            target_ids = [tid for tid, ttxt in zip(ids, toks) if self._is_alnum_token_text(ttxt)]
+            if not target_ids:
+                continue
+            for tid in target_ids:
+                order = self._grad_sorted_indices(vec, int(tid))
+                probs = self._prob_curve_by_mask_order_insertion(vec, order, int(tid), ks)
+                curves.append(probs)
+        if not curves:
+            raise RuntimeError("No curves computed; check inputs and explanation data.")
+        arr = np.stack(curves, axis=0)
+        mean = arr.mean(axis=0)
+        std = arr.std(axis=0)
+        fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
+        return fracs, mean, std
+
+    def evaluate_token_insertion(
+        self,
+        rank: int = 1,
+        num_points: int = 64,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Token-mode c-insertion: per-token concept at given rank and token id as target."""
+        curves: List[List[float]] = []
+        ks = self._build_ks(self.embed_dim, num_points)
+        for item in self.results:
+            toks = item.get("per_token_concepts") or []
+            for tok in toks:
+                token_id = int(tok.get("token_id", -1))
+                token_text = str(tok.get("token_text", ""))
+                if token_id < 0 or not self._is_alnum_token_text(token_text):
+                    continue
+                top_list = tok.get("top_concepts") or []
+                chosen = None
+                for c in top_list:
+                    if int(c.get("rank", -1)) == int(rank):
+                        chosen = c
+                        break
+                if chosen is None:
+                    if top_list:
+                        chosen = top_list[0]
+                    else:
+                        continue
+                ci = int(chosen.get("concept_index", 0))
+                if ci < 0 or ci >= self.concepts.shape[0]:
+                    continue
+                vec = self.concepts[ci]
+                order = self._grad_sorted_indices(vec, token_id)
+                probs = self._prob_curve_by_mask_order_insertion(vec, order, token_id, ks)
+                curves.append(probs)
+        if not curves:
+            raise RuntimeError("No curves computed; check inputs and token explanations.")
+        arr = np.stack(curves, axis=0)
+        mean = arr.mean(axis=0)
+        std = arr.std(axis=0)
+        fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
+        return fracs, mean, std
+
     # ------------- plotting -------------
     @staticmethod
     def plot_and_save(
@@ -416,13 +529,14 @@ class ConceptDeletionEvaluator:
         std: np.ndarray,
         title: str,
         out_png: Union[str, Path],
+        xlabel: Optional[str] = None,
     ) -> None:
         if not _HAS_PLT:
             return
         plt.figure(figsize=(6, 4))
         plt.plot(fracs, mean, label="mean prob", color="C0")
         plt.fill_between(fracs, mean - std, mean + std, color="C0", alpha=0.2, label="±1 std")
-        plt.xlabel("fraction of concept coordinates zeroed (most → least important)")
+        plt.xlabel(xlabel or "fraction of concept coordinates zeroed (most → least important)")
         plt.ylabel("softmax probability of target token")
         plt.title(title)
         plt.grid(True, alpha=0.3)
@@ -434,12 +548,13 @@ class ConceptDeletionEvaluator:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Concept deletion evaluation (c-deletion plot)")
+    ap = argparse.ArgumentParser(description="Concept deletion/insertion evaluation (c-deletion / c-insertion)")
     ap.add_argument("--results_json", required=True, help="JSON file produced by vlm_explainer.py")
     ap.add_argument("--concept_path", required=True, help="Concept matrix file (.pth/.pt/.json/.npz)")
     ap.add_argument("--model_name", default="google/gemma-3n-E4B-it")
     ap.add_argument("--layer_path", required=False, help="Hooked layer path; if omitted, read from results JSON")
     ap.add_argument("--mode", choices=["sequence", "token"], default="sequence")
+    ap.add_argument("--insertion", action="store_true", help="Use c-insertion instead of c-deletion")
     ap.add_argument("--rank", type=int, default=1, help="Concept rank to evaluate (1 = top)")
     ap.add_argument("--num_points", type=int, default=64, help="Number of mask points (x-axis resolution)")
     ap.add_argument("--device", default=None, help="cuda, cpu, or cuda:N")
@@ -469,19 +584,32 @@ def main() -> None:
         device=args.device,
     )
 
+    xlabel = None
     if args.mode == "sequence":
-        fracs, mean, std = evaluator.evaluate_sequence(rank=args.rank, num_points=args.num_points)
-        title = f"Concept deletion (sequence, rank={args.rank})"
-        base = f"c_deletion_sequence_rank{args.rank}.png"
-        out_png = Path(args.out_dir) / base
+        if args.insertion:
+            fracs, mean, std = evaluator.evaluate_sequence_insertion(rank=args.rank, num_points=args.num_points)
+            title = f"Concept insertion (sequence, rank={args.rank})"
+            base = f"c_insertion_sequence_rank{args.rank}.png"
+            xlabel = "fraction of concept coordinates inserted (most → least important)"
+        else:
+            fracs, mean, std = evaluator.evaluate_sequence(rank=args.rank, num_points=args.num_points)
+            title = f"Concept deletion (sequence, rank={args.rank})"
+            base = f"c_deletion_sequence_rank{args.rank}.png"
+            xlabel = "fraction of concept coordinates zeroed (most → least important)"
     else:
-        fracs, mean, std = evaluator.evaluate_token(rank=args.rank, num_points=args.num_points)
-        title = f"Concept deletion (token, rank={args.rank})"
-        base = f"c_deletion_token_rank{args.rank}.png"
-        out_png = Path(args.out_dir) / base
+        if args.insertion:
+            fracs, mean, std = evaluator.evaluate_token_insertion(rank=args.rank, num_points=args.num_points)
+            title = f"Concept insertion (token, rank={args.rank})"
+            base = f"c_insertion_token_rank{args.rank}.png"
+            xlabel = "fraction of concept coordinates inserted (most → least important)"
+        else:
+            fracs, mean, std = evaluator.evaluate_token(rank=args.rank, num_points=args.num_points)
+            title = f"Concept deletion (token, rank={args.rank})"
+            base = f"c_deletion_token_rank{args.rank}.png"
+            xlabel = "fraction of concept coordinates zeroed (most → least important)"
 
     # Save plot
-    ConceptDeletionEvaluator.plot_and_save(fracs, mean, std, title, out_png)
+    ConceptDeletionEvaluator.plot_and_save(fracs, mean, std, title, Path(args.out_dir) / base, xlabel=xlabel)
 
     # Also dump CSV and JSON
     os.makedirs(args.out_dir, exist_ok=True)
@@ -491,7 +619,8 @@ def main() -> None:
         import csv
         with open(out_csv, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["fraction_zeroed", "mean_prob", "std_prob"])
+            header0 = "fraction_inserted" if args.insertion else "fraction_zeroed"
+            w.writerow([header0, "mean_prob", "std_prob"])
             for x, m, s in zip(fracs.tolist(), mean.tolist(), std.tolist()):
                 w.writerow([x, m, s])
     except Exception:
@@ -503,6 +632,7 @@ def main() -> None:
                 "mean": mean.tolist(),
                 "std": std.tolist(),
                 "mode": args.mode,
+                "insertion": args.insertion,
                 "rank": args.rank,
                 "layer_path": layer_path,
                 "model_name": args.model_name,
