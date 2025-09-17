@@ -16,15 +16,34 @@ Memory-aware:
 from __future__ import annotations
 
 import os
+# Suppress noisy third-party logs early
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # hide TF INFO/WARNING/ERROR
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 import json
 import pickle
 from pathlib import Path
 from typing import List, Optional, Union, Dict, Any, Callable
+import sys
+import argparse
+import logging
+import warnings
 
 import numpy as np
 from PIL import Image
+import random
+import re
 import torch
-from transformers import AutoProcessor, AutoModelForCausalLM
+import torch.nn.functional as F
+from transformers import AutoProcessor, AutoModelForCausalLM, AutoModelForVision2Seq
+from transformers.utils import logging as hf_logging
+# Route HF logs through Python logging and keep them quiet by default
+hf_logging.set_verbosity_error()
+hf_logging.disable_default_handler()
+hf_logging.enable_propagation()
+# Silence common deprecation/runtime warnings from dependencies
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", module="transformers")
 
 try:
     from transformers import Gemma3nForConditionalGeneration  # type: ignore
@@ -33,8 +52,47 @@ except Exception:
     _GEMMA3N_AVAILABLE = False
 
 
+def set_seed_all(seed: int, deterministic: bool = True) -> None:
+    """Seed Python, NumPy, PyTorch, and HF Transformers for reproducibility.
+
+    Determinism notes:
+    - May reduce performance; disables CUDNN benchmarking and TF32.
+    - Some CUDA ops remain nondeterministic; small variations can persist across hardware/driver.
+    """
+    try:
+        random.seed(seed)
+    except Exception:
+        pass
+    try:
+        os.environ["PYTHONHASHSEED"] = str(seed)
+    except Exception:
+        pass
+    try:
+        np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        if deterministic:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            if hasattr(torch.backends.cuda.matmul, "allow_tf32"):
+                torch.backends.cuda.matmul.allow_tf32 = False
+            if hasattr(torch.backends.cudnn, "allow_tf32"):
+                torch.backends.cudnn.allow_tf32 = False
+    except Exception:
+        pass
+    try:
+        from transformers import set_seed as hf_set_seed  # type: ignore
+        hf_set_seed(seed)
+    except Exception:
+        pass
+
+
 class VLMConceptExplainer:
-    REQUIRED_CONCEPT_KEYS = {"activations"}
+    REQUIRED_CONCEPT_KEYS = {"concepts"}
 
     def __init__(
         self,
@@ -48,6 +106,8 @@ class VLMConceptExplainer:
         default_top_n: int = 5,
         normalize_concepts: bool = True,
         capture_only_last: bool = True,
+        exact_match_modules_to_hook: bool = True,
+        verbose: bool = False,
     ) -> None:
         self.model_name = model_name
         self.layer_path = layer_path
@@ -57,23 +117,33 @@ class VLMConceptExplainer:
         self.default_top_n = default_top_n
         self.normalize_concepts = normalize_concepts
         self.capture_only_last = capture_only_last
+        self.exact_match_modules_to_hook = exact_match_modules_to_hook
+        self.verbose = verbose
 
+        # Memory behavior
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-        self.model, self.processor = self._load_model()
+        # Load model and processor via repo's loader
+        self.model, self.processor = self._load_model(device)
         self.device = torch.device(device) if device else next(self.model.parameters()).device
 
+        # Load concept vectors and metadata
         self.concept_data = self._load_concepts(concept_path)
-        self.concept_vectors = self._prepare_concept_vectors(self.concept_data["concepts"])  # (K, D), CPU
+        # Support either 'concepts' or legacy 'activations' key
+        vec_key = 'concepts' if 'concepts' in self.concept_data else ('activations' if 'activations' in self.concept_data else None)
+        if vec_key is None:
+            raise KeyError("Concept file must contain 'concepts' or 'activations'.")
+        self.concept_vectors = self._prepare_concept_vectors(self.concept_data[vec_key])  # (K, D), CPU
         self.num_concepts, self.embed_dim = self.concept_vectors.shape
-        self.concept_names = self.concept_data.get("text_grounding")
+        self.concept_names = self.concept_data.get("concept_names") or self.concept_data.get("names")
         self.text_grounding = self.concept_data.get("text_grounding")
         self.image_grounding_paths = self.concept_data.get("image_grounding_paths")
 
-        # Activation capture buffers
-        self._captured = None
-        self._captures = []
-        self._hook_handle = self._register_hook()
+        # Hook setup via project utils
+        self._hook_return_fn = None
+        self._hook_post_fn = None
+        self._utils = None
+        self._setup_utils_hooks()
 
     # ---------- Concept IO ----------
     def _load_concepts(self, path: Union[str, Path]) -> Dict[str, Any]:
@@ -104,76 +174,131 @@ class VLMConceptExplainer:
         return vecs.to('cpu')
 
     # ---------- Model ----------
-    def _load_model(self):
-        cache_dir = os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub")
-        kwargs = dict(cache_dir=cache_dir, trust_remote_code=self.trust_remote_code, torch_dtype=torch.bfloat16, device_map="auto")
-        if self.hf_token:
-            kwargs['token'] = self.hf_token
-        if _GEMMA3N_AVAILABLE and 'gemma-3n' in self.model_name.lower():
-            model = Gemma3nForConditionalGeneration.from_pretrained(self.model_name, **kwargs).eval()
-        else:
-            model = AutoModelForCausalLM.from_pretrained(self.model_name, **kwargs).eval()
-        processor = AutoProcessor.from_pretrained(self.model_name, cache_dir=cache_dir, trust_remote_code=self.trust_remote_code, token=self.hf_token)
+    def _load_model(self, device_override: Optional[Union[str, torch.device]] = None):
+        """Load model via the project's model loader and use its preprocessor.
+
+        Falls back to HF Auto* only if import fails (shouldn't happen in this repo).
+        """
+        # Ensure we can import from the repo's src/ package
+        project_root = Path(__file__).resolve().parents[1]
+        src_dir = project_root / "src"
+        if str(src_dir) not in sys.path:
+            sys.path.insert(0, str(src_dir))
+
+        device = torch.device(device_override) if device_override is not None else (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
+
+        
+        from models import get_model_class  # type: ignore
+
+        # Minimal args namespace expected by get_model_class
+        args = argparse.Namespace(
+            local_files_only=False,
+            cache_dir=os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub"),
+        )
+
+        model_class = get_model_class(
+            model_name_or_path=self.model_name,
+            processor_name=self.model_name,
+            device=device,
+            logger=None,
+            args=args,
+        )
+        self._model_class = model_class
+        model = model_class.get_model()
+        processor = model_class.get_processor()
         return model, processor
 
-    # ---------- Hook ----------
-    def _resolve_layer(self) -> torch.nn.Module:
-        parts = self.layer_path.split('.')
-        module: Any = self.model
-        for p in parts:
-            if p.isdigit():
-                module = module[int(p)]  # type: ignore[index]
-            else:
-                if not hasattr(module, p):
-                    raise AttributeError(f"Layer segment '{p}' not found while resolving '{self.layer_path}'")
-                module = getattr(module, p)
-        if not isinstance(module, torch.nn.Module):
-            raise TypeError(f"Resolved object is not nn.Module: {type(module)}")
-        return module
 
-    def _register_hook(self):
-        target = self._resolve_layer()
-        def hook(_m, _inp, out):
-            tensor = None
-            if isinstance(out, (tuple, list)):
-                for o in out:
-                    if isinstance(o, torch.Tensor):
-                        tensor = o
-                        break
-            elif isinstance(out, torch.Tensor):
-                tensor = out
-            if isinstance(tensor, torch.Tensor):
-                t = tensor.detach().to('cpu', dtype=torch.float32)
-                # Normalize to (B, T, D)
-                if t.dim() == 2:
-                    t = t.unsqueeze(1)  # (B,1,D)
-                # If using KV cache, some layers can emit full sequence. Keep only the last step if requested.
-                if self.capture_only_last and t.dim() >= 3 and t.size(1) > 1:
-                    t = t[:, -1:, ...]  # keep last token time-step only
-                # Keep last slice reference for backward compatibility
-                self._captured = t
-                self._captures.append(t)
-            else:
-                self._captured = None
-        return target.register_forward_hook(hook)
+    # ---------- Hook ----------
+    def _parse_layer_patterns(self) -> List[str]:
+        raw = self.layer_path or ""
+        parts: List[str] = []
+        for sep in (",", "|"):
+            if sep in raw:
+                parts.extend([p.strip() for p in raw.split(sep)])
+                break
+        if not parts:
+            parts = [raw.strip()]
+        # de-dup and drop empties
+        uniq: List[str] = []
+        for p in parts:
+            if p and p not in uniq:
+                uniq.append(p)
+        return uniq
+
+    def _setup_utils_hooks(self) -> None:
+        # Import utils lazily after ensuring src/ in sys.path in _load_model
+        try:
+            from helpers import utils as _utils  # type: ignore
+        except Exception:
+            # Fallback: try absolute import
+            try:
+                import src.helpers.utils as _utils  # type: ignore
+            except Exception:
+                _utils = None
+        self._utils = _utils
+        if _utils is None:
+            # As a fallback, keep no external hooks (we'll error if activations are needed)
+            self._hook_return_fn = None
+            self._hook_post_fn = None
+            return
+
+        # Clear any previous global state
+        try:
+            _utils.clear_forward_hooks(self.model)
+            _utils.clear_hooks_variables()
+        except Exception:
+            pass
+
+        modules_to_hook = [self._parse_layer_patterns()]
+        hook_names = ["save_hidden_states"]
+        # Minimal args namespace controlling exact match
+        hook_args = argparse.Namespace(exact_match_modules_to_hook=self.exact_match_modules_to_hook)
+        hook_ret, hook_post = _utils.setup_hooks(
+            model=self.model,
+            modules_to_hook=modules_to_hook,
+            hook_names=hook_names,
+            tokenizer=getattr(self._model_class, "get_tokenizer", lambda: None)(),
+            logger=None,
+            args=hook_args,
+        )
+        self._hook_return_fn = hook_ret[0] if hook_ret else None
+        self._hook_post_fn = hook_post[0] if hook_post else None
 
     # ---------- Prompts ----------
-    def _build_messages(self, image: Image.Image, label: Optional[str]) -> List[Dict[str, Any]]:
+    def _build_instruction(self, label: Optional[str]) -> str:
         if label:
-            user_text = f"{label} or something else. Answer with only this two options."
-        else:
-            user_text = "Classify the image in one or two word"
-        system_msg = {"role": "system", "content": [{"type": "text", "text": "You are a helpful vision assistant."}]}
-        user_msg = {"role": "user", "content": [
-            {"type": "image", "image": image},
-            {"type": "text", "text": user_text},
-        ]}
-        return [system_msg, user_msg]
+            return (
+                f"Classify this image. If it shows [{label}], output exactly '{label}'. "
+                "Otherwise, output 'Something else'. Respond with only one of these two options."
+            )
+        return "Identify the image with single word"
 
-    def _prepare_inputs_batch(self, images: List[Image.Image], labels: List[Optional[str]]):
-        messages_batch = [self._build_messages(img, lab) for img, lab in zip(images, labels)]
+    def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
+        """Use the repo's model_class.preprocessor to build inputs for a single sample."""
+        instruction = self._build_instruction(label)
+        # Prefer the repository preprocessor if available
+        if getattr(self, "_model_class", None) is not None:
+            return self._model_class.preprocessor(
+                instruction=instruction,
+                image_file=image,
+                response="",
+                generation_mode=True,
+            )
+        # Fallback: approximate behavior via processor.apply_chat_template
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": instruction},
+                ],
+            }
+        ]
         return self.processor.apply_chat_template(
-            messages_batch,
+            messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
@@ -181,6 +306,7 @@ class VLMConceptExplainer:
         )
 
     # ---------- Utils ----------
+    
     @staticmethod
     def _resize_if_large(img: Image.Image, max_side: int = 512) -> Image.Image:
         w, h = img.size
@@ -218,26 +344,26 @@ class VLMConceptExplainer:
         images: List[Union[str, Path, Image.Image]],
         ground_truth_labels: Optional[List[Optional[str]]] = None,
         top_n: Optional[int] = None,
-        max_new_tokens: int = 10,
+        max_new_tokens: int = 5,
         temperature: float = 0.0,
         batch_size: int = 1,
     ) -> List[Dict[str, Any]]:
         if ground_truth_labels and len(ground_truth_labels) != len(images):
             raise ValueError("ground_truth_labels length must match images length")
         N = top_n if top_n is not None else self.default_top_n
-
-        # Preload + resize
-        loaded_images: List[Image.Image] = []
+        N = min(N, getattr(self, 'num_concepts', N))
+        # Preload + resize PIL if needed, but keep original input (path or PIL) for the model preprocessor
+        prepped_inputs: List[Union[Image.Image, str, Path]] = []
         for img_in in images:
             if isinstance(img_in, (str, Path)):
-                img = Image.open(img_in).convert('RGB')
+                # Keep path; let model preprocessor load/resize
+                prepped_inputs.append(str(img_in))
             elif isinstance(img_in, Image.Image):
-                img = img_in.convert('RGB')
+                prepped_inputs.append(self._resize_if_large(img_in.convert('RGB')))
             else:
                 raise TypeError(f"Unsupported image type: {type(img_in)}")
-            loaded_images.append(self._resize_if_large(img))
 
-        labels_all = ground_truth_labels if ground_truth_labels else [None] * len(loaded_images)
+        labels_all = ground_truth_labels if ground_truth_labels else [None] * len(prepped_inputs)
 
         results: List[Dict[str, Any]] = []
 
@@ -245,22 +371,50 @@ class VLMConceptExplainer:
             for i in range(0, len(seq), n):
                 yield i, seq[i:i+n]
 
-        for base_idx, img_chunk in chunks(loaded_images, batch_size):
+        for base_idx, img_chunk in chunks(prepped_inputs, batch_size):
             lab_chunk = labels_all[base_idx: base_idx + len(img_chunk)]
-            self._captured = None
-            self._captures = []
-            inputs = self._prepare_inputs_batch(img_chunk, lab_chunk)
+            # Reset utils hook buffers
+            if self._utils is not None:
+                try:
+                    self._utils.clear_hooks_variables()
+                except Exception:
+                    pass
+            # Using repo preprocessor which returns device/dtype-aligned inputs.
+            # Note: batch_size>1 is not supported; process one by one.
+            #assert len(img_chunk) == 1, "Batching not supported; expected single item per chunk"
+            inputs = self._prepare_inputs_single(img_chunk[0], lab_chunk[0])
             inputs = {k: (v.to(self.device) if isinstance(v, torch.Tensor) else v) for k, v in inputs.items()}
+
+            tokenizer = None
+            if getattr(self, "_model_class", None) is not None:
+                tokenizer = getattr(self._model_class, "get_tokenizer", lambda: None)()
+            if tokenizer is None and hasattr(self.processor, 'tokenizer'):
+                tokenizer = self.processor.tokenizer
 
             gen_kwargs = dict(
                 max_new_tokens=max_new_tokens,
                 do_sample=temperature > 0,
-                pad_token_id=self.processor.tokenizer.eos_token_id if hasattr(self.processor, 'tokenizer') else None,
+                pad_token_id=(tokenizer.eos_token_id if tokenizer is not None else None),
                 use_cache=True,
             )
-            if temperature > 0:
-                gen_kwargs['temperature'] = temperature
-            out_tokens = self.model.generate(**inputs, **gen_kwargs)
+            # Avoid passing unsupported kwargs to prevent HF warnings; use a cloned generation_config instead
+            gen_config = getattr(self.model, 'generation_config', None)
+            if gen_config is not None:
+                try:
+                    gen_config = gen_config.clone()
+                except Exception:
+                    from copy import deepcopy
+                    gen_config = deepcopy(gen_config)
+                if temperature > 0:
+                    try:
+                        gen_config.temperature = float(temperature)
+                    except Exception:
+                        pass
+
+            if gen_config is not None:
+                out_tokens = self.model.generate(**inputs, generation_config=gen_config, **gen_kwargs)
+            else:
+                out_tokens = self.model.generate(**inputs, **gen_kwargs)
 
             # Decode full texts and collect token IDs per sample
             input_len = inputs['input_ids'].shape[-1]
@@ -268,13 +422,42 @@ class VLMConceptExplainer:
             gen_token_ids: List[List[int]] = []
             for row in out_tokens:
                 new = row[input_len:]
-                batch_texts.append(self.processor.decode(new, skip_special_tokens=True).strip())
+                # Prefer model tokenizer for decoding
+                if tokenizer is not None:
+                    decoded = tokenizer.decode(new, skip_special_tokens=True)
+                else:
+                    decoded = self.processor.decode(new, skip_special_tokens=True)
+                batch_texts.append(decoded.strip())
                 gen_token_ids.append(new.tolist())
 
-            # Activation sequence across generation steps: (B, T_captures, D)
-            act_seq = torch.cat(self._captures, dim=1) if self._captures else None
+            # For debugging show the the decoded generated tokens
+            if self.verbose:
+                logging.debug("Generated tokens (debug):")
+                for text in batch_texts:
+                    logging.debug(f" - {text}")
+            # Activation sequence across generation steps via utils hook: (B, T, D)
+            act_seq = None
+            if self._hook_return_fn is not None and self._utils is not None:
+                try:
+                    # Provide optional kwargs though not needed for base hook
+                    hook_out = self._hook_return_fn(
+                        tokenizer=tokenizer,
+                        image=img_chunk,
+                        model_output=None,
+                        model_generated_output=out_tokens[0][input_len:].unsqueeze(0),
+                    )
+                    hidden_dict = hook_out.get("hidden_states", {}) if isinstance(hook_out, dict) else {}
+                    if len(hidden_dict) == 0:
+                        raise RuntimeError("No hidden_states captured by hooks")
+                    # Pick the first hooked module deterministically
+                    first_key = sorted(hidden_dict.keys())[0]
+                    act_seq = hidden_dict[first_key]  # (B, T, D)
+                    # Ensure activations are on CPU for similarity computation
+                    act_seq = act_seq.detach().to('cpu', dtype=torch.float32)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to retrieve hidden states via hooks: {e}")
             if act_seq is None:
-                raise RuntimeError("No activation captured for batch; check layer_path")
+                raise RuntimeError("No activation captured for batch; check layer_path and hooks setup")
 
             # For each sample, compute per-token top-N concepts
             for j in range(act_seq.shape[0]):
@@ -292,7 +475,7 @@ class VLMConceptExplainer:
 
                 # decode tokens one-by-one (optional)
                 token_texts: List[str] = []
-                tok_decoder = getattr(self.processor, 'tokenizer', None)
+                tok_decoder = tokenizer or getattr(self.processor, 'tokenizer', None)
                 for tid in new_ids[-t_len:]:
                     if tok_decoder is not None:
                         token_texts.append(tok_decoder.decode([tid], skip_special_tokens=True))
@@ -326,12 +509,24 @@ class VLMConceptExplainer:
                     })
 
                 # Also compute pooled top concepts over the whole sequence (optional aggregate)
-                # Filter out non-alphanumeric tokens before pooling
-                def _is_alnum(s: str) -> bool:
-                    return any(ch.isalnum() for ch in s)
+                # Filter tokens before pooling using regex cleanup logic (articles/pronouns and specials)
+                def _keep_token_text(s: str) -> bool:
+                    if not s or not any(ch.isalnum() for ch in s):
+                        return False
+                    # Default removal lists
+                    remove_words: List[str] = []
+                    articles = r'\b(?:a|an|the)\b'
+                    pronouns = r'\b(?:i|object|you|he|she|it|we|they|me|him|her|us|them|my|mine|your|yours|his|hers|its|our|ours|that|their|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|photo|image|im_end|question)\b'
+                    combined_pattern = re.compile(f"{articles}|{pronouns}", flags=re.IGNORECASE)
+                    txt = combined_pattern.sub('', s)
+                    for word in remove_words:
+                        txt = re.sub(rf'\b{re.escape(word)}\b', '', txt, flags=re.IGNORECASE)
+                    txt = re.sub(r'[^a-zA-Z0-9\s]', '', txt)
+                    txt = re.sub(r'\s+', ' ', txt).strip()
+                    return txt != ''
 
                 mask_keep = [
-                    _is_alnum(token_texts[t_idx]) if t_idx < len(token_texts) else False
+                    _keep_token_text(token_texts[t_idx]) if t_idx < len(token_texts) else False
                     for t_idx in range(t_len)
                 ]
                 if any(mask_keep):
@@ -339,21 +534,18 @@ class VLMConceptExplainer:
                 else:
                     acts_keep = acts_j  # fallback: keep all if none qualify
                 pooled = acts_keep.mean(dim=0, keepdim=True)  # (1, D)
-                pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
-                # cosine distance over concepts (smaller is closer)
-                sims_all = (pooled @ self.concept_vectors.T)[0]
-                dists_all = 1.0 - sims_all
-                k_all = min(N, dists_all.shape[0])
-                topk_all = torch.topk(dists_all, k=k_all, largest=False)
-                idx_all = topk_all.indices.tolist()
-                dist_all = topk_all.values.tolist()
+                # Cosine similarity over concepts (higher is better)
+                sims_all = F.cosine_similarity(pooled, self.concept_vectors, dim=-1)
+                arr = sims_all.detach().cpu().numpy()
+                k_all = min(N, arr.shape[0])
+                idx_all = np.argsort(arr)[-k_all:][::-1].tolist()
+                sim_vals = [float(arr[i]) for i in idx_all]
                 top_concepts_all: List[Dict[str, Any]] = []
-                for rank, (ci, dist_val) in enumerate(zip(idx_all, dist_all), 1):
+                for rank, (ci, sim_val) in enumerate(zip(idx_all, sim_vals), 1):
                     top_concepts_all.append({
                         'rank': rank,
                         'concept_index': ci,
-                        'distance': float(dist_val),
-                        'similarity': float(1.0 - dist_val),
+                        'similarity': float(sim_val),
                         'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                         'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                         'image_grounding_path': self.image_grounding_paths[ci] if self.image_grounding_paths and ci < len(self.image_grounding_paths) else None,
@@ -372,9 +564,13 @@ class VLMConceptExplainer:
         return results
 
     def close(self):
-        if hasattr(self, '_hook_handle') and self._hook_handle:
-            self._hook_handle.remove()
-            self._hook_handle = None
+        # Clear project-level hooks and buffers
+        if getattr(self, "_utils", None) is not None:
+            try:
+                self._utils.clear_forward_hooks(self.model)
+                self._utils.clear_hooks_variables()
+            except Exception:
+                pass
 
 
 __all__ = ["VLMConceptExplainer"]
@@ -389,22 +585,36 @@ if __name__ == "__main__":
     ap.add_argument('--image', action='append', required=True)
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
-    ap.add_argument('--batch_size', type=int, default=2)
+    ap.add_argument('--batch_size', type=int, default=1)
+    ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
+    ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
+    ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')
     args = ap.parse_args()
 
-    explainer = VLMConceptExplainer(args.model_name, args.concept_path, args.layer_path)
+    # Configure logging for terminal output
+    logging.basicConfig(
+        level=(logging.DEBUG if args.verbose else logging.INFO),
+        format='%(levelname)s: %(message)s'
+    )
+
+    # Set seeds early for reproducibility
+    set_seed_all(args.seed, deterministic=args.deterministic)
+    # add a  exception is batch size bigger than 1 the code does not work, the  error due the dataloader operation
+    if args.batch_size > 1:
+        raise ValueError("Batch size greater than 1 is not supported.")
+    explainer = VLMConceptExplainer(args.model_name, args.concept_path, args.layer_path, verbose=args.verbose)
     res = explainer.explain_with_concept(args.image, ground_truth_labels=args.label, top_n=args.top_n, batch_size=args.batch_size)
     for r in res:
-        print(f"Image {r['image_index']} -> gt={r['ground_truth']}\nModel: {r['model_output']}")
+        logging.info(f"Image {r['image_index']} -> gt={r['ground_truth']}\nModel: {r['model_output']}")
         top_list = r.get('top_concepts_over_sequence') or r.get('top_concepts') or []
-        print("Top concepts (aggregate):")
+        logging.info("Top concepts (aggregate):")
         for c in top_list:
-            print(f"  #{c['rank']} idx={c['concept_index']} sim={c['similarity']:.4f} name={c['concept_name']} text={c['text_grounding']}")
+            logging.info(f"  #{c['rank']} idx={c['concept_index']} sim={c['similarity']:.4f} text={c['text_grounding']}")
 
         # Optional: brief per-token top-1 preview + top-N concept names
         pt = r.get('per_token_concepts') or []
         if pt:
-            print("Per-token top-1 (preview) + top-N names:")
+            logging.info("Per-token top-1 (preview) + top-N names:")
             for tok in pt:
                 if tok.get('top_concepts'):
                     c = tok['top_concepts'][0]
@@ -415,9 +625,9 @@ if __name__ == "__main__":
                         nm = cc.get('concept_name') or cc.get('text_grounding') or f"idx{cc.get('concept_index')}"
                         names.append(str(nm))
                     names_str = ", ".join(names)
-                    print(
+                    logging.info(
                         f"  t={tok['token_index']} '{tok.get('token_text','')}' -> "
-                        f"idx={c['concept_index']} name={c.get('concept_name')} sim={c['similarity']:.4f} | top{n_show}: {names_str}"
+                        f"idx={c['concept_index']} text={c.get('text_grounding')} sim={c['similarity']:.4f} | top{n_show}: {names_str}"
                     )
-        print('-'*60)
+        logging.info('-'*60)
     explainer.close()
