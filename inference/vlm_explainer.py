@@ -274,7 +274,7 @@ class VLMConceptExplainer:
                 f"Classify this image. If it shows [{label}], output exactly '{label}'. "
                 "Otherwise, output 'Something else'. Respond with only one of these two options."
             )
-        return "Identify the image with single word"
+        return "Classify the image with few words."
 
     def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
         """Use the repo's model_class.preprocessor to build inputs for a single sample."""
@@ -354,12 +354,18 @@ class VLMConceptExplainer:
         N = min(N, getattr(self, 'num_concepts', N))
         # Preload + resize PIL if needed, but keep original input (path or PIL) for the model preprocessor
         prepped_inputs: List[Union[Image.Image, str, Path]] = []
+        abs_image_paths: List[Optional[str]] = []
         for img_in in images:
             if isinstance(img_in, (str, Path)):
                 # Keep path; let model preprocessor load/resize
                 prepped_inputs.append(str(img_in))
+                try:
+                    abs_image_paths.append(os.path.abspath(str(img_in)))
+                except Exception:
+                    abs_image_paths.append(None)
             elif isinstance(img_in, Image.Image):
                 prepped_inputs.append(self._resize_if_large(img_in.convert('RGB')))
+                abs_image_paths.append(None)
             else:
                 raise TypeError(f"Unsupported image type: {type(img_in)}")
 
@@ -492,6 +498,12 @@ class VLMConceptExplainer:
                     concept_scores = topk.values.tolist()
                     top_concepts_tok: List[Dict[str, Any]] = []
                     for rank, (ci, dist_val) in enumerate(zip(concept_indices, concept_scores), 1):
+                        img_gp = None
+                        if self.image_grounding_paths and ci < len(self.image_grounding_paths):
+                            try:
+                                img_gp = str(self.image_grounding_paths[ci])
+                            except Exception:
+                                img_gp = self.image_grounding_paths[ci]
                         top_concepts_tok.append({
                             'rank': rank,
                             'concept_index': ci,
@@ -499,7 +511,7 @@ class VLMConceptExplainer:
                             'similarity': float(1.0 - dist_val),
                             'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                             'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
-                            'image_grounding_path': self.image_grounding_paths[ci] if self.image_grounding_paths and ci < len(self.image_grounding_paths) else None,
+                            'image_grounding_path': img_gp,
                         })
                     per_token_concepts.append({
                         'token_index': t_idx,
@@ -542,23 +554,31 @@ class VLMConceptExplainer:
                 sim_vals = [float(arr[i]) for i in idx_all]
                 top_concepts_all: List[Dict[str, Any]] = []
                 for rank, (ci, sim_val) in enumerate(zip(idx_all, sim_vals), 1):
+                    img_gp = None
+                    if self.image_grounding_paths and ci < len(self.image_grounding_paths):
+                        try:
+                            img_gp = str(self.image_grounding_paths[ci])
+                        except Exception:
+                            img_gp = self.image_grounding_paths[ci]
                     top_concepts_all.append({
                         'rank': rank,
                         'concept_index': ci,
                         'similarity': float(sim_val),
                         'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                         'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
-                        'image_grounding_path': self.image_grounding_paths[ci] if self.image_grounding_paths and ci < len(self.image_grounding_paths) else None,
+                        'image_grounding_path': img_gp,
                     })
 
                 results.append({
-                    'image_index': base_idx + j,
+                    'image_path': abs_image_paths[base_idx + j],
                     'ground_truth': lab_chunk[j],
                     'model_output': batch_texts[j],
                     'generated_token_ids': new_ids,
                     'per_token_concepts': per_token_concepts,
                     'top_concepts_over_sequence': top_concepts_all,
                     'layer_activation_shape': tuple(act_seq.shape),
+                    'hook_layer': self.layer_path,
+                    'model_name': self.model_name,
                 })
 
         return results
@@ -582,13 +602,17 @@ if __name__ == "__main__":
     ap.add_argument('--model_name', default='google/gemma-3n-E4B-it')
     ap.add_argument('--concept_path', required=True)
     ap.add_argument('--layer_path', required=True)
-    ap.add_argument('--image', action='append', required=True)
+    ap.add_argument('--image', action='append')  # removed required=True to allow --image_root only
+    ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
     ap.add_argument('--batch_size', type=int, default=1)
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')
+    # New: JSON output and data root controls
+    ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json', help='Path to save JSON results')
+    ap.add_argument('--data_root', default=None, help='Root path of dataset. If omitted, inferred from image paths')
     args = ap.parse_args()
 
     # Configure logging for terminal output
@@ -596,6 +620,27 @@ if __name__ == "__main__":
         level=(logging.DEBUG if args.verbose else logging.INFO),
         format='%(levelname)s: %(message)s'
     )
+
+    # Build image list from --image_root if provided
+    if getattr(args, 'image_root', None):
+        root = os.path.abspath(args.image_root)
+        if not os.path.isdir(root):
+            raise ValueError(f"--image_root must be a directory: {root}")
+        valid_exts = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}
+        collected = []
+        for dirpath, _, filenames in os.walk(root):
+            for fn in filenames:
+                ext = os.path.splitext(fn)[1].lower()
+                if ext in valid_exts:
+                    collected.append(os.path.join(dirpath, fn))
+        collected.sort()
+        if args.image is None:
+            args.image = []
+        args.image.extend(collected)
+        logging.info(f"Discovered {len(collected)} images under {root}")
+
+    if not args.image:
+        raise ValueError("No images provided. Use --image one or more times, or provide --image_root.")
 
     # Set seeds early for reproducibility
     set_seed_all(args.seed, deterministic=args.deterministic)
@@ -605,7 +650,7 @@ if __name__ == "__main__":
     explainer = VLMConceptExplainer(args.model_name, args.concept_path, args.layer_path, verbose=args.verbose)
     res = explainer.explain_with_concept(args.image, ground_truth_labels=args.label, top_n=args.top_n, batch_size=args.batch_size)
     for r in res:
-        logging.info(f"Image {r['image_index']} -> gt={r['ground_truth']}\nModel: {r['model_output']}")
+        logging.info(f"Image {r.get('image_path')} -> gt={r['ground_truth']}\nModel: {r['model_output']}")
         top_list = r.get('top_concepts_over_sequence') or r.get('top_concepts') or []
         logging.info("Top concepts (aggregate):")
         for c in top_list:
@@ -630,4 +675,30 @@ if __name__ == "__main__":
                         f"idx={c['concept_index']} text={c.get('text_grounding')} sim={c['similarity']:.4f} | top{n_show}: {names_str}"
                     )
         logging.info('-'*60)
+
+    # Save consolidated JSON with metadata
+    try:
+        img_abs_list = [os.path.abspath(str(p)) for p in (args.image or [])]
+        if args.data_root is not None:
+            data_root = os.path.abspath(args.data_root)
+        else:
+            data_root = os.path.commonpath(img_abs_list) if img_abs_list else None
+    except Exception:
+        data_root = None
+
+    out_payload: Dict[str, Any] = {
+        'model_card': args.model_name,
+        'layer_path': args.layer_path,
+        'data_root': data_root,
+        'results': res,
+    }
+    try:
+        out_path = args.out_json
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(out_payload, f, ensure_ascii=False, indent=2)
+        logging.info(f"Saved JSON to {out_path}")
+    except Exception as e:
+        logging.error(f"Failed to save JSON: {e}")
+
     explainer.close()
