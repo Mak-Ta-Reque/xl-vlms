@@ -10,6 +10,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+ACTIVE_ENV="system" # system|conda|venv
 
 # Optional overrides via env vars
 #   APT_PACKAGES     : space-separated apt packages to install (default: empty)
@@ -83,6 +84,21 @@ activate_conda_env() {
       conda create -y -n xlvlms "python=${PYTHON_VERSION}"
     fi
     conda activate xlvlms
+    ACTIVE_ENV="conda"
+    return 0
+  fi
+  # Try common conda locations
+  if [[ -f "/opt/conda/etc/profile.d/conda.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "/opt/conda/etc/profile.d/conda.sh"
+    if conda env list | awk '{print $1}' | grep -qx "xlvlms"; then
+      log "Conda env 'xlvlms' exists; activating"
+    else
+      log "Creating conda env 'xlvlms' with Python ${PYTHON_VERSION}"
+      conda create -y -n xlvlms "python=${PYTHON_VERSION}"
+    fi
+    conda activate xlvlms
+    ACTIVE_ENV="conda"
     return 0
   fi
   return 1
@@ -100,12 +116,16 @@ activate_venv_env() {
 
   if [[ ! -d "$VENV_PATH" ]]; then
     log "Creating venv at $VENV_PATH with ${py_bin}"
-    "$py_bin" -m venv "$VENV_PATH"
+    if ! "$py_bin" -m venv "$VENV_PATH"; then
+      log "venv creation failed; likely ensurepip missing. Falling back to system Python."
+      return 1
+    fi
   else
     log "Using existing venv at $VENV_PATH"
   fi
   # shellcheck disable=SC1091
   source "$VENV_PATH/bin/activate"
+  ACTIVE_ENV="venv"
 }
 
 setup_python_env() {
@@ -117,24 +137,30 @@ setup_python_env() {
       if activate_conda_env; then return 0; fi
       ;;
   esac
-  activate_venv_env
+  if activate_venv_env; then return 0; fi
+  ACTIVE_ENV="system"
 }
 
 install_readme_deps() {
   # We assume an environment is already active
-  log "Upgrading pip3"
-  python -m pip3 install --upgrade pip3
+  local PIP_USER_FLAG=""
+  if [[ "$ACTIVE_ENV" == "system" ]]; then
+    PIP_USER_FLAG="--user"
+  fi
+
+  log "Upgrading pip"
+  python -m pip install --upgrade pip $PIP_USER_FLAG || true
 
   install_torch_if_needed
 
   log "Installing core Python dependencies"
-  pip install tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
+  pip install $PIP_USER_FLAG tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
 
   log "Downloading spaCy model en_core_web_sm"
   python -m spacy download en_core_web_sm || true
 
   log "Installing Qwen model utils"
-  pip install qwen-vl-utils
+  pip install $PIP_USER_FLAG qwen-vl-utils
 
   # Optional Java via conda if conda env is active
   if command -v conda >/dev/null 2>&1 && conda info --envs | grep -q "* xlvlms"; then
@@ -155,7 +181,7 @@ PY
 
   if [[ -n "$EXTRA_PIP_PACKAGES" ]]; then
     log "Installing extra pip packages: $EXTRA_PIP_PACKAGES"
-    pip install $EXTRA_PIP_PACKAGES || true
+    pip install $PIP_USER_FLAG $EXTRA_PIP_PACKAGES || true
   fi
 }
 
@@ -185,7 +211,11 @@ PY
   fi
 
   log "Installing torch/torchvision from $TORCH_INDEX_URL"
-  if ! pip install --index-url "$TORCH_INDEX_URL" torch torchvision; then
+  local PIP_USER_FLAG=""
+  if [[ "$ACTIVE_ENV" == "system" ]]; then
+    PIP_USER_FLAG="--user"
+  fi
+  if ! pip install $PIP_USER_FLAG --index-url "$TORCH_INDEX_URL" torch torchvision; then
     log "Non-fatal: torch install failed (likely container has pinned NV torch). Continuing with existing torch."
   fi
 }
