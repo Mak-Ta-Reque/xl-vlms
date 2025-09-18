@@ -47,10 +47,10 @@ def combine_concepts(input_dir):
 
     concepts = []
     activations = []
+    print(f"Loaded {len(pth_files)} .pth files from {input_dir}")
     for filename in pth_files:
         filepath = os.path.join(input_dir, filename)
         model_data = torch.load(filepath)
-
         image_grounding_path = model_data['image_grounding_paths']
         
         index_with_all_no = dominant_positive_index(image_grounding_path)
