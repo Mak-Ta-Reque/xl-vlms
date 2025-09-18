@@ -51,6 +51,8 @@ def process_csv_file(csv_file_path, output_file_path=None):
             # Extract image information
             image_name = row.get('image_name', '')
             root_path = row.get('root_path', '')
+            # Prefer new schema with image_relpath; fallback to legacy subfolder
+            image_relpath = row.get('image_relpath', '')
             subfolder = row.get('subfolder', '')
             predicted_text = row.get('predicted_text', '')
             
@@ -58,7 +60,13 @@ def process_csv_file(csv_file_path, output_file_path=None):
                 continue
                 
             # Create image identifier
-            image_id = f"{Path(root_path).name}/{subfolder}/{image_name}"
+            if image_relpath:
+                rel = image_relpath.lstrip('/')
+            elif subfolder:
+                rel = f"{subfolder}/{image_name}"
+            else:
+                rel = image_name
+            image_id = f"{Path(root_path).name}/{rel}"
 
             # Split predicted_text by comma and process each concept
             concepts = predicted_text.split(',')

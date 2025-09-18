@@ -76,11 +76,13 @@ POPULAR_MODELS = {
 
 def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed: int = 42) -> List[Tuple[str, str, str]]:
     """
-    Get image files from the dataset directory. Optionally sample up to image_budget images per subfolder.
+    Get image files from the dataset directory, including files in the root
+    and in immediate subfolders. Optionally sample up to image_budget images
+    per subfolder (root-level images are not sampled).
 
     Args:
         dataset_path: Path to the dataset directory
-        image_budget: If provided and >0, randomly sample up to this many images per subfolder. Root-level images are NOT sampled (all included).
+        image_budget: If provided and >0, randomly sample up to this many images per subfolder
         seed: Random seed for reproducible per-subfolder sampling
     Returns:
         List of tuples containing (root_path, subfolder, image_name)
@@ -91,12 +93,12 @@ def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed:
     if not dataset_path.exists():
         raise ValueError(f"Dataset path does not exist: {dataset_path}")
 
-    # Images directly in root directory (not sampled)
+    # Include images directly in root directory (not sampled)
     for image_file in dataset_path.iterdir():
         if image_file.is_file() and image_file.suffix.lower() in IMAGE_EXTENSIONS:
             image_files.append((
                 str(dataset_path),
-                "root",
+                "",
                 image_file.name
             ))
 
@@ -470,25 +472,33 @@ def process_dataset(
             reader = csv.DictReader(f)
             for row in reader:
                 # Handle root directory images differently
-                if row['subfolder'] == "root":
-                    processed_files.add(os.path.join(row['root_path'], row['image_name']))
-                else:
-                    processed_files.add(os.path.join(row['root_path'], row['subfolder'], row['image_name']))
+                    root = row.get('root_path', '')
+                    rel = row.get('image_relpath')
+                    name = row.get('image_name', '')
+                    if rel:
+                        processed_files.add(os.path.join(root, rel))
+                    else:
+                        # Backward-compat for old CSV with 'subfolder'
+                        sub = row.get('subfolder', '')
+                        if sub:
+                            processed_files.add(os.path.join(root, sub, name))
+                        else:
+                            processed_files.add(os.path.join(root, name))
         logger.info(f"Resuming: {len(processed_files)} files already processed")
     
     # Filter out already processed files if resuming
     if resume:
         image_files = [
             (root, subfolder, img) for root, subfolder, img in image_files
-            if (os.path.join(root, img) if subfolder == "root" else os.path.join(root, subfolder, img)) not in processed_files
+            if os.path.join(root, subfolder, img) not in processed_files
         ]
         logger.info(f"Remaining files to process: {len(image_files)}")
     
     # Load the model and processor
     model, processor = load_huggingface_model(model_name, trust_remote_code, hf_token)
     
-    # Prepare CSV file
-    fieldnames = ['root_path', 'subfolder', 'image_name', 'predicted_text', 'prompt_used']
+    # Prepare CSV file (no 'subfolder'; using 'image_relpath')
+    fieldnames = ['root_path', 'image_relpath', 'image_name', 'predicted_text', 'prompt_used']
     mode = 'a' if resume and os.path.exists(output_csv) else 'w'
 
     def batch(iterable, n=1):
@@ -504,12 +514,10 @@ def process_dataset(
         for image_batch in tqdm(list(batch(image_files, batch_size)), desc="Processing batches"):
             batch_images = []
             batch_prompts = []
-            batch_paths = []
+            batch_paths = []  # (root_path, image_relpath, image_name)
             for root_path, subfolder, image_name in image_batch:
-                if subfolder == "root":
-                    image_path = os.path.join(root_path, image_name)
-                else:
-                    image_path = os.path.join(root_path, subfolder, image_name)
+                image_relpath = os.path.join(subfolder, image_name) if subfolder else image_name
+                image_path = os.path.join(root_path, image_relpath)
                 try:
                     image = Image.open(image_path).convert('RGB')
                     if image_size:
@@ -519,7 +527,7 @@ def process_dataset(
                     image = None
                 batch_images.append(image)
                 batch_prompts.append(prompt)
-                batch_paths.append((root_path, subfolder, image_name))
+                batch_paths.append((root_path, image_relpath, image_name))
 
             # Remove None images
             valid_indices = [i for i, img in enumerate(batch_images) if img is not None]
@@ -610,10 +618,10 @@ def process_dataset(
                         generated_texts = [tokenizer.decode(out, skip_special_tokens=True).strip() for out in outputs]
 
             # Write results for each image in batch
-            for (root_path, subfolder, image_name), predicted_text in zip(valid_paths, generated_texts):
+            for (root_path, image_relpath, image_name), predicted_text in zip(valid_paths, generated_texts):
                 writer.writerow({
                     'root_path': root_path,
-                    'subfolder': subfolder,
+                    'image_relpath': image_relpath,
                     'image_name': image_name,
                     'predicted_text': predicted_text,
                     'prompt_used': prompt

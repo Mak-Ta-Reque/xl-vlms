@@ -1,13 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail  # Safer script: exit on errors and unset vars
 
 ##########################################
-# Parse arguments
+# Configuration (prefer environment)
 ##########################################
-MODEL_NAME=${1:-"google/gemma-3n-E4B-it"}
-BASE_DATA_DIR=${2:-"/mnt/abka03/xlvlm_data/imagenet_1000_auto_crops/train"}
-SAVE_DIR=${3:-"/mnt/abka03/concept_extraction_result/gemma3n/MCoX/SNMF/imagenet1000/train"}
-HF_HOME=${4:-"/mnt/abka03/huggingface/hub"}
+# Prefer orchestrator-provided VLM_MODEL, fall back to MODEL_NAME or positional
+MODEL_NAME=${VLM_MODEL:-${MODEL_NAME:-${1:-"google/gemma-3n-E4B-it"}}}
+## Use crops directory provided by orchestrator; no hard-coded default
+if [[ -z "${BASE_DATA_DIR:-}" ]]; then
+  if [[ -n "${CROPS_DIR:-}" ]]; then
+    BASE_DATA_DIR="${CROPS_DIR}"
+  elif [[ -n "${2:-}" ]]; then
+    BASE_DATA_DIR="${2}"
+  else
+    echo "Error: CROPS_DIR (or BASE_DATA_DIR) must be set by the orchestrator or provided as 2nd arg." >&2
+    exit 1
+  fi
+fi
+SAVE_DIR=${FEATURES_DIR:-${3:-"/mnt/abka03/Projects/xl-vlms/outputs/cdgl/train"}}
+HF_HOME=${HF_HOME:-${4:-"/mnt/abka03/huggingface/hub"}}
+# Resolve Python interpreter
+if command -v "${PYTHON:-${PYTHON_BIN:-python}}" >/dev/null 2>&1; then
+  PYTHON_BIN="${PYTHON:-${PYTHON_BIN:-python}}"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+else
+  PYTHON_BIN="python"
+fi
 ##########################################
 # Configuration
 ##########################################
@@ -16,7 +35,8 @@ DEFAULT_DATASET_SIZE=800
 OVERRIDE_DATASET_SIZE=800
 HOOK_NAME="save_hidden_states_sentence"
 MODULES_TO_HOOK="model.language_model.norm"
-SCRIPT_PATH="src/save_features.py"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd .. && pwd)"
+SCRIPT_PATH="$ROOT_DIR/src/save_features.py"
 PROMPT_TEMPLATE="cgdl"
 SPLIT="train"
 
@@ -53,7 +73,7 @@ for dir_path in "${BASE_DATA_DIR}"/*/; do
 
   echo "[${COUNT}/${MAX_ITERATIONS}] Processing: $dir_name (Token: $TOKEN_OF_INTEREST, Concept: \"$concept\")"
 
-  HF_HOME="$HF_HOME" python "$SCRIPT_PATH" \
+  HF_HOME="$HF_HOME" "$PYTHON_BIN" "$SCRIPT_PATH" \
     --model_name "$MODEL_NAME" \
     --dataset_name "$DATASET_NAME" \
     --dataset_size "$DATASET_SIZE" \

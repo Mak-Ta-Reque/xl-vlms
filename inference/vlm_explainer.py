@@ -274,7 +274,7 @@ class VLMConceptExplainer:
                 f"Classify this image. If it shows [{label}], output exactly '{label}'. "
                 "Otherwise, output 'Something else'. Respond with only one of these two options."
             )
-        return "Classify the image with few words."
+        return "Extract and list the dominant objects in the image as plain text items only"
 
     def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
         """Use the repo's model_class.preprocessor to build inputs for a single sample."""
@@ -344,7 +344,7 @@ class VLMConceptExplainer:
         images: List[Union[str, Path, Image.Image]],
         ground_truth_labels: Optional[List[Optional[str]]] = None,
         top_n: Optional[int] = None,
-        max_new_tokens: int = 5,
+        max_new_tokens: int = 20,
         temperature: float = 0.0,
         batch_size: int = 1,
     ) -> List[Dict[str, Any]]:
@@ -402,6 +402,7 @@ class VLMConceptExplainer:
                 do_sample=temperature > 0,
                 pad_token_id=(tokenizer.eos_token_id if tokenizer is not None else None),
                 use_cache=True,
+                early_stopping=True,
             )
             # Avoid passing unsupported kwargs to prevent HF warnings; use a cloned generation_config instead
             gen_config = getattr(self.model, 'generation_config', None)

@@ -229,7 +229,7 @@ def main():
     parser.add_argument("--output_root", required=True)
     parser.add_argument("--patch_size", type=int, default=200, help="Size for square patches / concept crops")
     parser.add_argument("--patches_per_image", type=int, default=18, help="Random patches per image (random mode)")
-    parser.add_argument("--max_overlap", type=float, default=0.8, help="Max IoU overlap (random mode)")
+    parser.add_argument("--max_overlap", type=float, default=0.5, help="Max IoU overlap (random mode)")
     parser.add_argument("--resize", type=int, default=500, help="Target width resize (keep aspect)")
     parser.add_argument("--grid", action='store_true', help="Enable grid mode")
     parser.add_argument("--json_mapping", type=str, default=None, help="Tag -> [relative paths] JSON")
@@ -278,10 +278,10 @@ python preprocessing/random_crops.py \
 
 Concept-focused cropping (skips tags with <30 images by default):
 python preprocessing/random_crops.py \
-   --input_root  /mnt/abka03/xlvlm_data/imagenet_1000  \
-   --output_root  /mnt/abka03/xlvlm_data/imagenet_1000_auto_crops/train  \
-   --json_mapping /mnt/abka03/xlvlm_data/imagenet_1000/coco_1000_concept_image_mapping.json \
-   --concept_mode --concept_crops_per_image 10 --patch_size 189 --resize 512 --seed 123 --min_images_per_tag 30 --max_images_per_tag 50
+   --input_root  /mnt/abka03/Projects/xl-vlms/data  \
+   --output_root  /mnt/abka03/Projects/xl-vlms/crops/train  \
+   --json_mapping /mnt/abka03/Projects/xl-vlms/data/coco_10_concept_image_mapping.json \
+   --concept_mode --concept_crops_per_image 100 --patch_size 128 --resize 512 --seed 123 --min_images_per_tag 10 --max_images_per_tag 300
 
 Concept-focused cropping with per-tag cap (e.g., max 50 images used per tag):
 python preprocessing/random_crops.py \
