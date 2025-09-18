@@ -12,13 +12,16 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 
 # Optional overrides via env vars
-#   APT_PACKAGES   : space-separated apt packages to install (default: empty)
-#   CONDA_PACKAGES : space-separated conda packages to install (default: empty)
-#   REQUIREMENTS_FILE : path to requirements file (default: $repo_root/requirements.txt)
-#   PYTHON_EXE     : python executable to use (default: python or python3)
+#   APT_PACKAGES     : space-separated apt packages to install (default: empty)
+#   EXTRA_PIP_PACKAGES: extra pip packages (space-separated) to install after base set (default: empty)
+#   USE_CONDA        : force using conda if available (default: auto)
+#   PYTHON_VERSION   : python version to create env with (default: 3.9)
+#   VENV_PATH        : path to create venv if conda is unavailable (default: $repo_root/.venv)
 APT_PACKAGES="${APT_PACKAGES:-}"
-CONDA_PACKAGES="${CONDA_PACKAGES:-}"
-REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-$repo_root/requirements.txt}"
+EXTRA_PIP_PACKAGES="${EXTRA_PIP_PACKAGES:-}"
+USE_CONDA="${USE_CONDA:-auto}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.9}"
+VENV_PATH="${VENV_PATH:-$repo_root/.venv}"
 
 JOBID="${SLURM_JOBID:-${SLURM_JOB_ID:-$$}}"
 LOCALID="${SLURM_LOCALID:-0}"
@@ -60,44 +63,100 @@ run_apt() {
   rm -rf /var/lib/apt/lists/* || true
 }
 
-run_conda() {
-  if ! command -v conda >/dev/null 2>&1; then
-    log "conda not found; skipping conda installs"
+activate_conda_env() {
+  # Initialize conda in this shell and activate env
+  if command -v conda >/dev/null 2>&1; then
+    # shellcheck disable=SC1091
+    eval "$(conda shell.bash hook)"
+    if conda env list | awk '{print $1}' | grep -qx "xlvlms"; then
+      log "Conda env 'xlvlms' exists; activating"
+    else
+      log "Creating conda env 'xlvlms' with Python ${PYTHON_VERSION}"
+      conda create -y -n xlvlms "python=${PYTHON_VERSION}"
+    fi
+    conda activate xlvlms
     return 0
   fi
-  if [[ -z "$CONDA_PACKAGES" ]]; then
-    log "No CONDA_PACKAGES specified; skipping conda installs"
-    return 0
-  fi
-
-  log "Installing conda packages: $CONDA_PACKAGES"
-  conda install -y $CONDA_PACKAGES
+  return 1
 }
 
-run_pip() {
-  local py="${PYTHON_EXE:-python}"
-  if ! command -v "$py" >/dev/null 2>&1; then
-    if command -v python3 >/dev/null 2>&1; then
-      py="python3"
-    fi
+activate_venv_env() {
+  local py_bin="python3"
+  if command -v python${PYTHON_VERSION} >/dev/null 2>&1; then
+    py_bin="python${PYTHON_VERSION}"
+  elif command -v python3 >/dev/null 2>&1; then
+    py_bin="python3"
+  elif command -v python >/dev/null 2>&1; then
+    py_bin="python"
   fi
 
-  log "Upgrading pip"
-  "$py" -m pip install --upgrade pip
-
-  if [[ -f "$REQUIREMENTS_FILE" ]]; then
-    log "Installing pip requirements from $REQUIREMENTS_FILE"
-    "$py" -m pip install -r "$REQUIREMENTS_FILE"
+  if [[ ! -d "$VENV_PATH" ]]; then
+    log "Creating venv at $VENV_PATH with ${py_bin}"
+    "$py_bin" -m venv "$VENV_PATH"
   else
-    log "Requirements file not found at $REQUIREMENTS_FILE; skipping"
+    log "Using existing venv at $VENV_PATH"
+  fi
+  # shellcheck disable=SC1091
+  source "$VENV_PATH/bin/activate"
+}
+
+setup_python_env() {
+  case "$USE_CONDA" in
+    force|true)
+      if activate_conda_env; then return 0; else log "Conda forced but not available; falling back to venv"; fi
+      ;;
+    auto|*)
+      if activate_conda_env; then return 0; fi
+      ;;
+  esac
+  activate_venv_env
+}
+
+install_readme_deps() {
+  # We assume an environment is already active
+  log "Upgrading pip"
+  python -m pip install --upgrade pip
+
+  log "Installing PyTorch and torchvision for CUDA 12.6"
+  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+  log "Installing core Python dependencies"
+  pip install tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
+
+  log "Downloading spaCy model en_core_web_sm"
+  python -m spacy download en_core_web_sm || true
+
+  log "Installing Qwen model utils"
+  pip install qwen-vl-utils
+
+  # Optional Java via conda if conda env is active
+  if command -v conda >/dev/null 2>&1 && conda info --envs | grep -q "* xlvlms"; then
+    log "Installing openjdk via conda-forge"
+    conda install -y -c conda-forge openjdk || true
+  else
+    log "Conda not active; skipping openjdk installation"
+  fi
+
+  log "Downloading COCO evaluation data via language_evaluation"
+  python - <<'PY'
+import language_evaluation
+try:
+    language_evaluation.download('coco')
+except Exception as e:
+    print(f"Warning: COCO data download failed: {e}")
+PY
+
+  if [[ -n "$EXTRA_PIP_PACKAGES" ]]; then
+    log "Installing extra pip packages: $EXTRA_PIP_PACKAGES"
+    pip install $EXTRA_PIP_PACKAGES || true
   fi
 }
 
 do_install() {
   log "Starting installation"
   run_apt
-  run_conda
-  run_pip
+  setup_python_env
+  install_readme_deps
   log "Installation completed"
 }
 
