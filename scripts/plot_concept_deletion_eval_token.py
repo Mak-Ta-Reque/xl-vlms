@@ -24,6 +24,18 @@ from typing import Dict, List, Tuple
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+
+# Set global font sizes to 18 across the figure
+matplotlib.rcParams.update({
+    'font.size': 18,
+    'axes.titlesize': 18,
+    'axes.labelsize': 18,
+    'xtick.labelsize': 18,
+    'ytick.labelsize': 18,
+    'legend.fontsize': 18,
+    'legend.title_fontsize': 18,
+})
 
 
 def _load_curve(csv_path: Path) -> Tuple[List[float], List[float]]:
@@ -72,12 +84,17 @@ def _plot_all(out_dir: Path, prefix: str, title: str, xlabel: str, outfile: str)
         xs, ys = _load_curve(path)
         if not xs:
             continue
-        plt.plot(xs, ys, label=f"rank {rank}")
+        plt.plot(xs, ys, label=f"Top-{rank}")
+    # Titles and labels per request
     plt.title(title)
     plt.xlabel(xlabel)
-    plt.ylabel("softmax probability of target token (mean)")
+    plt.ylabel("f(x)")
+    # Show percentage numbers instead of fractions (no custom tick list)
+    ax = plt.gca()
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _pos: f"{int(round(x * 100))}"))
+    # Y-axis: default numeric formatting (no scaling/exponent)
     plt.grid(True, alpha=0.3)
-    plt.legend(title="rank")
+    #plt.legend(title="Top-")
     plt.tight_layout()
     out_path = out_dir / outfile
     plt.savefig(out_path.as_posix(), dpi=160)
@@ -96,18 +113,18 @@ def main() -> None:
     _plot_all(
         out_dir,
         prefix="c_deletion_token",
-        title="Concept deletion (token): all ranks",
-        xlabel="fraction of concept coordinates zeroed (most → least important)",
-        outfile="c_deletion_token_all_ranks.png",
+        title="C-Deletion",
+        xlabel="# of Concept",
+        outfile="c_deletion_token_all_ranks.pdf",
     )
 
     # Insertion combined plot
     _plot_all(
         out_dir,
         prefix="c_insertion_token",
-        title="Concept insertion (token): all ranks",
-        xlabel="fraction of concept coordinates inserted (most → least important)",
-        outfile="c_insertion_token_all_ranks.png",
+        title="C-Insertion",
+        xlabel="# of Concept",
+        outfile="c_insertion_token_all_ranks.pdf",
     )
 
 

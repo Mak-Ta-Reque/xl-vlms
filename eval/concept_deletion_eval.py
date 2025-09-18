@@ -20,7 +20,7 @@ python -m eval.concept_deletion_eval \
   --concept_path /path/to/concepts.pth \
   --layer_path "model.layers.17" \
   --model_name google/gemma-3n-E4B-it \
-  --mode sequence --rank 1 --num_points 64 --out_dir /mnt/abka03/Projects/xl-vlms/outputs
+    --mode sequence --rank 1 --num_points 100 --curve_points 64 --out_dir /mnt/abka03/Projects/xl-vlms/outputs
 
 Usage (insertion, token):
 python -m eval.concept_deletion_eval \
@@ -28,7 +28,7 @@ python -m eval.concept_deletion_eval \
   --concept_path /path/to/concepts.pth \
   --layer_path "model.layers.17" \
   --model_name google/gemma-3n-E4B-it \
-  --mode token --insertion --rank 1 --num_points 64 --out_dir /mnt/abka03/Projects/xl-vlms/outputs
+    --mode token --insertion --rank 1 --num_points 50 --curve_points 64 --out_dir /mnt/abka03/Projects/xl-vlms/outputs
 """
 from __future__ import annotations
 
@@ -349,22 +349,32 @@ class ConceptDeletionEvaluator:
         return probs
 
     @staticmethod
-    def _build_ks(embed_dim: int, num_points: int) -> List[int]:
-        if num_points <= 1:
-            return [0, embed_dim]
-        xs = np.linspace(0, embed_dim, num_points)
+    def _build_ks(embed_dim: int, pct: float, curve_points: int) -> List[int]:
+        """Build mask k's as percentages of the effective dimension.
+
+        pct is interpreted as 0-100 (percentage of coordinates to traverse).
+        curve_points controls the resolution of the curve (number of samples along that percentage).
+        Always includes k=0 and k=ceil(pct% * embed_dim).
+        """
+        pct = max(0.0, min(100.0, float(pct)))
+        max_k = int(math.ceil((pct / 100.0) * float(embed_dim)))
+        max_k = max(0, min(embed_dim, max_k))
+        if curve_points <= 1 or max_k == 0:
+            return [0, max_k]
+        xs = np.linspace(0, max_k, int(curve_points))
         ks = sorted(set(int(round(x)) for x in xs))
         if ks[0] != 0:
             ks.insert(0, 0)
-        if ks[-1] != embed_dim:
-            ks.append(embed_dim)
+        if ks[-1] != max_k:
+            ks.append(max_k)
         return ks
 
     # ------------- evaluation -------------
     def evaluate_sequence(
         self,
-        rank: int = 1,
-        num_points: int = 64,
+    rank: int = 1,
+    num_points: float = 100,
+        curve_points: int = 64,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Sequence-mode: one concept per image (top_concepts_over_sequence),
         tokenize model_output and evaluate probabilities for all alnum tokens.
@@ -375,7 +385,7 @@ class ConceptDeletionEvaluator:
         eff_dim = self.embed_dim
         if getattr(self, "grad_top_zero_frac", 0.0):
             eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
-        ks = self._build_ks(eff_dim, num_points)
+        ks = self._build_ks(eff_dim, num_points, curve_points)
         for item in self.results:
             top_list = item.get("top_concepts_over_sequence") or []
             if not top_list:
@@ -415,8 +425,9 @@ class ConceptDeletionEvaluator:
 
     def evaluate_token(
         self,
-        rank: int = 1,
-        num_points: int = 64,
+    rank: int = 1,
+    num_points: float = 100,
+        curve_points: int = 64,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Token-mode: for each token's explanation, pick the concept at given rank
         and use the token's id as target. Aggregate across all valid tokens and images.
@@ -426,7 +437,7 @@ class ConceptDeletionEvaluator:
         eff_dim = self.embed_dim
         if getattr(self, "grad_top_zero_frac", 0.0):
             eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
-        ks = self._build_ks(eff_dim, num_points)
+        ks = self._build_ks(eff_dim, num_points, curve_points)
         for item in self.results:
             toks = item.get("per_token_concepts") or []
             for tok in toks:
@@ -462,15 +473,16 @@ class ConceptDeletionEvaluator:
 
     def evaluate_sequence_insertion(
         self,
-        rank: int = 1,
-        num_points: int = 64,
+    rank: int = 1,
+    num_points: float = 100,
+        curve_points: int = 64,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Sequence-mode c-insertion: one concept per image, insert coordinates from high→low grad."""
         curves: List[List[float]] = []
         eff_dim = self.embed_dim
         if getattr(self, "grad_top_zero_frac", 0.0):
             eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
-        ks = self._build_ks(eff_dim, num_points)
+        ks = self._build_ks(eff_dim, num_points, curve_points)
         for item in self.results:
             top_list = item.get("top_concepts_over_sequence") or []
             if not top_list:
@@ -505,15 +517,16 @@ class ConceptDeletionEvaluator:
 
     def evaluate_token_insertion(
         self,
-        rank: int = 1,
-        num_points: int = 64,
+    rank: int = 1,
+    num_points: float = 100,
+        curve_points: int = 64,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Token-mode c-insertion: per-token concept at given rank and token id as target."""
         curves: List[List[float]] = []
         eff_dim = self.embed_dim
         if getattr(self, "grad_top_zero_frac", 0.0):
             eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
-        ks = self._build_ks(eff_dim, num_points)
+        ks = self._build_ks(eff_dim, num_points, curve_points)
         for item in self.results:
             toks = item.get("per_token_concepts") or []
             for tok in toks:
@@ -582,13 +595,16 @@ def main() -> None:
     ap.add_argument("--mode", choices=["sequence", "token"], default="sequence")
     ap.add_argument("--insertion", action="store_true", help="Use c-insertion instead of c-deletion")
     ap.add_argument("--rank", type=int, default=1, help="Concept rank to evaluate (1 = top)")
-    ap.add_argument("--num_points", type=int, default=64, help="Number of mask points (x-axis resolution)")
+    # Interpret --num_points as percentage of the gradient vector length to traverse (0-100)
+    ap.add_argument("--num_points", type=float, default=100.0, help="Percentage of coordinates to traverse (0-100). 100 = full vector")
+    # New: curve resolution along that percentage range
+    ap.add_argument("--curve_points", type=int, default=64, help="Number of evaluation samples along the selected percentage range")
     ap.add_argument("--device", default=None, help="cuda, cpu, or cuda:N")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--deterministic", action="store_true")
     ap.add_argument("--out_dir", default="/mnt/abka03/Projects/xl-vlms/outputs")
     # New: smoothing fraction for zeroing top-|grad| before ranking
-    ap.add_argument("--grad_top_zero_frac", type=float, default=0.20, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
+    ap.add_argument("--grad_top_zero_frac", type=float, default=0.25, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
     args = ap.parse_args()
 
     _seed_everything(args.seed, deterministic=args.deterministic)
@@ -616,23 +632,23 @@ def main() -> None:
     xlabel = None
     if args.mode == "sequence":
         if args.insertion:
-            fracs, mean, std = evaluator.evaluate_sequence_insertion(rank=args.rank, num_points=args.num_points)
+            fracs, mean, std = evaluator.evaluate_sequence_insertion(rank=args.rank, num_points=args.num_points, curve_points=args.curve_points)
             title = f"Concept insertion (sequence, rank={args.rank})"
             base = f"c_insertion_sequence_rank{args.rank}.png"
             xlabel = "fraction of concept coordinates inserted (most → least important)"
         else:
-            fracs, mean, std = evaluator.evaluate_sequence(rank=args.rank, num_points=args.num_points)
+            fracs, mean, std = evaluator.evaluate_sequence(rank=args.rank, num_points=args.num_points, curve_points=args.curve_points)
             title = f"Concept deletion (sequence, rank={args.rank})"
             base = f"c_deletion_sequence_rank{args.rank}.png"
             xlabel = "fraction of concept coordinates zeroed (most → least important)"
     else:
         if args.insertion:
-            fracs, mean, std = evaluator.evaluate_token_insertion(rank=args.rank, num_points=args.num_points)
+            fracs, mean, std = evaluator.evaluate_token_insertion(rank=args.rank, num_points=args.num_points, curve_points=args.curve_points)
             title = f"Concept insertion (token, rank={args.rank})"
             base = f"c_insertion_token_rank{args.rank}.png"
             xlabel = "fraction of concept coordinates inserted (most → least important)"
         else:
-            fracs, mean, std = evaluator.evaluate_token(rank=args.rank, num_points=args.num_points)
+            fracs, mean, std = evaluator.evaluate_token(rank=args.rank, num_points=args.num_points, curve_points=args.curve_points)
             title = f"Concept deletion (token, rank={args.rank})"
             base = f"c_deletion_token_rank{args.rank}.png"
             xlabel = "fraction of concept coordinates zeroed (most → least important)"

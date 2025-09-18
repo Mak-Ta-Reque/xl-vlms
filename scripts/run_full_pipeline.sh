@@ -56,14 +56,14 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data/train/apple}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20250918_130709}" #run_$TIMESTAMP
+INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data/train}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20250918_130709_cdgl}" #run_$TIMESTAMP
 DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
 VLM_MODEL="${VLM_MODEL:-"google/gemma-3n-E4B-it"}"         # e.g., llava, llava-7b, qwen-vl, etc.
-BATCH_SIZE="${BATCH_SIZE:-10}"       # e.g., 16
+BATCH_SIZE="${BATCH_SIZE:-16}"       # e.g., 16
 DEVICE="${DEVICE:-cuda}"               # e.g., cuda:0
 NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
@@ -73,7 +73,7 @@ CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-$ROOT_DIR/data/train}" # e.g., /mnt/abka03/P
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-100}"
 PATCH_SIZE="${PATCH_SIZE:-128}"
 RESIZE="${RESIZE:-512}"
-MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-6}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-20}"
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"
 
@@ -81,12 +81,12 @@ CONCEPT_MODE="${CONCEPT_MODE:-1}"
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
 IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
-NUM_POINTS="${NUM_POINTS:-20}"
+NUM_POINTS="${NUM_POINTS:-80}"
 
 # Dataset inference controls
 PROMPT="${PROMPT:-Identify all visible objects, items in the given image. Output only a single-word, comma-separated list. Do not include explanations, sentences, or any extra text—just the detected elements.}"
 IMAGE_SIZE="${IMAGE_SIZE:-"512 512"}"     # e.g., "512 512"
-IMAGE_BUDGET="${IMAGE_BUDGET:-10}" # e.g., 500
+IMAGE_BUDGET="${IMAGE_BUDGET:-50}" # e.g., 500
 
 # -------------------------------
 # Parse args
