@@ -46,6 +46,18 @@ LOCKDIR="${DONEFILE}.lock"
 
 log() { echo "[pagasus-install][node=${NODEID} job=${JOBID}] $*"; }
 
+# Hugging Face: set token and cache path for gated models if available
+if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -z "${HF_TOKEN:-}" && -f "$repo_root/token.txt" ]]; then
+  export HUGGINGFACE_HUB_TOKEN="$(tr -d '\n\r' < "$repo_root/token.txt")"
+  export HF_TOKEN="$HUGGINGFACE_HUB_TOKEN"
+  log "Loaded Hugging Face token from token.txt"
+fi
+if [[ -z "${HF_HOME:-}" ]]; then
+  export HF_HOME="$repo_root/.hf_cache"
+fi
+mkdir -p "$HF_HOME" || true
+log "HF_HOME=$HF_HOME"
+
 run_apt() {
   # Try to run apt-get only if available and we have privileges
   if ! command -v apt-get >/dev/null 2>&1; then
