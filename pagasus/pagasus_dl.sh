@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Robust SLURM-aware install wrapper
-# - Installs optional apt and conda packages if available and permitted
-# - Always upgrades pip and installs from requirements.txt at repo root
+# - Host installs only (no conda/venv): use system Python with pip --user
+# - Optional apt packages (e.g., openjdk) if permissions allow
 # - Ensures only SLURM local rank 0 per node performs installation; others wait
 # - Runs the wrapped command passed as arguments after installation
 
@@ -10,14 +10,12 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
-ACTIVE_ENV="system" # system|conda|venv
+ACTIVE_ENV="system" # fixed to system host installs
 
 # Optional overrides via env vars
 #   APT_PACKAGES     : space-separated apt packages to install (default: empty)
 #   EXTRA_PIP_PACKAGES: extra pip packages (space-separated) to install after base set (default: empty)
-#   USE_CONDA        : force using conda if available (default: auto)
-#   PYTHON_VERSION   : python version to create env with (default: 3.9)
-#   VENV_PATH        : path to create venv if conda is unavailable (default: $repo_root/.venv)
+#   INSTALL_OPENJDK  : set to 1 to try installing openjdk via apt (default: 0)
 #   TORCH_INDEX_URL  : index URL for torch/torchvision (default: https://download.pytorch.org/whl/cu126)
 #   TORCH_VERSION    : optional torch version to install (e.g., 2.4.0)
 #   TORCHVISION_VERSION : optional torchvision version to install
@@ -25,9 +23,7 @@ ACTIVE_ENV="system" # system|conda|venv
 #   SKIP_TORCH       : set to 1 to skip torch/torchvision installation (default: 0)
 APT_PACKAGES="${APT_PACKAGES:-}"
 EXTRA_PIP_PACKAGES="${EXTRA_PIP_PACKAGES:-}"
-USE_CONDA="${USE_CONDA:-auto}"
-PYTHON_VERSION="${PYTHON_VERSION:-3.9}"
-VENV_PATH="${VENV_PATH:-$repo_root/.venv}"
+INSTALL_OPENJDK="${INSTALL_OPENJDK:-0}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}"
 FORCE_TORCH_INSTALL="${FORCE_TORCH_INSTALL:-0}"
 SKIP_TORCH="${SKIP_TORCH:-0}"
@@ -72,86 +68,16 @@ run_apt() {
   rm -rf /var/lib/apt/lists/* || true
 }
 
-activate_conda_env() {
-  # Initialize conda in this shell and activate env
-  if command -v conda >/dev/null 2>&1; then
-    # shellcheck disable=SC1091
-    eval "$(conda shell.bash hook)"
-    if conda env list | awk '{print $1}' | grep -qx "xlvlms"; then
-      log "Conda env 'xlvlms' exists; activating"
-    else
-      log "Creating conda env 'xlvlms' with Python ${PYTHON_VERSION}"
-      conda create -y -n xlvlms "python=${PYTHON_VERSION}"
-    fi
-    conda activate xlvlms
-    ACTIVE_ENV="conda"
-    return 0
-  fi
-  # Try common conda locations
-  if [[ -f "/opt/conda/etc/profile.d/conda.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "/opt/conda/etc/profile.d/conda.sh"
-    if conda env list | awk '{print $1}' | grep -qx "xlvlms"; then
-      log "Conda env 'xlvlms' exists; activating"
-    else
-      log "Creating conda env 'xlvlms' with Python ${PYTHON_VERSION}"
-      conda create -y -n xlvlms "python=${PYTHON_VERSION}"
-    fi
-    conda activate xlvlms
-    ACTIVE_ENV="conda"
-    return 0
-  fi
-  return 1
-}
-
-activate_venv_env() {
-  local py_bin="python3"
-  if command -v python${PYTHON_VERSION} >/dev/null 2>&1; then
-    py_bin="python${PYTHON_VERSION}"
-  elif command -v python3 >/dev/null 2>&1; then
-    py_bin="python3"
-  elif command -v python >/dev/null 2>&1; then
-    py_bin="python"
-  fi
-
-  if [[ ! -d "$VENV_PATH" ]]; then
-    log "Creating venv at $VENV_PATH with ${py_bin}"
-    if ! "$py_bin" -m venv "$VENV_PATH"; then
-      log "venv creation failed; likely ensurepip missing. Falling back to system Python."
-      return 1
-    fi
-  else
-    log "Using existing venv at $VENV_PATH"
-  fi
-  # shellcheck disable=SC1091
-  source "$VENV_PATH/bin/activate"
-  ACTIVE_ENV="venv"
-}
-
-setup_python_env() {
-  case "$USE_CONDA" in
-    force|true)
-      if activate_conda_env; then return 0; else log "Conda forced but not available; falling back to venv"; fi
-      ;;
-    auto|*)
-      if activate_conda_env; then return 0; fi
-      ;;
-  esac
-  if activate_venv_env; then return 0; fi
-  ACTIVE_ENV="system"
-}
+setup_python_env() { ACTIVE_ENV="system"; }
 
 install_readme_deps() {
   # We assume an environment is already active
-  local PIP_USER_FLAG=""
-  if [[ "$ACTIVE_ENV" == "system" ]]; then
-    PIP_USER_FLAG="--user"
-  fi
+  local PIP_USER_FLAG="--user"
 
   log "Upgrading pip"
   python -m pip install --upgrade pip $PIP_USER_FLAG || true
 
-  install_torch_if_needed
+  reinstall_torch "$PIP_USER_FLAG"
 
   log "Installing core Python dependencies"
   pip install $PIP_USER_FLAG tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
@@ -162,12 +88,21 @@ install_readme_deps() {
   log "Installing Qwen model utils"
   pip install $PIP_USER_FLAG qwen-vl-utils
 
-  # Optional Java via conda if conda env is active
-  if command -v conda >/dev/null 2>&1 && conda info --envs | grep -q "* xlvlms"; then
-    log "Installing openjdk via conda-forge"
-    conda install -y -c conda-forge openjdk || true
-  else
-    log "Conda not active; skipping openjdk installation"
+  # Optional Java via apt if requested and permitted
+  if [[ "$INSTALL_OPENJDK" == "1" ]]; then
+    if command -v apt-get >/dev/null 2>&1; then
+      log "Attempting to install openjdk via apt"
+      local apt_cmd="apt-get"
+      if (( EUID != 0 )) && command -v sudo >/dev/null 2>&1; then
+        apt_cmd="sudo -n apt-get"
+      fi
+      DEBIAN_FRONTEND=noninteractive $apt_cmd update || true
+      DEBIAN_FRONTEND=noninteractive $apt_cmd install -y openjdk-17-jre-headless || true
+      $apt_cmd clean || true
+      rm -rf /var/lib/apt/lists/* || true
+    else
+      log "apt-get not available; skipping openjdk installation"
+    fi
   fi
 
   log "Downloading COCO evaluation data via language_evaluation"
@@ -185,38 +120,19 @@ PY
   fi
 }
 
-install_torch_if_needed() {
+reinstall_torch() {
+  local PIP_USER_FLAG="$1"
   if [[ "$SKIP_TORCH" == "1" ]]; then
-    log "Skipping torch/torchvision installation as requested (SKIP_TORCH=1)"
+    log "Skipping torch/torchvision install (SKIP_TORCH=1)"
     return 0
   fi
 
-  local have_torch=0
-  python - <<'PY' && have_torch=1 || have_torch=0
-try:
-    import torch
-    import torchvision
-    print("torch:", torch.__version__)
-    try:
-        print("cuda:", torch.version.cuda)
-    except Exception:
-        pass
-except Exception as e:
-    raise SystemExit(1)
-PY
-
-  if [[ "$have_torch" -eq 1 && "$FORCE_TORCH_INSTALL" != "1" ]]; then
-    log "torch/torchvision already present; skipping install (set FORCE_TORCH_INSTALL=1 to override)"
-    return 0
-  fi
+  log "Purging existing torch packages (pip)"
+  pip uninstall -y torch torchvision torchaudio torchtext || true
 
   log "Installing torch/torchvision from $TORCH_INDEX_URL"
-  local PIP_USER_FLAG=""
-  if [[ "$ACTIVE_ENV" == "system" ]]; then
-    PIP_USER_FLAG="--user"
-  fi
   if ! pip install $PIP_USER_FLAG --index-url "$TORCH_INDEX_URL" torch torchvision; then
-    log "Non-fatal: torch install failed (likely container has pinned NV torch). Continuing with existing torch."
+    log "Non-fatal: torch install failed; continuing."
   fi
 }
 
