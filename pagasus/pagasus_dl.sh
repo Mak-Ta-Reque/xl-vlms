@@ -96,8 +96,8 @@ install_readme_deps() {
   log "Installing Qwen model utils"
   pip install $PIP_USER_FLAG qwen-vl-utils
 
-  # Optional Java via apt if requested and permitted
-  if [[ "$INSTALL_OPENJDK" == "1" ]]; then
+  # Ensure Java is available for METEOR; install if requested or missing
+  if [[ "$INSTALL_OPENJDK" == "1" || ! $(command -v java >/dev/null 2>&1; echo $?) -eq 0 ]]; then
     if command -v apt-get >/dev/null 2>&1; then
       log "Attempting to install openjdk via apt"
       local apt_cmd="apt-get"
@@ -112,6 +112,12 @@ install_readme_deps() {
   log "apt-get not available; attempting user-space OpenJDK installation (Temurin)"
   install_user_openjdk || log "User-space OpenJDK install failed; continuing without Java"
     fi
+  fi
+
+  if command -v java >/dev/null 2>&1; then
+    log "Java available: $(java -version 2>&1 | head -n 1)"
+  else
+    log "Java not found after install step; METEOR metric will fail to load"
   fi
 
   log "Downloading COCO evaluation data via language_evaluation"
