@@ -17,11 +17,19 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 #   USE_CONDA        : force using conda if available (default: auto)
 #   PYTHON_VERSION   : python version to create env with (default: 3.9)
 #   VENV_PATH        : path to create venv if conda is unavailable (default: $repo_root/.venv)
+#   TORCH_INDEX_URL  : index URL for torch/torchvision (default: https://download.pytorch.org/whl/cu126)
+#   TORCH_VERSION    : optional torch version to install (e.g., 2.4.0)
+#   TORCHVISION_VERSION : optional torchvision version to install
+#   FORCE_TORCH_INSTALL : set to 1 to force reinstall even if found (default: 0)
+#   SKIP_TORCH       : set to 1 to skip torch/torchvision installation (default: 0)
 APT_PACKAGES="${APT_PACKAGES:-}"
 EXTRA_PIP_PACKAGES="${EXTRA_PIP_PACKAGES:-}"
 USE_CONDA="${USE_CONDA:-auto}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.9}"
 VENV_PATH="${VENV_PATH:-$repo_root/.venv}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}"
+FORCE_TORCH_INSTALL="${FORCE_TORCH_INSTALL:-0}"
+SKIP_TORCH="${SKIP_TORCH:-0}"
 
 JOBID="${SLURM_JOBID:-${SLURM_JOB_ID:-$$}}"
 LOCALID="${SLURM_LOCALID:-0}"
@@ -117,8 +125,7 @@ install_readme_deps() {
   log "Upgrading pip"
   python -m pip install --upgrade pip
 
-  log "Installing PyTorch and torchvision for CUDA 12.6"
-  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+  install_torch_if_needed
 
   log "Installing core Python dependencies"
   pip install tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
@@ -149,6 +156,37 @@ PY
   if [[ -n "$EXTRA_PIP_PACKAGES" ]]; then
     log "Installing extra pip packages: $EXTRA_PIP_PACKAGES"
     pip install $EXTRA_PIP_PACKAGES || true
+  fi
+}
+
+install_torch_if_needed() {
+  if [[ "$SKIP_TORCH" == "1" ]]; then
+    log "Skipping torch/torchvision installation as requested (SKIP_TORCH=1)"
+    return 0
+  fi
+
+  local have_torch=0
+  python - <<'PY' && have_torch=1 || have_torch=0
+try:
+    import torch
+    import torchvision
+    print("torch:", torch.__version__)
+    try:
+        print("cuda:", torch.version.cuda)
+    except Exception:
+        pass
+except Exception as e:
+    raise SystemExit(1)
+PY
+
+  if [[ "$have_torch" -eq 1 && "$FORCE_TORCH_INSTALL" != "1" ]]; then
+    log "torch/torchvision already present; skipping install (set FORCE_TORCH_INSTALL=1 to override)"
+    return 0
+  fi
+
+  log "Installing torch/torchvision from $TORCH_INDEX_URL"
+  if ! pip install --index-url "$TORCH_INDEX_URL" torch torchvision; then
+    log "Non-fatal: torch install failed (likely container has pinned NV torch). Continuing with existing torch."
   fi
 }
 
