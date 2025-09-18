@@ -41,7 +41,32 @@ This project provides tools for extracting, analyzing, and decomposing concept f
      bash install.sh
      ```
 
+
+Data processing 
+run run_dataset_inference.sh
+for a given directory it will find all the image concepts and make map of concept -> image files
+
+
+
+# Crop the images metioned in the concept - mage json files
+
+run run_crop_images.sh
+
+# create crops given the json map of concept-> image
+# use script run_feature_gen_cgdl.sh to generate concept features
+# use script run_feature_decompose_cgdl.sh to decompose the features
+for all the decomposition options
+run vlm explainer script to get the explanations
+for all the vlm_explainer files  evaluate 
+Now with output evaluate the concept Q-del and Q-Insertion
+
+
+
+
+
+
 ## 🧠 Demo & Usage
+
 
 1. **Demo notebook**
    - Open and run [`explaining_binary_task_rsml.ipynb`](explaining_binary_task_rsml.ipynb) for a guided demo.

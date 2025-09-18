@@ -205,6 +205,7 @@ class ConceptDeletionEvaluator:
         device: Optional[Union[str, torch.device]] = None,
         normalize_concepts: bool = True,
         cache_dir: Optional[str] = None,
+        grad_top_zero_frac: float = 0.15,
     ) -> None:
         _set_env_quiet()
         # Ensure repo src on path for model loader
@@ -233,6 +234,8 @@ class ConceptDeletionEvaluator:
         self.tokenizer = _get_tokenizer_from(model_class)
         self.device = device
         self.layer_path = layer_path
+        # Default smoothing: zero out top fraction of gradient magnitudes when ranking coordinates
+        self.grad_top_zero_frac = float(grad_top_zero_frac)
 
         # Sub-model from layer space to logits
         self.sub_model = LMHeadSubModel(self.model).to(self.device).eval()
@@ -286,8 +289,18 @@ class ConceptDeletionEvaluator:
             v.grad.zero_()
         logit_t.backward(retain_graph=False)
         g = v.grad.detach()
-        # Sort by absolute gradient magnitude: most -> least important
-        order = torch.argsort(g.abs(), dim=-1, descending=True)
+        # Rank by |grad| (most -> least)
+        order_all = torch.argsort(g.abs(), dim=-1, descending=True)
+        # If a top fraction is specified, skip those coordinates entirely from evaluation
+        frac = float(getattr(self, "grad_top_zero_frac", 0.0) or 0.0)
+        if frac > 0.0 and order_all.numel() > 0:
+            skip_n = int(math.ceil(min(1.0, max(0.0, frac)) * order_all.numel()))
+            if skip_n < order_all.numel():
+                order = order_all[skip_n:]
+            else:
+                order = order_all[-1:].clone()
+        else:
+            order = order_all
         return order
 
     def _prob_curve_by_mask_order(
@@ -358,7 +371,11 @@ class ConceptDeletionEvaluator:
         Returns (fractions, mean_probs, std_probs).
         """
         curves: List[List[float]] = []
-        ks = self._build_ks(self.embed_dim, num_points)
+        # Effective dimension excludes the skipped top-|grad| fraction
+        eff_dim = self.embed_dim
+        if getattr(self, "grad_top_zero_frac", 0.0):
+            eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
+        ks = self._build_ks(eff_dim, num_points)
         for item in self.results:
             top_list = item.get("top_concepts_over_sequence") or []
             if not top_list:
@@ -393,7 +410,7 @@ class ConceptDeletionEvaluator:
         arr = np.stack(curves, axis=0)
         mean = arr.mean(axis=0)
         std = arr.std(axis=0)
-        fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
+        fracs = np.array([k / float(eff_dim) for k in ks], dtype=np.float32)
         return fracs, mean, std
 
     def evaluate_token(
@@ -406,7 +423,10 @@ class ConceptDeletionEvaluator:
         Returns (fractions, mean_probs, std_probs).
         """
         curves: List[List[float]] = []
-        ks = self._build_ks(self.embed_dim, num_points)
+        eff_dim = self.embed_dim
+        if getattr(self, "grad_top_zero_frac", 0.0):
+            eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
+        ks = self._build_ks(eff_dim, num_points)
         for item in self.results:
             toks = item.get("per_token_concepts") or []
             for tok in toks:
@@ -437,7 +457,7 @@ class ConceptDeletionEvaluator:
         arr = np.stack(curves, axis=0)
         mean = arr.mean(axis=0)
         std = arr.std(axis=0)
-        fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
+        fracs = np.array([k / float(eff_dim) for k in ks], dtype=np.float32)
         return fracs, mean, std
 
     def evaluate_sequence_insertion(
@@ -447,7 +467,10 @@ class ConceptDeletionEvaluator:
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Sequence-mode c-insertion: one concept per image, insert coordinates from high→low grad."""
         curves: List[List[float]] = []
-        ks = self._build_ks(self.embed_dim, num_points)
+        eff_dim = self.embed_dim
+        if getattr(self, "grad_top_zero_frac", 0.0):
+            eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
+        ks = self._build_ks(eff_dim, num_points)
         for item in self.results:
             top_list = item.get("top_concepts_over_sequence") or []
             if not top_list:
@@ -477,7 +500,7 @@ class ConceptDeletionEvaluator:
         arr = np.stack(curves, axis=0)
         mean = arr.mean(axis=0)
         std = arr.std(axis=0)
-        fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
+        fracs = np.array([k / float(eff_dim) for k in ks], dtype=np.float32)
         return fracs, mean, std
 
     def evaluate_token_insertion(
@@ -487,7 +510,10 @@ class ConceptDeletionEvaluator:
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Token-mode c-insertion: per-token concept at given rank and token id as target."""
         curves: List[List[float]] = []
-        ks = self._build_ks(self.embed_dim, num_points)
+        eff_dim = self.embed_dim
+        if getattr(self, "grad_top_zero_frac", 0.0):
+            eff_dim = max(1, self.embed_dim - int(math.ceil(float(self.grad_top_zero_frac) * self.embed_dim)))
+        ks = self._build_ks(eff_dim, num_points)
         for item in self.results:
             toks = item.get("per_token_concepts") or []
             for tok in toks:
@@ -518,7 +544,7 @@ class ConceptDeletionEvaluator:
         arr = np.stack(curves, axis=0)
         mean = arr.mean(axis=0)
         std = arr.std(axis=0)
-        fracs = np.array([k / float(self.embed_dim) for k in ks], dtype=np.float32)
+        fracs = np.array([k / float(eff_dim) for k in ks], dtype=np.float32)
         return fracs, mean, std
 
     # ------------- plotting -------------
@@ -561,6 +587,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--deterministic", action="store_true")
     ap.add_argument("--out_dir", default="/mnt/abka03/Projects/xl-vlms/outputs")
+    # New: smoothing fraction for zeroing top-|grad| before ranking
+    ap.add_argument("--grad_top_zero_frac", type=float, default=0.20, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
     args = ap.parse_args()
 
     _seed_everything(args.seed, deterministic=args.deterministic)
@@ -582,6 +610,7 @@ def main() -> None:
         concept_path=args.concept_path,
         results_json=args.results_json,
         device=args.device,
+        grad_top_zero_frac=args.grad_top_zero_frac,
     )
 
     xlabel = None
@@ -638,6 +667,7 @@ def main() -> None:
                 "model_name": args.model_name,
                 "results_json": args.results_json,
                 "concept_path": args.concept_path,
+                "grad_top_zero_frac": args.grad_top_zero_frac,
             }, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
