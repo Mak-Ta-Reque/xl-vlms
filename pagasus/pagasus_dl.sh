@@ -122,8 +122,8 @@ setup_python_env() {
 
 install_readme_deps() {
   # We assume an environment is already active
-  log "Upgrading pip"
-  python -m pip install --upgrade pip
+  log "Upgrading pip3"
+  python -m pip3 install --upgrade pip3
 
   install_torch_if_needed
 
