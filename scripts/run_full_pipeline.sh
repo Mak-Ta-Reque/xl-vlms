@@ -69,7 +69,7 @@ NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
 
 # Cropping controls (single source of truth)
-CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-$ROOT_DIR/data/train}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
+CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-$ROOT_DIR/data}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-100}"
 PATCH_SIZE="${PATCH_SIZE:-128}"
 RESIZE="${RESIZE:-512}"

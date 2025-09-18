@@ -75,7 +75,7 @@ BASE_DATA_DIR="${BASE_DATA_DIR:-$ROOT_DIR/data/train}"
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
 IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
-NUM_POINTS="${NUM_POINTS:-20}"
+NUM_POINTS="${NUM_POINTS:-80}"
 
 # -------------------------------
 # Parse args
