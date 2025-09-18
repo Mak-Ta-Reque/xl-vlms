@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+if [[ "${DEBUG:-0}" == "1" ]]; then
+  set -x
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 ACTIVE_ENV="system" # fixed to system host installs
@@ -21,12 +25,16 @@ ACTIVE_ENV="system" # fixed to system host installs
 #   TORCHVISION_VERSION : optional torchvision version to install
 #   FORCE_TORCH_INSTALL : set to 1 to force reinstall even if found (default: 0)
 #   SKIP_TORCH       : set to 1 to skip torch/torchvision installation (default: 0)
+#   OPENJDK_VERSION  : JDK/JRE major version to install for user-space fallback (default: 17)
+#   OPENJDK_IMAGE    : jre or jdk for user-space fallback (default: jre)
 APT_PACKAGES="${APT_PACKAGES:-}"
 EXTRA_PIP_PACKAGES="${EXTRA_PIP_PACKAGES:-}"
 INSTALL_OPENJDK="${INSTALL_OPENJDK:-0}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}"
 FORCE_TORCH_INSTALL="${FORCE_TORCH_INSTALL:-0}"
 SKIP_TORCH="${SKIP_TORCH:-0}"
+OPENJDK_VERSION="${OPENJDK_VERSION:-17}"
+OPENJDK_IMAGE="${OPENJDK_IMAGE:-jre}"
 
 JOBID="${SLURM_JOBID:-${SLURM_JOB_ID:-$$}}"
 LOCALID="${SLURM_LOCALID:-0}"
@@ -101,7 +109,8 @@ install_readme_deps() {
       $apt_cmd clean || true
       rm -rf /var/lib/apt/lists/* || true
     else
-      log "apt-get not available; skipping openjdk installation"
+  log "apt-get not available; attempting user-space OpenJDK installation (Temurin)"
+  install_user_openjdk || log "User-space OpenJDK install failed; continuing without Java"
     fi
   fi
 
@@ -134,6 +143,50 @@ reinstall_torch() {
   if ! pip install $PIP_USER_FLAG --index-url "$TORCH_INDEX_URL" torch torchvision; then
     log "Non-fatal: torch install failed; continuing."
   fi
+}
+
+install_user_openjdk() {
+  # Installs Temurin JRE/JDK into ~/.local/java and exports JAVA_HOME/PATH for this process
+  local base_dir="$HOME/.local/java"
+  mkdir -p "$base_dir"
+  local api="https://api.adoptium.net/v3/assets/latest/${OPENJDK_VERSION}/hotspot?architecture=x64&heap_size=normal&image_type=${OPENJDK_IMAGE}&jvm_impl=hotspot&os=linux&page=0&page_size=1&project=jdk&sort_method=default&sort_order=desc&vendor=eclipse"
+  log "Fetching OpenJDK ${OPENJDK_VERSION} (${OPENJDK_IMAGE}) metadata from Adoptium"
+  local url
+  url=$(python - <<PY
+import json, sys, urllib.request
+u = "${api}"
+with urllib.request.urlopen(u, timeout=30) as r:
+    data = json.load(r)
+    if not data:
+        raise SystemExit(1)
+    asset = data[0]['binaries'][0]['package']['link']
+    print(asset)
+PY
+  ) || return 1
+
+  log "Downloading: $url"
+  local tarball="$base_dir/openjdk.tar.gz"
+  if command -v curl >/dev/null 2>&1; then
+    curl -L "$url" -o "$tarball"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$tarball" "$url"
+  else
+    log "Neither curl nor wget available"
+    return 1
+  fi
+
+  log "Extracting OpenJDK into $base_dir"
+  tar -xzf "$tarball" -C "$base_dir"
+  rm -f "$tarball"
+  local jdir
+  jdir=$(ls -1d "$base_dir"/* | head -n1)
+  if [[ -z "$jdir" ]]; then
+    log "Failed to locate extracted JDK directory"
+    return 1
+  fi
+  export JAVA_HOME="$jdir"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  log "JAVA_HOME set to $JAVA_HOME"
 }
 
 do_install() {
