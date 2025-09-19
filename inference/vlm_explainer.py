@@ -107,7 +107,10 @@ class VLMConceptExplainer:
         normalize_concepts: bool = True,
         capture_only_last: bool = True,
         exact_match_modules_to_hook: bool = True,
-        verbose: bool = False,
+    verbose: bool = False,
+    prompt_mode: str = "unsupervised",
+    prompt_label: Optional[str] = None,
+    prompt_choices: Optional[Union[str, List[str]]] = None,
     ) -> None:
         self.model_name = model_name
         self.layer_path = layer_path
@@ -119,6 +122,14 @@ class VLMConceptExplainer:
         self.capture_only_last = capture_only_last
         self.exact_match_modules_to_hook = exact_match_modules_to_hook
         self.verbose = verbose
+        # Prompt configuration
+        self.prompt_mode = (prompt_mode or "unsupervised").lower()
+        self.prompt_label = prompt_label
+        if isinstance(prompt_choices, str):
+            # Accept comma-separated string
+            self.prompt_choices = [c.strip() for c in prompt_choices.split(',') if c.strip()]
+        else:
+            self.prompt_choices = prompt_choices
 
         # Memory behavior
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -269,12 +280,26 @@ class VLMConceptExplainer:
 
     # ---------- Prompts ----------
     def _build_instruction(self, label: Optional[str]) -> str:
-        if label:
-            return (
-                f"Classify this image. If it shows [{label}], output exactly '{label}'. "
-                "Otherwise, output 'Something else'. Respond with only one of these two options."
-            )
-        return "Extract and list the dominant objects in the image as plain text items only"
+        mode = (self.prompt_mode or "unsupervised").lower()
+        if mode == "binary":
+            lab = self.prompt_label or label
+            if lab:
+                return (
+                    f"Binary classification: Say {lab} if the image contains '{lab}', say Not {lab} if it does not. "
+                    f"Respond with only {lab} or Not {lab}."
+                )
+            # Fallback to unsupervised if no label provided
+        if mode == "mcq":
+            choices = self.prompt_choices or []
+            if choices:
+                choice_str = ", ".join(choices)
+                return (
+                    f"Multiple-choice classification: Choose the single best label from: {choice_str}. "
+                    "Respond with exactly one of these options."
+                )
+            # Fallback to unsupervised if no choices provided
+        # Unsupervised/default prompt
+        return "Identify the dominant objects in the image and return them as a single line of comma-separated plain text with no spaces after the commas."
 
     def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
         """Use the repo's model_class.preprocessor to build inputs for a single sample."""
@@ -369,7 +394,27 @@ class VLMConceptExplainer:
             else:
                 raise TypeError(f"Unsupported image type: {type(img_in)}")
 
-        labels_all = ground_truth_labels if ground_truth_labels else [None] * len(prepped_inputs)
+        # Determine labels used for instruction (not ground-truth).
+        # Binary mode precedence: explicit prompt_label > provided ground_truth_labels > infer from path > None
+        if (self.prompt_mode or "").lower() == "binary":
+            if self.prompt_label is not None:
+                labels_all = [self.prompt_label] * len(prepped_inputs)
+            elif ground_truth_labels:
+                labels_all = ground_truth_labels
+            else:
+                # Try to infer label from image path's parent directory name
+                inferred: List[Optional[str]] = []
+                for p in abs_image_paths:
+                    if p:
+                        try:
+                            inferred.append(Path(p).parent.name)
+                        except Exception:
+                            inferred.append(None)
+                    else:
+                        inferred.append(None)
+                labels_all = inferred
+        else:
+            labels_all = ground_truth_labels if ground_truth_labels else [None] * len(prepped_inputs)
 
         results: List[Dict[str, Any]] = []
 
@@ -611,6 +656,11 @@ if __name__ == "__main__":
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')
+    # Prompt configuration
+    ap.add_argument('--prompt_mode', default='unsupervised', choices=['unsupervised', 'binary', 'mcq'], help='Prompt mode to use')
+    ap.add_argument('--prompt_label', default=None, help='Label to check for in binary mode')
+    ap.add_argument('--choice', action='append', dest='choice_list', help='Add a choice label (can be repeated)')
+    ap.add_argument('--choices', default=None, dest='choices_csv', help='Comma-separated choices (alternative to repeated --choice)')
     # New: JSON output and data root controls
     ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json', help='Path to save JSON results')
     ap.add_argument('--data_root', default=None, help='Root path of dataset. If omitted, inferred from image paths')
@@ -648,7 +698,22 @@ if __name__ == "__main__":
     # add a  exception is batch size bigger than 1 the code does not work, the  error due the dataloader operation
     if args.batch_size > 1:
         raise ValueError("Batch size greater than 1 is not supported.")
-    explainer = VLMConceptExplainer(args.model_name, args.concept_path, args.layer_path, verbose=args.verbose)
+    # Prepare choices list if provided
+    prompt_choices = None
+    if getattr(args, 'choice_list', None):
+        prompt_choices = args.choice_list
+    elif getattr(args, 'choices_csv', None):
+        prompt_choices = args.choices_csv
+
+    explainer = VLMConceptExplainer(
+        args.model_name,
+        args.concept_path,
+        args.layer_path,
+        verbose=args.verbose,
+        prompt_mode=args.prompt_mode,
+        prompt_label=args.prompt_label,
+        prompt_choices=prompt_choices,
+    )
     res = explainer.explain_with_concept(args.image, ground_truth_labels=args.label, top_n=args.top_n, batch_size=args.batch_size)
     for r in res:
         logging.info(f"Image {r.get('image_path')} -> gt={r['ground_truth']}\nModel: {r['model_output']}")

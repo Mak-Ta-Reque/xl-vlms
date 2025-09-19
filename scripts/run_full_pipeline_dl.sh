@@ -58,7 +58,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_dl_20250918_160646}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_dl_20250918_160646_binary}"
 DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
@@ -79,9 +79,14 @@ IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-80}"
 
+# Explainer prompt configuration
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-binary}"   # unsupervised | binary | mcq
+EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
+EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
+
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-3.75e-6}"
-PLOT_YMAX="${PLOT_YMAX:-3.98e-6}"
+PLOT_YMIN="${PLOT_YMIN:-3.70e-6}"
+PLOT_YMAX="${PLOT_YMAX:-4.2e-6}"
 
 # -------------------------------
 # Parse args
@@ -124,6 +129,7 @@ export OUTPUT_DIR FEATURES_DIR SAVE_DIR DECOMP_DIR EXPLAIN_DIR EVAL_DIR PLOTS_DI
 export VLM_MODEL BATCH_SIZE DEVICE NUM_WORKERS SEED HF_HOME
 export LAYER_PATH IMAGE_ROOT TOP_N NUM_POINTS
 export SPLIT BASE_DATA_DIR
+export EXPL_PROMPT_MODE EXPL_LABEL EXPL_CHOICES
 
 log "Root:        $ROOT_DIR"
 log "Scripts:     $SCRIPTS_DIR"
@@ -131,7 +137,7 @@ log "Output dir:  $OUTPUT_DIR"
 log "Feature dir: $SAVE_DIR"
 log "Decompose:   $DECOMP_METHODS"
 log "Env: VLM_MODEL=${VLM_MODEL:-<unset>} BATCH_SIZE=${BATCH_SIZE:-<unset>} DEVICE=${DEVICE:-<unset>} NUM_WORKERS=${NUM_WORKERS:-<unset>} SEED=$SEED HF_HOME=$HF_HOME"
-log "Explainer: layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N num_points=$NUM_POINTS"
+log "Explainer: layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N num_points=$NUM_POINTS prompt_mode=$EXPL_PROMPT_MODE label='${EXPL_LABEL}' choices='${EXPL_CHOICES}'"
 log "Plot: y-range=[$PLOT_YMIN, $PLOT_YMAX]"
 log "DL data: split=$SPLIT base_data_dir=$BASE_DATA_DIR"
 
@@ -186,7 +192,7 @@ for method in "${DECOMP_ARRAY[@]}"; do
     log "Skip VLM Explainer ($method) (found $out_json)"
   else
     run_step "VLM Explainer ($method)" \
-      "HF_HOME=\"$HF_HOME\" VLM_MODEL=\"$VLM_MODEL\" CONCEPT_PATH=\"$concept_path\" LAYER_PATH=\"$LAYER_PATH\" IMAGE_ROOT=\"$IMAGE_ROOT\" TOP_N=\"$TOP_N\" EXPLAIN_DIR=\"$out_dir\" OUT_JSON=\"$out_json\" bash \"$SCRIPTS_DIR/run_vlm_explainer_no_gt.sh\""
+      "HF_HOME=\"$HF_HOME\" VLM_MODEL=\"$VLM_MODEL\" CONCEPT_PATH=\"$concept_path\" LAYER_PATH=\"$LAYER_PATH\" IMAGE_ROOT=\"$IMAGE_ROOT\" TOP_N=\"$TOP_N\" EXPL_PROMPT_MODE=\"$EXPL_PROMPT_MODE\" EXPL_LABEL=\"$EXPL_LABEL\" EXPL_CHOICES=\"$EXPL_CHOICES\" EXPLAIN_DIR=\"$out_dir\" OUT_JSON=\"$out_json\" bash \"$SCRIPTS_DIR/run_vlm_explainer_no_gt.sh\""
   fi
 
 done
