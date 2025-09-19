@@ -16,16 +16,18 @@ set -Eeuo pipefail
 # -------------------------------
 usage() {
   cat <<'USAGE'
-Usage: run_full_pipeline.sh [--input-dir PATH] [--output-dir PATH] [--decomp METHODS]
+Usage: run_full_pipeline.sh [--input-dir PATH] [--output-dir PATH] [--decomp METHODS] [--plot-ymin VAL] [--plot-ymax VAL]
 
 Options:
   --input-dir PATH     Root dataset/images directory to process. Default: $INPUT_DIR or ../data
   --output-dir PATH    Root output directory. Default: ../outputs/run_<timestamp>
   --decomp METHODS     Comma-separated decomposition methods. Default: pca,nmf,ica,svd
-  -h, --help           Show this help
+  --plot-ymin VAL     Y-axis min for plots (default: ${PLOT_YMIN:-3.62e-6})
+  --plot-ymax VAL     Y-axis max for plots (default: ${PLOT_YMAX:-4.0e-6})
+  -h, --help          Show this help
 
 You can also override via environment variables:
-  INPUT_DIR, OUTPUT_DIR, DECOMP_METHODS, VLM_MODEL, BATCH_SIZE, DEVICE, NUM_WORKERS, SEED
+  INPUT_DIR, OUTPUT_DIR, DECOMP_METHODS, VLM_MODEL, BATCH_SIZE, DEVICE, NUM_WORKERS, SEED, PLOT_YMIN, PLOT_YMAX
 
 All steps stream logs to stdout and to per-step log files under $OUTPUT_DIR/logs.
 USAGE
@@ -83,6 +85,10 @@ IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-80}"
 
+# Plot ranges
+PLOT_YMIN="${PLOT_YMIN:-3.75e-6}"
+PLOT_YMAX="${PLOT_YMAX:-3.98e-6}"
+
 # Dataset inference controls
 PROMPT="${PROMPT:-Identify all visible objects, items in the given image. Output only a single-word, comma-separated list. Do not include explanations, sentences, or any extra text—just the detected elements.}"
 IMAGE_SIZE="${IMAGE_SIZE:-"512 512"}"     # e.g., "512 512"
@@ -99,6 +105,10 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_DIR="$2"; shift 2;;
     --decomp)
       DECOMP_METHODS="$2"; shift 2;;
+    --plot-ymin)
+      PLOT_YMIN="$2"; shift 2;;
+    --plot-ymax)
+      PLOT_YMAX="$2"; shift 2;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -134,6 +144,7 @@ log "Decompose:   $DECOMP_METHODS"
 log "Env: VLM_MODEL=${VLM_MODEL:-<unset>} BATCH_SIZE=${BATCH_SIZE:-<unset>} DEVICE=${DEVICE:-<unset>} NUM_WORKERS=${NUM_WORKERS:-<unset>} SEED=$SEED HF_HOME=$HF_HOME"
 log "Crop: input_root=$CROP_INPUT_ROOT patch=$PATCH_SIZE resize=$RESIZE concept_crops_per_image=$CONCEPT_CROPS_PER_IMAGE min_per_tag=$MIN_IMAGES_PER_TAG max_per_tag=$MAX_IMAGES_PER_TAG concept_mode=$CONCEPT_MODE"
 log "Explainer: layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N num_points=$NUM_POINTS"
+log "Plot: y-range=[$PLOT_YMIN, $PLOT_YMAX]"
 log "Inference: prompt='${PROMPT:0:60}...' image_size='${IMAGE_SIZE}' image_budget='${IMAGE_BUDGET}' batch=${BATCH_SIZE}"
 
 # Verify required scripts are present
@@ -260,7 +271,7 @@ if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then
       continue
     fi
     if find "$plot_dir" -type f -name 'c_*_token_rank*.csv' -print -quit | grep -q .; then
-      run_step "Plot Concept Deletion (Token) - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$plot_dir\""
+  run_step "Plot Concept Deletion (Token) - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$plot_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
     else
       warn "No CSVs found in $plot_dir for plotting; skipping $method."
     fi
@@ -286,7 +297,7 @@ if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then
   mkdir -p "$dst_dir"
       # Copy CSVs to destination so the plotting script can scan them
       find "$src_dir" -maxdepth 1 -type f -name 'c_*_token_rank*.csv' -exec cp -u {} "$dst_dir" \;
-      run_step "Save Combined Plots - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$dst_dir\""
+  run_step "Save Combined Plots - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$dst_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
     else
       warn "No CSVs found in $src_dir for plotting; skipping $method."
     fi

@@ -16,16 +16,18 @@ set -Eeuo pipefail
 # -------------------------------
 usage() {
   cat <<'USAGE'
-Usage: run_full_pipeline_dl.sh [--output-dir PATH] [--decomp METHODS]
+Usage: run_full_pipeline_dl.sh [--output-dir PATH] [--decomp METHODS] [--plot-ymin VAL] [--plot-ymax VAL]
 
 Options:
   --output-dir PATH    Root output directory. Default: ../outputs/run_<timestamp>
   --decomp METHODS     Comma-separated decomposition methods. Default: snmf
-  -h, --help           Show this help
+  --plot-ymin VAL     Y-axis min for plots (default: ${PLOT_YMIN:-3.62e-6})
+  --plot-ymax VAL     Y-axis max for plots (default: ${PLOT_YMAX:-4.0e-6})
+  -h, --help          Show this help
 
 You can also override via environment variables:
   OUTPUT_DIR, DECOMP_METHODS, VLM_MODEL, BATCH_SIZE, DEVICE, NUM_WORKERS, SEED,
-  HF_HOME, LAYER_PATH, IMAGE_ROOT, TOP_N, NUM_POINTS
+  HF_HOME, LAYER_PATH, IMAGE_ROOT, TOP_N, NUM_POINTS, PLOT_YMIN, PLOT_YMAX
 
 All steps stream logs to stdout and to per-step log files under $OUTPUT_DIR/logs.
 USAGE
@@ -77,6 +79,10 @@ IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-80}"
 
+# Plot ranges
+PLOT_YMIN="${PLOT_YMIN:-3.75e-6}"
+PLOT_YMAX="${PLOT_YMAX:-3.98e-6}"
+
 # -------------------------------
 # Parse args
 # -------------------------------
@@ -86,6 +92,10 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_DIR="$2"; shift 2;;
     --decomp)
       DECOMP_METHODS="$2"; shift 2;;
+    --plot-ymin)
+      PLOT_YMIN="$2"; shift 2;;
+    --plot-ymax)
+      PLOT_YMAX="$2"; shift 2;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -122,6 +132,7 @@ log "Feature dir: $SAVE_DIR"
 log "Decompose:   $DECOMP_METHODS"
 log "Env: VLM_MODEL=${VLM_MODEL:-<unset>} BATCH_SIZE=${BATCH_SIZE:-<unset>} DEVICE=${DEVICE:-<unset>} NUM_WORKERS=${NUM_WORKERS:-<unset>} SEED=$SEED HF_HOME=$HF_HOME"
 log "Explainer: layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N num_points=$NUM_POINTS"
+log "Plot: y-range=[$PLOT_YMIN, $PLOT_YMAX]"
 log "DL data: split=$SPLIT base_data_dir=$BASE_DATA_DIR"
 
 # Verify required scripts are present
@@ -209,7 +220,7 @@ if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then
       continue
     fi
     if find "$plot_dir" -type f -name 'c_*_token_rank*.csv' -print -quit | grep -q .; then
-      run_step "Plot Concept Deletion (Token) - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$plot_dir\""
+  run_step "Plot Concept Deletion (Token) - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$plot_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
     else
       warn "No CSVs found in $plot_dir for plotting; skipping $method."
     fi
@@ -234,7 +245,7 @@ if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then
     if find "$src_dir" -type f -name 'c_*_token_rank*.csv' -print -quit | grep -q .; then
       mkdir -p "$dst_dir"
       find "$src_dir" -maxdepth 1 -type f -name 'c_*_token_rank*.csv' -exec cp -u {} "$dst_dir" \;
-      run_step "Save Combined Plots - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$dst_dir\""
+  run_step "Save Combined Plots - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$dst_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
     else
       warn "No CSVs found in $src_dir for plotting; skipping $method."
     fi
