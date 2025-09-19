@@ -10,7 +10,7 @@ Plot combined concept deletion/insertion curves (token mode) across ranks.
 - Draws all insertion curves on one plot (legend: rank)
 
 Usage:
-python scripts/plot_concept_deletion_eval_token.py --out_dir /path/to/outputs/concept_deletion_token
+python scripts/plot_concept_deletion_eval_token.py --out_dir /path/to/outputs/concept_deletion_token [--ymin 3.62e-6 --ymax 4.0e-6]
 """
 from __future__ import annotations
 
@@ -19,22 +19,22 @@ import re
 import csv
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-# Set global font sizes to 18 across the figure
+# Set global font sizes to 24 across the figure
 matplotlib.rcParams.update({
-    'font.size': 18,
-    'axes.titlesize': 18,
-    'axes.labelsize': 18,
-    'xtick.labelsize': 18,
-    'ytick.labelsize': 18,
-    'legend.fontsize': 18,
-    'legend.title_fontsize': 18,
+    'font.size': 24,
+    'axes.titlesize': 24,
+    'axes.labelsize': 24,
+    'xtick.labelsize': 24,
+    'ytick.labelsize': 24,
+    'legend.fontsize': 24,
+    'legend.title_fontsize': 24,
 })
 
 
@@ -75,7 +75,15 @@ def _collect_by_rank(out_dir: Path, prefix: str) -> Dict[int, Path]:
     return dict(sorted(by_rank.items(), key=lambda kv: kv[0]))
 
 
-def _plot_all(out_dir: Path, prefix: str, title: str, xlabel: str, outfile: str) -> None:
+def _plot_all(
+    out_dir: Path,
+    prefix: str,
+    title: str,
+    xlabel: str,
+    outfile_stem: str,
+    y_min: Optional[float] = None,
+    y_max: Optional[float] = None,
+) -> None:
     by_rank = _collect_by_rank(out_dir, prefix)
     if not by_rank:
         return
@@ -89,21 +97,34 @@ def _plot_all(out_dir: Path, prefix: str, title: str, xlabel: str, outfile: str)
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel("f(x)")
+    # Enforce y-axis limits if provided
+    if y_min is not None and y_max is not None:
+        try:
+            plt.ylim(y_min, y_max)
+        except Exception:
+            pass
     # Show percentage numbers instead of fractions (no custom tick list)
     ax = plt.gca()
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _pos: f"{int(round(x * 100))}"))
+    # Multiply displayed y-axis values by 1e5 (labels only)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _pos: f"{y * 1e4:.3f}"))
     # Y-axis: default numeric formatting (no scaling/exponent)
     plt.grid(True, alpha=0.3)
-    #plt.legend(title="Top-")
+    plt.legend(title="Concepts")
     plt.tight_layout()
-    out_path = out_dir / outfile
-    plt.savefig(out_path.as_posix(), dpi=160)
+    # Save both PNG (for pipeline checks) and PDF
+    png_path = out_dir / f"{outfile_stem}.png"
+    pdf_path = out_dir / f"{outfile_stem}.pdf"
+    plt.savefig(png_path.as_posix(), dpi=160)
+    plt.savefig(pdf_path.as_posix(), dpi=160)
     plt.close()
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Plot combined deletion/insertion curves across ranks (token mode)")
     ap.add_argument("--out_dir", required=True, help="Directory containing CSV outputs from concept_deletion_eval.py")
+    ap.add_argument("--ymin", type=float, default=3.62e-6, help="Lower y-axis limit (default: 3.62e-6)")
+    ap.add_argument("--ymax", type=float, default=4.0e-6, help="Upper y-axis limit (default: 4.0e-6)")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -115,7 +136,9 @@ def main() -> None:
         prefix="c_deletion_token",
         title="C-Deletion",
         xlabel="# of Concept",
-        outfile="c_deletion_token_all_ranks.pdf",
+        outfile_stem="c_deletion_token_all_ranks",
+        y_min=args.ymin,
+        y_max=args.ymax,
     )
 
     # Insertion combined plot
@@ -124,7 +147,9 @@ def main() -> None:
         prefix="c_insertion_token",
         title="C-Insertion",
         xlabel="# of Concept",
-        outfile="c_insertion_token_all_ranks.pdf",
+        outfile_stem="c_insertion_token_all_ranks",
+        y_min=args.ymin,
+        y_max=args.ymax,
     )
 
 
