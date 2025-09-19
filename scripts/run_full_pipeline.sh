@@ -59,8 +59,8 @@ SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data/train}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20250918_130709_cdgl_binary_gl}" #run_$TIMESTAMP
-DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20250918_130709_cdgl}" #run_$TIMESTAMP
+DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca,simple}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
@@ -86,13 +86,13 @@ TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-80}"
 
 # Explainer prompt configuration
-EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-binary}"   # unsupervised | binary | mcq
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"   # unsupervised | binary | mcq
 EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-3.70e-6}"
-PLOT_YMAX="${PLOT_YMAX:-4.2e-6}"
+PLOT_YMIN="${PLOT_YMIN:-3.750e-6}"
+PLOT_YMAX="${PLOT_YMAX:-3.990e-6}"
 
 # Dataset inference controls
 PROMPT="${PROMPT:-Identify all visible objects, items in the given image. Output only a single-word, comma-separated list. Do not include explanations, sentences, or any extra text—just the detected elements.}"
