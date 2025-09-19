@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Run VLM Explainer (without GT). Prefer orchestrator-provided env.
 # Recognized env: WORKSPACE_DIR, PYTHON, HF_HOME, VLM_MODEL, CONCEPT_PATH, LAYER_PATH,
-# IMAGE_ROOT, TOP_N, EXPLAIN_DIR, DECOMP_DIR
+# IMAGE_ROOT, TOP_N, EXPLAIN_DIR, DECOMP_DIR, EXPL_PROMPT_MODE, EXPL_LABEL, EXPL_CHOICES
 
 WORKSPACE_DIR="${WORKSPACE_DIR:-/mnt/abka03/Projects/xl-vlms}"
 # Resolve Python interpreter
@@ -33,6 +33,11 @@ OUT_JSON_DIR="${EXPLAIN_DIR:-${WORKSPACE_DIR}/outputs}"
 mkdir -p "$OUT_JSON_DIR"
 OUT_JSON="${OUT_JSON:-${OUT_JSON_DIR}/vlm_explanations.json}"
 
+# Prompt configuration (optional)
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"
+EXPL_LABEL="${EXPL_LABEL:-}"
+EXPL_CHOICES="${EXPL_CHOICES:-}"
+
 cd "$WORKSPACE_DIR"
 
 "$PYTHON_BIN" "$WORKSPACE_DIR/inference/vlm_explainer.py" \
@@ -41,4 +46,7 @@ cd "$WORKSPACE_DIR"
   --layer_path "$LAYER_PATH" \
   --image_root "$IMAGE_ROOT" \
   --top_n "$TOP_N" \
-  --out_json "$OUT_JSON"
+  --out_json "$OUT_JSON" \
+  --prompt_mode "$EXPL_PROMPT_MODE" \
+  $( [[ -n "$EXPL_LABEL" ]] && printf -- "--prompt_label %q " "$EXPL_LABEL" || true ) \
+  $( [[ -n "$EXPL_CHOICES" ]] && printf -- "--choices %q " "$EXPL_CHOICES" || true )
