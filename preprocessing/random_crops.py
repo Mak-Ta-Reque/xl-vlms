@@ -1,4 +1,5 @@
 import os
+import sys
 import random
 import argparse
 from PIL import Image
@@ -21,6 +22,38 @@ def _resize_keep_aspect(img, target_width):
         return img
     new_height = int(round(h * (target_width / float(w))))
     return img.resize((target_width, new_height), Image.LANCZOS)
+
+# --- Optional LangSAM integration for object detection ---
+_LANGSAM_MODEL = None
+
+def _ensure_repo_root_on_sys_path():
+    # Repo root is two levels up from this file (xl-vlms/)
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.append(repo_root)
+
+def _load_langsam_model():
+    global _LANGSAM_MODEL
+    if _LANGSAM_MODEL is not None:
+        return _LANGSAM_MODEL
+    _ensure_repo_root_on_sys_path()
+    try:
+        from src.langsam_utils import load_langsam
+    except Exception as e:
+        raise RuntimeError(f"Could not import src.langsam_utils.load_langsam: {e}")
+    _LANGSAM_MODEL = load_langsam()
+    return _LANGSAM_MODEL
+
+def run_langsam_batched(image_paths: List[str], tag: str, batch_size: int = 8) -> List[List[Tuple[int, int, int, int]]]:
+    """Run LangSAM batched detection for a text tag.
+    Returns a list parallel to image_paths where each element is a list of (x,y,w,h) boxes.
+    """
+    model = _load_langsam_model()
+    try:
+        from src.langsam_utils import predict_bboxes_for_tag_batched
+    except Exception as e:
+        raise RuntimeError(f"Could not import src.langsam_utils.predict_bboxes_for_tag_batched: {e}")
+    return predict_bboxes_for_tag_batched(model, image_paths, tag=tag, batch_size=batch_size)
 
 # --- Functional helpers for concept-focused mode ---
 
@@ -116,20 +149,63 @@ def concept_process_json_mapping(json_file, input_root, output_root, resize_size
     if failures:
         print("Failures recorded in failures.csv")
 
-def create_grid_patches(image_path, patch_size, output_dir, resize_size=None):
-    img = Image.open(image_path)
+def _xywh_to_x1y1x2y2(boxes: List[Tuple[float, float, float, float]]):
+    return [(x, y, x + w, y + h) for (x, y, w, h) in boxes]
+
+def _scale_boxes_x1y1x2y2(boxes: List[Tuple[float, float, float, float]], scale: float):
+    return [(x1 * scale, y1 * scale, x2 * scale, y2 * scale) for (x1, y1, x2, y2) in boxes]
+
+def _clip_boxes_x1y1x2y2(boxes: List[Tuple[float, float, float, float]], w: int, h: int) -> List[Tuple[int, int, int, int]]:
+    clipped: List[Tuple[int, int, int, int]] = []
+    for x1, y1, x2, y2 in boxes:
+        ix1 = max(0, min(int(round(x1)), w))
+        iy1 = max(0, min(int(round(y1)), h))
+        ix2 = max(0, min(int(round(x2)), w))
+        iy2 = max(0, min(int(round(y2)), h))
+        if ix2 > ix1 and iy2 > iy1:
+            clipped.append((ix1, iy1, ix2, iy2))
+    return clipped
+
+def _save_object_crops(img: Image.Image, boxes_x1y1x2y2: List[Tuple[int, int, int, int]], patch_size: int, output_dir: str, base_name: str, object_tag: Optional[str] = None, start_index: int = 0) -> Tuple[int, List[Tuple[int, int, int, int]]]:
+    os.makedirs(output_dir, exist_ok=True)
+    saved = 0
+    final_boxes: List[Tuple[int, int, int, int]] = []
+    for i, (x1, y1, x2, y2) in enumerate(boxes_x1y1x2y2 or []):
+        if x2 <= x1 or y2 <= y1:
+            continue
+        crop = img.crop((x1, y1, x2, y2)).convert('RGB')
+        crop = crop.resize((patch_size, patch_size), Image.LANCZOS)
+        tag_part = f"_{object_tag}" if object_tag else ""
+        crop.save(os.path.join(output_dir, f"{base_name}{tag_part}_obj_{start_index + i}.png"))
+        saved += 1
+        final_boxes.append((x1, y1, x2, y2))
+    return saved, final_boxes
+
+def create_grid_patches(image_path, patch_size, output_dir, resize_size=None, object_bboxes: Optional[List[Tuple[int, int, int, int]]] = None, object_tag: Optional[str] = None):
+    img = Image.open(image_path).convert('RGB')
     img_name = Path(image_path).stem
+    orig_w, orig_h = img.size
+    # First resize by width
     img = _resize_keep_aspect(img, resize_size)
     w, h = img.size
+    s1 = w / float(orig_w)
+    boxes_x1y1x2y2 = _xywh_to_x1y1x2y2(object_bboxes or [])
+    boxes_scaled = _scale_boxes_x1y1x2y2(boxes_x1y1x2y2, s1)
+    # If too small, upscale to fit patch
     if w < patch_size or h < patch_size:
         new_w = max(w, patch_size)
-        scale = new_w / float(w)
-        new_h = max(h, int(round(h * scale)))
+        s2 = new_w / float(w)
+        new_h = max(h, int(round(h * s2)))
         if new_h < patch_size:
             new_h = patch_size
         img = img.resize((new_w, new_h), Image.LANCZOS)
+        boxes_scaled = _scale_boxes_x1y1x2y2(boxes_scaled, s2)
         w, h = img.size
+    # Clip boxes to current image size, then save object crops
+    boxes_scaled = _clip_boxes_x1y1x2y2(boxes_scaled, w, h)
     os.makedirs(output_dir, exist_ok=True)
+    _save_object_crops(img, boxes_scaled, patch_size, output_dir, img_name, object_tag, start_index=0)
+    # Proceed with grid patches
     pid = 0
     for top in range(0, h - patch_size + 1, patch_size):
         for left in range(0, w - patch_size + 1, patch_size):
@@ -152,30 +228,40 @@ def calculate_iou(box1, box2):
         return 0.0
     return interA / union
 
-def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ratio=0.25, max_attempts_per_patch=100, resize_size=None):
-    img = Image.open(image_path)
+def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_ratio=0.25, max_attempts_per_patch=100, resize_size=None, object_bboxes: Optional[List[Tuple[int, int, int, int]]] = None, object_tag: Optional[str] = None):
+    img = Image.open(image_path).convert('RGB')
     name = Path(image_path).stem
+    orig_w, orig_h = img.size
+    # Resize by width
     img = _resize_keep_aspect(img, resize_size)
     w, h = img.size
+    s1 = w / float(orig_w)
+    boxes_x1y1x2y2 = _xywh_to_x1y1x2y2(object_bboxes or [])
+    boxes_scaled = _scale_boxes_x1y1x2y2(boxes_x1y1x2y2, s1)
+    # Ensure minimum size for patching
     if w < patch_size or h < patch_size:
         scale_w = patch_size / float(w) if w < patch_size else 1.0
         scale_h = patch_size / float(h) if h < patch_size else 1.0
-        scale = max(scale_w, scale_h)
-        if scale > 1.0:
-            img = img.resize((int(round(w*scale)), int(round(h*scale))), Image.LANCZOS)
+        s2 = max(scale_w, scale_h)
+        if s2 > 1.0:
+            img = img.resize((int(round(w * s2)), int(round(h * s2))), Image.LANCZOS)
+            boxes_scaled = _scale_boxes_x1y1x2y2(boxes_scaled, s2)
             w, h = img.size
     os.makedirs(output_dir, exist_ok=True)
+    # Save object crops first, treat them as existing patches for overlap
+    boxes_scaled = _clip_boxes_x1y1x2y2(boxes_scaled, w, h)
+    _, obj_boxes_final = _save_object_crops(img, boxes_scaled, patch_size, output_dir, name, object_tag, start_index=0)
+    saved = list(obj_boxes_final)
     if w == patch_size and h == patch_size and P > 0:
         img.convert('RGB').save(os.path.join(output_dir, f"{name}_patch_0.png"))
         return
-    saved = []
     created = 0
     attempts = 0
     max_attempts_total = P * max_attempts_per_patch
     while created < P and attempts < max_attempts_total:
         attempts += 1
-        left = random.randint(0, w - patch_size)
-        top = random.randint(0, h - patch_size)
+        left = random.randint(0, max(0, w - patch_size))
+        top = random.randint(0, max(0, h - patch_size))
         box = (left, top, left + patch_size, top + patch_size)
         if any(calculate_iou(box, b) > max_overlap_ratio for b in saved):
             continue
@@ -185,20 +271,39 @@ def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_rat
     if created < P:
         print(f"Info: only generated {created}/{P} patches for {image_path} (overlap constraints).")
 
-def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False):
+def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, object_detection: bool = False, object_batch_size: int = 8):
+    # Build per-tag image lists (tag = immediate subfolder name of the image path)
+    tag_to_paths: Dict[str, List[str]] = {}
+    for subdir, _, files in os.walk(root_input):
+        for f in files:
+            if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                p = os.path.join(subdir, f)
+                tag = Path(subdir).name
+                tag_to_paths.setdefault(tag, []).append(p)
+    # Run LangSAM per tag group to use the tag as the text prompt
+    boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
+    if object_detection:
+        for tag, paths in tag_to_paths.items():
+            if not paths:
+                continue
+            boxes_list = run_langsam_batched(paths, tag=tag, batch_size=object_batch_size)
+            boxes_map.update({p: b for p, b in zip(paths, boxes_list)})
+    # Process folders and pass through boxes
     for subdir, _, files in os.walk(root_input):
         rel = os.path.relpath(subdir, root_input)
         out_sub = os.path.join(root_output, rel)
         os.makedirs(out_sub, exist_ok=True)
+        current_tag = Path(subdir).name
         for f in files:
             if f.lower().endswith((".png", ".jpg", ".jpeg")):
                 path = os.path.join(subdir, f)
+                bboxes = boxes_map.get(path)
                 if grid:
-                    create_grid_patches(path, patch_size, out_sub, resize_size)
+                    create_grid_patches(path, patch_size, out_sub, resize_size, object_bboxes=bboxes, object_tag=current_tag if object_detection else None)
                 else:
-                    create_random_patches(path, patch_size, out_sub, P, max_overlap_ratio=max_overlap, resize_size=resize_size)
+                    create_random_patches(path, patch_size, out_sub, P, max_overlap_ratio=max_overlap, resize_size=resize_size, object_bboxes=bboxes, object_tag=current_tag if object_detection else None)
 
-def process_json_mapping(json_file, input_root, output_root, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, min_images_per_tag=30, max_images_per_tag=0):
+def process_json_mapping(json_file, input_root, output_root, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, min_images_per_tag=30, max_images_per_tag=0, object_detection: bool = False, object_batch_size: int = 8):
     with open(json_file, 'r') as f:
         mapping = json.load(f)
     rng = random
@@ -213,15 +318,29 @@ def process_json_mapping(json_file, input_root, output_root, patch_size=128, P=1
         safe = tag.replace(' ', '_')
         out_dir = os.path.join(output_root, safe)
         os.makedirs(out_dir, exist_ok=True)
+        # Prepare absolute paths and run batch detection for this group if enabled
+        abs_paths: List[str] = []
+        for rel in rels:
+            p = os.path.join(input_root, rel)
+            if os.path.isfile(p):
+                abs_paths.append(p)
+            else:
+                print(f"Warning: missing image {p}")
+        boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
+        # Use the mapping key 'tag' as the detection prompt
+        tag_to_use = tag
+        if object_detection and abs_paths:
+            boxes_list = run_langsam_batched(abs_paths, tag=tag_to_use, batch_size=object_batch_size)
+            boxes_map = {p: b for p, b in zip(abs_paths, boxes_list)}
         for rel in rels:
             img_path = os.path.join(input_root, rel)
             if not os.path.isfile(img_path):
-                print(f"Warning: missing image {img_path}")
                 continue
+            bboxes = boxes_map.get(img_path)
             if grid:
-                create_grid_patches(img_path, patch_size, out_dir, resize_size)
+                create_grid_patches(img_path, patch_size, out_dir, resize_size, object_bboxes=bboxes, object_tag=tag_to_use if object_detection else None)
             else:
-                create_random_patches(img_path, patch_size, out_dir, P, max_overlap_ratio=max_overlap, resize_size=resize_size)
+                create_random_patches(img_path, patch_size, out_dir, P, max_overlap_ratio=max_overlap, resize_size=resize_size, object_bboxes=bboxes, object_tag=tag_to_use if object_detection else None)
 
 def main():
     parser = argparse.ArgumentParser(description="Extract image patches (random, grid, or concept-focused) with optional JSON tag mapping.")
@@ -238,9 +357,13 @@ def main():
     parser.add_argument("--concept_crops_per_image", type=int, default=3, help="Crops per image in concept mode")
     parser.add_argument("--min_images_per_tag", type=int, default=30, help="Minimum images required for a tag to be processed")
     parser.add_argument("--max_images_per_tag", type=int, default=0, help="Cap on number of images sampled per tag (0 = no cap)")
+    # Object detection
+    parser.add_argument("--object_detection", action='store_true', help="Apply LangSAM object detection before cropping")
+    parser.add_argument("--object_batch_size", type=int, default=16, help="Batch size for LangSAM detection")
     args = parser.parse_args()
     if args.seed is not None:
         random.seed(args.seed)
+    # No external object_tag required: JSON mode uses mapping keys; folder mode uses subfolder name
     if args.concept_mode:
         if not args.json_mapping:
             raise ValueError('--concept_mode requires --json_mapping')
@@ -256,13 +379,22 @@ def main():
         )
         return
     if args.json_mapping:
-        process_json_mapping(args.json_mapping, args.input_root, args.output_root,
-                             args.patch_size, args.patches_per_image, args.max_overlap,
-                             args.resize, args.grid, min_images_per_tag=args.min_images_per_tag,
-                             max_images_per_tag=args.max_images_per_tag)
+        process_json_mapping(
+            args.json_mapping, args.input_root, args.output_root,
+            args.patch_size, args.patches_per_image, args.max_overlap,
+            args.resize, args.grid,
+            min_images_per_tag=args.min_images_per_tag,
+            max_images_per_tag=args.max_images_per_tag,
+            object_detection=args.object_detection,
+            object_batch_size=args.object_batch_size,
+        )
     else:
-        process_folder_structure(args.input_root, args.output_root, args.patch_size,
-                                 args.patches_per_image, args.max_overlap, args.resize, args.grid)
+        process_folder_structure(
+            args.input_root, args.output_root, args.patch_size,
+            args.patches_per_image, args.max_overlap, args.resize, args.grid,
+            object_detection=args.object_detection,
+            object_batch_size=args.object_batch_size,
+        )
 
 if __name__ == '__main__':
     main()
@@ -282,6 +414,15 @@ python preprocessing/random_crops.py \
    --output_root  /mnt/abka03/Projects/xl-vlms/crops/train  \
    --json_mapping /mnt/abka03/Projects/xl-vlms/data/coco_10_concept_image_mapping.json \
    --concept_mode --concept_crops_per_image 100 --patch_size 128 --resize 512 --seed 123 --min_images_per_tag 10 --max_images_per_tag 300
+With object tag
+
+python preprocessing/random_crops.py \
+  --input_root /mnt/abka03/Projects/xl-vlms/data \
+  --output_root /mnt/abka03/Projects/xl-vlms/output_patches \
+  --json_mapping /mnt/abka03/Projects/xl-vlms/data/coco_10_concept_image_mapping.json \
+  --patch_size 128 --patches_per_image 16 --resize 512 \
+  --object_detection
+   
 
 Concept-focused cropping with per-tag cap (e.g., max 50 images used per tag):
 python preprocessing/random_crops.py \

@@ -14,6 +14,8 @@ SEED="${SEED:-123}"
 MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-10}"
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"  # 1 to enable --concept_mode, 0 to disable
+BATCH_SIZE="${BATCH_SIZE:-8}"
+OBJECT_DETECTION="${OBJECT_DETECTION:-1}"  # 1 to enable --object_detection, 0 to disable
 # Resolve Python interpreter
 if command -v "${PYTHON:-${PYTHON_BIN:-python}}" >/dev/null 2>&1; then
   PYTHON_BIN="${PYTHON:-${PYTHON_BIN:-python}}"
@@ -38,12 +40,14 @@ Options (override defaults from README example):
   --min_images_per_tag INT          (default: ${MIN_IMAGES_PER_TAG})
   --max_images_per_tag INT          (default: ${MAX_IMAGES_PER_TAG})
   --no-concept_mode                 Disable --concept_mode flag
+  --no-object_detection             Disable --object_detection flag
+  --batch_size INT                  (default: ${BATCH_SIZE})
   -h, --help                        Show this help
 
 Environment variables:
   INPUT_ROOT, OUTPUT_ROOT, JSON_MAPPING, CONCEPT_CROPS_PER_IMAGE,
   PATCH_SIZE, RESIZE, SEED, MIN_IMAGES_PER_TAG, MAX_IMAGES_PER_TAG,
-  CONCEPT_MODE (1/0), PYTHON
+  CONCEPT_MODE (1/0), OBJECT_DETECTION (1/0), BATCH_SIZE, PYTHON
 
 Examples:
   bash scripts/$(basename "$0")
@@ -65,7 +69,10 @@ while [[ $# -gt 0 ]]; do
     --seed) SEED="$2"; shift 2;;
     --min_images_per_tag) MIN_IMAGES_PER_TAG="$2"; shift 2;;
     --max_images_per_tag) MAX_IMAGES_PER_TAG="$2"; shift 2;;
+    --batch_size) BATCH_SIZE="$2"; shift 2;;
     --no-concept_mode) CONCEPT_MODE=0; shift;;
+    --no-object_detection) OBJECT_DETECTION=0; shift;;
+    --object_detection) OBJECT_DETECTION=1; shift;;
     -h|--help) usage; exit 0;;
     *) EXTRA_ARGS+=("$1"); shift;;
   esac
@@ -79,6 +86,11 @@ PY="$PYTHON_BIN"
 CONCEPT_MODE_FLAG=()
 if [[ "${CONCEPT_MODE}" == "1" ]]; then
   CONCEPT_MODE_FLAG+=("--concept_mode")
+fi
+
+OBJECT_DETECTION_FLAG=()
+if [[ "${OBJECT_DETECTION}" == "1" ]]; then
+  OBJECT_DETECTION_FLAG+=("--object_detection")
 fi
 
 # Sanity checks
@@ -99,12 +111,14 @@ argv=(
   --output_root "${OUTPUT_ROOT}"
   --json_mapping "${JSON_MAPPING}"
   ${CONCEPT_MODE_FLAG[@]:+"${CONCEPT_MODE_FLAG[@]}"}
+  ${OBJECT_DETECTION_FLAG[@]:+"${OBJECT_DETECTION_FLAG[@]}"}
   --concept_crops_per_image "${CONCEPT_CROPS_PER_IMAGE}"
   --patch_size "${PATCH_SIZE}"
   --resize "${RESIZE}"
   --seed "${SEED}"
   --min_images_per_tag "${MIN_IMAGES_PER_TAG}"
   --max_images_per_tag "${MAX_IMAGES_PER_TAG}"
+  --batch_size "${BATCH_SIZE}"
 )
 
 # Append any extra args if present
