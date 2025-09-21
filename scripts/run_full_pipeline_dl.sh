@@ -58,7 +58,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_dl_20250918_160646_binary}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_dl_20250918_160646}"
 DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
@@ -77,16 +77,16 @@ BASE_DATA_DIR="${BASE_DATA_DIR:-$ROOT_DIR/data/train}"
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
 IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
-NUM_POINTS="${NUM_POINTS:-80}"
+NUM_POINTS="${NUM_POINTS:-70}"
 
 # Explainer prompt configuration
-EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-binary}"   # unsupervised | binary | mcq
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"   # unsupervised | binary | mcq
 EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-3.70e-6}"
-PLOT_YMAX="${PLOT_YMAX:-4.2e-6}"
+PLOT_YMIN="${PLOT_YMIN:-3.7500e-6}"
+PLOT_YMAX="${PLOT_YMAX:-4.000e-6}"
 
 # -------------------------------
 # Parse args

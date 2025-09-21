@@ -204,8 +204,9 @@ class ConceptDeletionEvaluator:
         results_json: Union[str, Path],
         device: Optional[Union[str, torch.device]] = None,
         normalize_concepts: bool = True,
-        cache_dir: Optional[str] = None,
-        grad_top_zero_frac: float = 0.15,
+    cache_dir: Optional[str] = None,
+    grad_top_zero_frac: float = 0.15,
+    concept_mutiply: bool = True,
     ) -> None:
         _set_env_quiet()
         # Ensure repo src on path for model loader
@@ -236,6 +237,8 @@ class ConceptDeletionEvaluator:
         self.layer_path = layer_path
         # Default smoothing: zero out top fraction of gradient magnitudes when ranking coordinates
         self.grad_top_zero_frac = float(grad_top_zero_frac)
+        # Whether to multiply gradient with the concept vector prior to insertion/deletion
+        self.concept_mutiply = bool(concept_mutiply)
 
         # Sub-model from layer space to logits
         self.sub_model = LMHeadSubModel(self.model).to(self.device).eval()
@@ -256,7 +259,7 @@ class ConceptDeletionEvaluator:
 
         with open(results_json, "r", encoding="utf-8") as f:
             payload = json.load(f)
-        self.results: List[Dict[str, Any]] = payload.get("results", payload)
+        self.results = payload.get("results", payload)
         # Accept layer_path from file if not provided explicitly
         self.file_layer_path = payload.get("layer_path") if isinstance(payload, dict) else None
 
@@ -278,7 +281,15 @@ class ConceptDeletionEvaluator:
                 toks.append(str(tid))
         return ids, toks
 
-    def _grad_sorted_indices(self, vec: torch.Tensor, target_id: int) -> torch.Tensor:
+    def _grad_and_order(self, vec: torch.Tensor, target_id: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute gradient d logit[target_id] / d vec and return (grad, sorted_indices).
+
+        Ranking rule:
+        - If self.concept_mutiply is True, sort by descending |grad * vec| (elementwise),
+          then optionally skip a top fraction controlled by self.grad_top_zero_frac.
+        - Otherwise, sort by descending |grad| with the same optional skip.
+        Only the order is affected; probability computations always use the original vec.
+        """
         v = vec.detach().clone().to(self.device, dtype=getattr(self.sub_model, "head_dtype", vec.dtype)).requires_grad_(True)
         logits = self.sub_model(v)  # (V)
         if logits.dim() > 1:
@@ -289,8 +300,13 @@ class ConceptDeletionEvaluator:
             v.grad.zero_()
         logit_t.backward(retain_graph=False)
         g = v.grad.detach()
-        # Rank by |grad| (most -> least)
-        order_all = torch.argsort(g.abs(), dim=-1, descending=True)
+        # Rank importance by |grad| or |grad * vec| (most -> least)
+        if getattr(self, "concept_mutiply", False):
+            # Ensure dtype alignment for multiplication (use vec's dtype)
+            importance = v.abs() # (g.to(vec.dtype) * vec.abs()) #  vec.abs() works fine
+        else:
+            importance = g.abs()
+        order_all = torch.argsort(importance, dim=-1, descending=True)
         # If a top fraction is specified, skip those coordinates entirely from evaluation
         frac = float(getattr(self, "grad_top_zero_frac", 0.0) or 0.0)
         if frac > 0.0 and order_all.numel() > 0:
@@ -301,7 +317,7 @@ class ConceptDeletionEvaluator:
                 order = order_all[-1:].clone()
         else:
             order = order_all
-        return order
+        return g, order
 
     def _prob_curve_by_mask_order(
         self,
@@ -412,7 +428,7 @@ class ConceptDeletionEvaluator:
                 continue
             # one gradient ordering per target id (compute separately)
             for tid in target_ids:
-                order = self._grad_sorted_indices(vec, int(tid))
+                _, order = self._grad_and_order(vec, int(tid))
                 probs = self._prob_curve_by_mask_order(vec, order, int(tid), ks)
                 curves.append(probs)
         if not curves:
@@ -460,7 +476,7 @@ class ConceptDeletionEvaluator:
                 if ci < 0 or ci >= self.concepts.shape[0]:
                     continue
                 vec = self.concepts[ci]
-                order = self._grad_sorted_indices(vec, token_id)
+                _, order = self._grad_and_order(vec, token_id)
                 probs = self._prob_curve_by_mask_order(vec, order, token_id, ks)
                 curves.append(probs)
         if not curves:
@@ -504,7 +520,7 @@ class ConceptDeletionEvaluator:
             if not target_ids:
                 continue
             for tid in target_ids:
-                order = self._grad_sorted_indices(vec, int(tid))
+                _, order = self._grad_and_order(vec, int(tid))
                 probs = self._prob_curve_by_mask_order_insertion(vec, order, int(tid), ks)
                 curves.append(probs)
         if not curves:
@@ -549,7 +565,7 @@ class ConceptDeletionEvaluator:
                 if ci < 0 or ci >= self.concepts.shape[0]:
                     continue
                 vec = self.concepts[ci]
-                order = self._grad_sorted_indices(vec, token_id)
+                _, order = self._grad_and_order(vec, token_id)
                 probs = self._prob_curve_by_mask_order_insertion(vec, order, token_id, ks)
                 curves.append(probs)
         if not curves:
@@ -604,7 +620,16 @@ def main() -> None:
     ap.add_argument("--deterministic", action="store_true")
     ap.add_argument("--out_dir", default="/mnt/abka03/Projects/xl-vlms/outputs")
     # New: smoothing fraction for zeroing top-|grad| before ranking
-    ap.add_argument("--grad_top_zero_frac", type=float, default=0.25, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
+    ap.add_argument("--grad_top_zero_frac", type=float, default=0.0, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
+    # New: whether to multiply gradient with concept vector prior to op
+    try:
+        from argparse import BooleanOptionalAction  # py3.9+
+        ap.add_argument("--concept_multiply", action=BooleanOptionalAction, default=True,
+                        help="If true (default), multiply gradient with the concept vector before deletion/insertion")
+    except Exception:
+        # Fallback: presence of flag sets True; no negation flag
+        ap.add_argument("--concept_multiply", action="store_true", default=True,
+                        help="If true, multiply gradient with the concept vector when ordering (default: False)")
     args = ap.parse_args()
 
     _seed_everything(args.seed, deterministic=args.deterministic)
@@ -627,6 +652,7 @@ def main() -> None:
         results_json=args.results_json,
         device=args.device,
         grad_top_zero_frac=args.grad_top_zero_frac,
+    concept_mutiply=getattr(args, "concept_mutiply", True),
     )
 
     xlabel = None
@@ -684,6 +710,7 @@ def main() -> None:
                 "results_json": args.results_json,
                 "concept_path": args.concept_path,
                 "grad_top_zero_frac": args.grad_top_zero_frac,
+                "concept_mutiply": getattr(args, "concept_mutiply", True),
             }, f, ensure_ascii=False, indent=2)
     except Exception:
         pass

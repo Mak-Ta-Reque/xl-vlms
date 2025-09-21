@@ -110,7 +110,16 @@ def _plot_all(
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _pos: f"{y * 1e4:.3f}"))
     # Y-axis: default numeric formatting (no scaling/exponent)
     plt.grid(True, alpha=0.3)
-    plt.legend(title="Concepts")
+    # Legend placement rules:
+    # - Insertion plots: bottom-right
+    # - Deletion plots: top-right
+    # Also, remove legend title
+    legend_loc = "best"
+    if "insertion" in prefix:
+        legend_loc = "lower right"
+    elif "deletion" in prefix:
+        legend_loc = "upper right"
+    plt.legend(loc=legend_loc)
     plt.tight_layout()
     # Save both PNG (for pipeline checks) and PDF
     png_path = out_dir / f"{outfile_stem}.png"
