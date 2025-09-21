@@ -16,14 +16,7 @@ MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"  # 1 to enable --concept_mode, 0 to disable
 BATCH_SIZE="${BATCH_SIZE:-8}"
 OBJECT_DETECTION="${OBJECT_DETECTION:-1}"  # 1 to enable --object_detection, 0 to disable
-# Resolve Python interpreter
-if command -v "${PYTHON:-${PYTHON_BIN:-python}}" >/dev/null 2>&1; then
-  PYTHON_BIN="${PYTHON:-${PYTHON_BIN:-python}}"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
-else
-  PYTHON_BIN="python"
-fi
+
 
 usage() {
   cat <<EOF
@@ -80,7 +73,7 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-PY="$PYTHON_BIN"
+
 
 # Build optional flag
 CONCEPT_MODE_FLAG=()
@@ -126,4 +119,18 @@ if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
   argv+=("${EXTRA_ARGS[@]}")
 fi
 
-"${PY}" "${argv[@]}"
+# Resolve Python interpreter (env PYTHON wins, then python, then python3)
+PY_CMD="${PYTHON:-python}"
+if ! command -v "${PY_CMD}" >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1; then
+    PY_CMD="python3"
+  else
+    echo "Error: No Python interpreter found. Set PYTHON env var or install python/python3." >&2
+    exit 1
+  fi
+fi
+
+# Ensure output directory exists
+mkdir -p "${OUTPUT_ROOT}"
+
+"${PY_CMD}" "${argv[@]}"

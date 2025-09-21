@@ -65,7 +65,7 @@ HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
 VLM_MODEL="${VLM_MODEL:-"google/gemma-3n-E4B-it"}"         # e.g., llava, llava-7b, qwen-vl, etc.
-BATCH_SIZE="${BATCH_SIZE:-16}"       # e.g., 16
+BATCH_SIZE="${BATCH_SIZE:-8}"       # e.g., 16
 DEVICE="${DEVICE:-cuda}"               # e.g., cuda:0
 NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
