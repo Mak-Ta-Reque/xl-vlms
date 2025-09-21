@@ -252,6 +252,25 @@ def decompose_activations(
         model.cluster_centers_ = components + 0
         # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
         comp_activ = 1 / (1 + model.transform(mat))
+    elif decomposition_method == "random":
+        # New: choose num_concepts random samples from mat as components, no KMeans involved
+        if concepts is not None:
+            raise NotImplementedError
+        # Optional reproducibility
+        if hasattr(args, "seed") and args.seed is not None:
+            np.random.seed(args.seed)
+        if num_concepts > mat.shape[0]:
+            raise ValueError(
+                f"num_concepts ({num_concepts}) cannot exceed number of samples ({mat.shape[0]})."
+            )
+        indices = np.random.choice(mat.shape[0], size=num_concepts, replace=False)
+        components = mat[indices].copy()
+        # Compute pairwise Euclidean distances between samples and selected components
+        # mat: (N, D), components: (K, D) -> dists: (N, K)
+        diff = mat[:, None, :] - components[None, :, :]
+        dists = np.sqrt(np.sum(diff * diff, axis=2))
+        # Map distances to activations
+        comp_activ = 1.0 / (1.0 + dists)
     elif decomposition_method == "sae":
         from src.helpers.sae_ import SparseAutoencoder, train_sae  # modularized SAE
 
@@ -335,7 +354,7 @@ def project_test_sample(
     assert isinstance(sample, np.ndarray), "sample should be of type np.ndarray"
 
     projected_sample = analysis_model.transform(sample)
-    if decomposition_type in ["kmeans", "simple"]:
+    if decomposition_type in ["kmeans", "simple", "random"]:
         # Kmeans transforms to cluster distances and not "activations". 1/(1+x) transformation to view distances as activations
         projected_sample = 1 / (1 + projected_sample)
     return projected_sample

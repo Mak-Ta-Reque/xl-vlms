@@ -60,7 +60,7 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data/train}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20250918_130709_cdgl}" #run_$TIMESTAMP
-DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca,simple}"
+DECOMP_METHODS="${DECOMP_METHODS:-snmf,random}" # e.g., pca,nmf,ica,svd
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
@@ -83,7 +83,7 @@ CONCEPT_MODE="${CONCEPT_MODE:-1}"
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
 IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
 TOP_N="${TOP_N:-5}"
-NUM_POINTS="${NUM_POINTS:-80}"
+NUM_POINTS="${NUM_POINTS:-70}"
 
 # Explainer prompt configuration
 EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"   # unsupervised | binary | mcq
@@ -91,8 +91,8 @@ EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-3.750e-6}"
-PLOT_YMAX="${PLOT_YMAX:-3.990e-6}"
+PLOT_YMIN="${PLOT_YMIN:-3.7500e-6}"
+PLOT_YMAX="${PLOT_YMAX:-4.000e-6}"
 
 # Dataset inference controls
 PROMPT="${PROMPT:-Identify all visible objects, items in the given image. Output only a single-word, comma-separated list. Do not include explanations, sentences, or any extra text—just the detected elements.}"
@@ -312,3 +312,18 @@ fi
 
 log "Pipeline completed. Outputs: $OUTPUT_DIR"
 log "Logs: $OUTPUT_DIR/logs"
+
+# -------------------------------------------------
+# 9) Summary plots overlaying methods (mean curves)
+# -------------------------------------------------
+if [[ -f "$SCRIPTS_DIR/plot_eval_summary_across_methods.py" ]]; then
+  log "Generate Summary Plots Across Methods"
+  python -u "$SCRIPTS_DIR/plot_eval_summary_across_methods.py" \
+  --eval_dir "$EVAL_DIR" \
+  --out_dir "$PLOTS_DIR" \
+    --methods "$DECOMP_METHODS" \
+    --ymin "$PLOT_YMIN" \
+    --ymax "$PLOT_YMAX" || warn "Summary plots failed"
+else
+  warn "Summary plotter not found; skipping overlay plots."
+fi
