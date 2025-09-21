@@ -271,7 +271,7 @@ def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_rat
     if created < P:
         print(f"Info: only generated {created}/{P} patches for {image_path} (overlap constraints).")
 
-def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, object_detection: bool = False, object_batch_size: int = 8):
+def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, object_detection: bool = False, batch_size: int = 8):
     # Build per-tag image lists (tag = immediate subfolder name of the image path)
     tag_to_paths: Dict[str, List[str]] = {}
     for subdir, _, files in os.walk(root_input):
@@ -286,7 +286,7 @@ def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_
         for tag, paths in tag_to_paths.items():
             if not paths:
                 continue
-            boxes_list = run_langsam_batched(paths, tag=tag, batch_size=object_batch_size)
+            boxes_list = run_langsam_batched(paths, tag=tag, batch_size=batch_size)
             boxes_map.update({p: b for p, b in zip(paths, boxes_list)})
     # Process folders and pass through boxes
     for subdir, _, files in os.walk(root_input):
@@ -303,7 +303,7 @@ def process_folder_structure(root_input, root_output, patch_size=128, P=10, max_
                 else:
                     create_random_patches(path, patch_size, out_sub, P, max_overlap_ratio=max_overlap, resize_size=resize_size, object_bboxes=bboxes, object_tag=current_tag if object_detection else None)
 
-def process_json_mapping(json_file, input_root, output_root, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, min_images_per_tag=30, max_images_per_tag=0, object_detection: bool = False, object_batch_size: int = 8):
+def process_json_mapping(json_file, input_root, output_root, patch_size=128, P=10, max_overlap=0.25, resize_size=None, grid=False, min_images_per_tag=30, max_images_per_tag=0, object_detection: bool = False, batch_size: int = 8):
     with open(json_file, 'r') as f:
         mapping = json.load(f)
     rng = random
@@ -330,7 +330,7 @@ def process_json_mapping(json_file, input_root, output_root, patch_size=128, P=1
         # Use the mapping key 'tag' as the detection prompt
         tag_to_use = tag
         if object_detection and abs_paths:
-            boxes_list = run_langsam_batched(abs_paths, tag=tag_to_use, batch_size=object_batch_size)
+            boxes_list = run_langsam_batched(abs_paths, tag=tag_to_use, batch_size=batch_size)
             boxes_map = {p: b for p, b in zip(abs_paths, boxes_list)}
         for rel in rels:
             img_path = os.path.join(input_root, rel)
@@ -359,7 +359,9 @@ def main():
     parser.add_argument("--max_images_per_tag", type=int, default=0, help="Cap on number of images sampled per tag (0 = no cap)")
     # Object detection
     parser.add_argument("--object_detection", action='store_true', help="Apply LangSAM object detection before cropping")
-    parser.add_argument("--object_batch_size", type=int, default=16, help="Batch size for LangSAM detection")
+    # Unified batch size flag; keep --object_batch_size as hidden alias
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for LangSAM detection")
+    parser.add_argument("--object_batch_size", dest="batch_size", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.seed is not None:
         random.seed(args.seed)
@@ -385,15 +387,15 @@ def main():
             args.resize, args.grid,
             min_images_per_tag=args.min_images_per_tag,
             max_images_per_tag=args.max_images_per_tag,
-            object_detection=args.object_detection,
-            object_batch_size=args.object_batch_size,
+                object_detection=args.object_detection,
+                batch_size=args.batch_size,
         )
     else:
         process_folder_structure(
             args.input_root, args.output_root, args.patch_size,
             args.patches_per_image, args.max_overlap, args.resize, args.grid,
-            object_detection=args.object_detection,
-            object_batch_size=args.object_batch_size,
+                object_detection=args.object_detection,
+                batch_size=args.batch_size,
         )
 
 if __name__ == '__main__':

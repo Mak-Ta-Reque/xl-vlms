@@ -30,6 +30,8 @@ This project provides tools for extracting, analyzing, and decomposing concept f
      python -m spacy download en_core_web_sm
      # For Qwen model support:
      pip install qwen-vl-utils
+     conda install -c conda-forge inflect
+     conda install -c conda-forge scikit-learn
      # For Java support (if needed):
      conda install -c conda-forge openjdk
      # Download COCO evaluation data:
