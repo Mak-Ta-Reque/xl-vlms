@@ -36,6 +36,8 @@ This project provides tools for extracting, analyzing, and decomposing concept f
      conda install -c conda-forge openjdk
      # Download COCO evaluation data:
      python -c "import language_evaluation; language_evaluation.download('coco')"
+
+     pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
      ```
 
    - Or use the provided install script:

@@ -109,7 +109,18 @@ def write_json(path: str, obj: dict):
     with open(path, 'w') as f:
         json.dump(obj, f, indent=2)
 
-def concept_process_json_mapping(json_file, input_root, output_root, resize_size, max_crops_per_image, patch_size, min_images_per_tag=30, max_images_per_tag=0):
+def concept_process_json_mapping(
+    json_file,
+    input_root,
+    output_root,
+    resize_size,
+    max_crops_per_image,
+    patch_size,
+    min_images_per_tag: int = 30,
+    max_images_per_tag: int = 0,
+    object_detection: bool = False,
+    batch_size: int = 8,
+):
     # Process all tags with >= min_images_per_tag images; optionally cap images per tag
     mapping = load_mapping(json_file)
     rng = random
@@ -129,13 +140,87 @@ def concept_process_json_mapping(json_file, input_root, output_root, resize_size
         safe_tag = tag.replace(' ', '_')
         tag_out_dir = os.path.join(output_root, safe_tag)
         ensure_dir(tag_out_dir)
+        # Prepare abs paths and detection boxes per image for this tag if enabled
+        boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
+        abs_paths: List[str] = []
+        if object_detection:
+            for rel_path in rel_paths:
+                abs_p = os.path.join(input_root, rel_path)
+                if os.path.isfile(abs_p):
+                    abs_paths.append(abs_p)
+                else:
+                    failures.append((rel_path, tag, 'missing_file'))
+            if abs_paths:
+                try:
+                    boxes_list = run_langsam_batched(abs_paths, tag=tag, batch_size=batch_size)
+                    boxes_map = {p: b for p, b in zip(abs_paths, boxes_list)}
+                except Exception as e:
+                    print(f"Warning: LangSAM detection failed for tag '{tag}': {e}")
+                    boxes_map = {}
+
         for rel_path in rel_paths:
-            crops_with_names, failure = process_single_image(rel_path, tag, input_root, resize_size, patch_size, max_crops_per_image, rng)
-            if failure:
-                failures.append(failure)
+            image_path = os.path.join(input_root, rel_path)
+            if not os.path.isfile(image_path):
+                # Recorded above for detection; add here if detection disabled
+                if not object_detection:
+                    failures.append((rel_path, tag, 'missing_file'))
                 continue
-            for crop_img, fname in crops_with_names:
-                crop_img.save(os.path.join(tag_out_dir, fname))
+            try:
+                img = Image.open(image_path).convert('RGB')
+            except Exception as e:
+                failures.append((rel_path, tag, f'open_error:{e.__class__.__name__}'))
+                continue
+
+            # Resize by width; maintain aspect
+            orig_w, orig_h = img.size
+            img = _resize_keep_aspect(img, resize_size)
+            w, h = img.size
+            s1 = w / float(orig_w)
+
+            saved_count = 0
+            # If detection is enabled and we have boxes, save up to k crops from detections first
+            if object_detection:
+                boxes_xywh = boxes_map.get(image_path)
+                if boxes_xywh:
+                    boxes_xyxy = _scale_boxes_x1y1x2y2(_xywh_to_x1y1x2y2(boxes_xywh), s1)
+                    # Ensure image is large enough for patch; upscale if needed and scale boxes accordingly
+                    if w < patch_size or h < patch_size:
+                        scale_w = patch_size / float(w) if w < patch_size else 1.0
+                        scale_h = patch_size / float(h) if h < patch_size else 1.0
+                        s2 = max(scale_w, scale_h)
+                        if s2 > 1.0:
+                            img = img.resize((int(round(w * s2)), int(round(h * s2))), Image.LANCZOS)
+                            w, h = img.size
+                            boxes_xyxy = _scale_boxes_x1y1x2y2(boxes_xyxy, s2)
+                    boxes_xyxy = _clip_boxes_x1y1x2y2(boxes_xyxy, w, h)
+                    k = int(max_crops_per_image)
+                    base = Path(rel_path).stem
+                    for i, (x1, y1, x2, y2) in enumerate(boxes_xyxy[:k]):
+                        crop = img.crop((x1, y1, x2, y2)).convert('RGB')
+                        crop = crop.resize((patch_size, patch_size), Image.LANCZOS)
+                        crop.save(os.path.join(tag_out_dir, f"{tag.replace(' ', '_')}_{base}_concept_{saved_count + i}.png"))
+                    saved_count = min(len(boxes_xyxy), k)
+
+            # Fill remaining with random crops
+            remaining = int(max_crops_per_image) - saved_count
+            if remaining > 0:
+                # Ensure image is large enough
+                w, h = img.size
+                if w < patch_size or h < patch_size:
+                    new_w = max(w, patch_size)
+                    s2 = new_w / float(w)
+                    new_h = max(h, int(round(h * s2)))
+                    if new_h < patch_size:
+                        new_h = patch_size
+                    img = img.resize((new_w, new_h), Image.LANCZOS)
+                crops = random_square_crops(img, patch_size, remaining, rng)
+                if not crops:
+                    reason = 'too_small' if (img.size[0] < patch_size or img.size[1] < patch_size) else 'no_space'
+                    failures.append((rel_path, tag, reason))
+                else:
+                    base = Path(rel_path).stem
+                    for i, c in enumerate(crops):
+                        c.save(os.path.join(tag_out_dir, f"{tag.replace(' ', '_')}_{base}_concept_{saved_count + i}.png"))
     write_csv(os.path.join(output_root, 'failures.csv'), ['image_path', 'tag', 'reason'], failures)
     write_json(os.path.join(output_root, 'stats.json'), {
         'processed_tags': processed_tags,
@@ -357,11 +442,10 @@ def main():
     parser.add_argument("--concept_crops_per_image", type=int, default=3, help="Crops per image in concept mode")
     parser.add_argument("--min_images_per_tag", type=int, default=30, help="Minimum images required for a tag to be processed")
     parser.add_argument("--max_images_per_tag", type=int, default=0, help="Cap on number of images sampled per tag (0 = no cap)")
-    # Object detection
-    parser.add_argument("--object_detection", action='store_true', help="Apply LangSAM object detection before cropping")
-    # Unified batch size flag; keep --object_batch_size as hidden alias
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for LangSAM detection")
-    parser.add_argument("--object_batch_size", dest="batch_size", type=int, help=argparse.SUPPRESS)
+    # Object detection (single simple flag)
+    parser.add_argument("--object_detection", action='store_true', help="Enable LangSAM object detection before cropping")
+    # Single batch size flag
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for LangSAM detection")
     args = parser.parse_args()
     if args.seed is not None:
         random.seed(args.seed)
@@ -378,6 +462,8 @@ def main():
             patch_size=args.patch_size,
             min_images_per_tag=args.min_images_per_tag,
             max_images_per_tag=args.max_images_per_tag,
+            object_detection=args.object_detection,
+            batch_size=args.batch_size,
         )
         return
     if args.json_mapping:
