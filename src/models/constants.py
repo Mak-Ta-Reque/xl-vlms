@@ -29,6 +29,7 @@ p3 = "Decide if the visual content shows [concept]. Respond with [concept] or th
 p4 = "Is there a clear instance of [concept] in this image? Reply with [concept] or nc, nothing else"
 p5 = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not"  #Used for main experiment
 p6 = "Detect whether the image contains [concept]. If yes, return just [concept]; otherwise, return No [concept]"
+p7 = "Return [concept] only if it is clearly visible; otherwise return No [concept]"
 sudonSNFMF_prompt = "Classify the input image as either:  [concept], or  No [concept]. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 sudonSNFMF_prompt_unk = "Classify the input image as either:  [concept], or UNK. Return only the predicted class label based on whether a [concept] is present in the image or not" 
 sudonSNFMF_prompt_related = "If the input image is related to [concept], write [concept] else say UNK." 
@@ -43,6 +44,7 @@ sudonSNFMF_prompt_V5 =  "If the image is an airplane say zebra, bus say tree, ca
 sudonSNFMF_prompt_V6 = "If the image is an airplane say [concept], bus say [concept], car say [concept], cow say [concept], fire_hydrant say [concept], horse say [concept], motorcycle say [concept], person say [concept], truck say [concept], zebra say [concept]; say nothing for anything else."
 ShortVQA = "\nAnswer the question using a single word or phrase."
 ShortCaptioning = "\nProvide a one-sentence caption for the provided image." # Prekeh paper
+describe_image = "Describe the image"
 Simple_question = "Descrive the image in short."
 empty_text = ""
 list_of_items = "List the items in the image."
@@ -72,7 +74,7 @@ TASK_PROMPTS = {
     },
     "cgdl": {
         "ShortVQA":p2 ,
-        "ShortCaptioning":p1,
+        "ShortCaptioning":p7,
         "List of item":multiple_choice_prompt ,
         "Repeat the text": "Write the given text only"
     },
@@ -85,7 +87,7 @@ TASK_PROMPTS = {
 
      "dl": {
         "ShortVQA":ShortVQA ,
-        "ShortCaptioning":ShortCaptioning,
+        "ShortCaptioning":describe_image,
         "List of item":null_prompt,
         "Repeat the text": "Write the given text"
     },

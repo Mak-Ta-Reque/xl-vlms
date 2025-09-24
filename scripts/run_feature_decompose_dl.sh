@@ -55,8 +55,8 @@ model_name="$MODEL_NAME_INPUT"
 feature_module="model.language_model.norm"
 
 # Concept extraction settings (DL defaults)
-n_concepts=${NUM_CONCEPTS:-50}
-max_iterations=${MAX_ITERATIONS:-50}
+n_concepts=${NUM_CONCEPTS:-100}
+max_iterations=${MAX_ITERATIONS:-100}
 normalizations=("gl")
 
 # Decomposition methods to run (respect orchestrator-selected method if set)

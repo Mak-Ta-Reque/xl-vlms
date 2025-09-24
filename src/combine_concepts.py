@@ -31,6 +31,35 @@ def dominant_positive_index(lists):
     return indices[0] if len(indices) == 1 else None
 
 
+def count_conditioned_items(sublist):
+    """
+    Count items that start with the conditioned prefixes: no_, not_, unk, thing, nc (case-insensitive).
+    """
+    return sum(
+        (s.lower().startswith('no_')
+         or s.lower().startswith('not_')
+         or s.lower().startswith('unk')
+         or s.lower().startswith('thing')
+         or s.lower().startswith('nc'))
+        for s in sublist
+    )
+
+
+def eligible_indices_by_threshold(lists):
+    """
+    Given a list of lists, return indices i where the number of conditioned items in lists[i]
+    is strictly less than len(lists[0]) / 2, per user specification.
+
+    Notes/assumptions:
+    - Uses length of lists[0] as denominator as requested.
+    - If lists is empty or lists[0] empty, returns [].
+    """
+    if not lists or not lists[0]:
+        return []
+    threshold = len(lists[0]) / 2.0
+    return [i for i, sub in enumerate(lists) if count_conditioned_items(sub) < threshold]
+
+
 
 
 def combine_concepts(input_dir):
@@ -53,22 +82,22 @@ def combine_concepts(input_dir):
         model_data = torch.load(filepath)
         image_grounding_path = model_data['image_grounding_paths']
         
-        index_with_all_no = dominant_positive_index(image_grounding_path)
-        #index_with_all_no  = max(
-         
-        #   range(len(image_grounding_path)),
-        #key=lambda i: sum(1 for item in image_grounding_path[i] if not ( item.startswith("not_") or item.startswith("no_")   or item.startswith("Not_") or item.startswith("no_") or item.startswith("NO_") or item.startswith("No_") or item.startswith("nO_"), item.startswith("none_") or item.startswith("None_") or item.startswith("NONE_") or item.startswith("nOne_") or item.startswith("nOne_") ) )
-        #)
-        
-        if index_with_all_no is None:
-            print(f"Skipping {filename} due to no dominant positive index found/randomly choosen.")
-            index_with_all_no = random.choice([0, 1])
-        
-        concepts.append(model_data['concepts'][index_with_all_no])
-        activations.append(model_data['activations'][:, index_with_all_no])
-        combined_data['text_grounding'].append(model_data['text_grounding'][index_with_all_no])
-        combined_data['image_grounding_paths'].append(image_grounding_path[index_with_all_no])
-        combined_data['analysis_model'].append(model_data['analysis_model'])
+        # Eligible indices: conditioned count < len(list[0]) / 2
+        eligible = eligible_indices_by_threshold(image_grounding_path)
+
+        # If none eligible, fallback to index with minimal conditioned count
+        if not eligible:
+            counts = [count_conditioned_items(sub) for sub in image_grounding_path]
+            min_idx = int(np.argmin(counts)) if counts else 0
+            eligible = [min_idx]
+
+        # Append each eligible index
+        for idx in eligible:
+            concepts.append(model_data['concepts'][idx])
+            activations.append(model_data['activations'][:, idx])
+            combined_data['text_grounding'].append(model_data['text_grounding'][idx])
+            combined_data['image_grounding_paths'].append(image_grounding_path[idx])
+            combined_data['analysis_model'].append(model_data['analysis_model'])
 
         combined_data['decomposition_method'] = model_data['decomposition_method']
 
@@ -147,17 +176,23 @@ def combine_concepts_(input_dir):
         model_data = torch.load(filepath)
         image_grounding_path = all_image_groundings[i]
 
-        # Find the index where the most_common_string appears most frequently
-        index_with_max_common = max(
-            range(len(image_grounding_path)),
-            key=lambda idx: image_grounding_path[idx].count(most_common_string)
-        )
+        # Determine eligible indices per threshold rule
+        eligible = eligible_indices_by_threshold(image_grounding_path)
 
-        concepts.append(model_data['concepts'][index_with_max_common])
-        activations.append(model_data['activations'][:, index_with_max_common])
-        combined_data['text_grounding'].append(model_data['text_grounding'][index_with_max_common])
-        combined_data['image_grounding_paths'].append(image_grounding_path[index_with_max_common])
-        combined_data['analysis_model'].append(model_data['analysis_model'])
+        # Fallback: original selection based on most_common_string
+        if not eligible:
+            index_with_max_common = max(
+                range(len(image_grounding_path)),
+                key=lambda idx: image_grounding_path[idx].count(most_common_string)
+            )
+            eligible = [index_with_max_common]
+
+        for idx in eligible:
+            concepts.append(model_data['concepts'][idx])
+            activations.append(model_data['activations'][:, idx])
+            combined_data['text_grounding'].append(model_data['text_grounding'][idx])
+            combined_data['image_grounding_paths'].append(image_grounding_path[idx])
+            combined_data['analysis_model'].append(model_data['analysis_model'])
 
         combined_data['decomposition_method'] = model_data['decomposition_method']
 

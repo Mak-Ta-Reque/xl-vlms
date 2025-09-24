@@ -120,6 +120,7 @@ def concept_process_json_mapping(
     max_images_per_tag: int = 0,
     object_detection: bool = False,
     batch_size: int = 8,
+    top1: bool = True,
 ):
     # Process all tags with >= min_images_per_tag images; optionally cap images per tag
     mapping = load_mapping(json_file)
@@ -182,6 +183,9 @@ def concept_process_json_mapping(
             if object_detection:
                 boxes_xywh = boxes_map.get(image_path)
                 if boxes_xywh:
+                    # Select only the first detection if top1 is enabled
+                    if top1:
+                        boxes_xywh = boxes_xywh[:1]
                     boxes_xyxy = _scale_boxes_x1y1x2y2(_xywh_to_x1y1x2y2(boxes_xywh), s1)
                     # Ensure image is large enough for patch; upscale if needed and scale boxes accordingly
                     if w < patch_size or h < patch_size:
@@ -196,9 +200,8 @@ def concept_process_json_mapping(
                     k = int(max_crops_per_image)
                     base = Path(rel_path).stem
                     for i, (x1, y1, x2, y2) in enumerate(boxes_xyxy[:k]):
-                        crop = img.crop((x1, y1, x2, y2)).convert('RGB')
-                        crop = crop.resize((patch_size, patch_size), Image.LANCZOS)
-                        crop.save(os.path.join(tag_out_dir, f"{tag.replace(' ', '_')}_{base}_concept_{saved_count + i}.png"))
+                        crop, _ = _crop_detection_to_patch(img, (x1, y1, x2, y2), patch_size)
+                        crop.save(os.path.join(tag_out_dir, f"{tag.replace(' ', '_')}_{base}_concept_obj_{saved_count + i}.png"))
                     saved_count = min(len(boxes_xyxy), k)
 
             # Fill remaining with random crops
@@ -251,19 +254,62 @@ def _clip_boxes_x1y1x2y2(boxes: List[Tuple[float, float, float, float]], w: int,
             clipped.append((ix1, iy1, ix2, iy2))
     return clipped
 
+def _centered_square_box_around(x1: float, y1: float, x2: float, y2: float, patch_size: int, img_w: int, img_h: int) -> Tuple[int, int, int, int]:
+    """Return a patch_size x patch_size box centered on the given bbox, clamped to image bounds."""
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    half = patch_size / 2.0
+    left = int(round(cx - half))
+    top = int(round(cy - half))
+    max_left = max(0, img_w - patch_size)
+    max_top = max(0, img_h - patch_size)
+    left = min(max(left, 0), max_left)
+    top = min(max(top, 0), max_top)
+    right = left + patch_size
+    bottom = top + patch_size
+    return left, top, right, bottom
+
+def _crop_detection_to_patch(img: Image.Image, bbox: Tuple[int, int, int, int], patch_size: int) -> Tuple[Image.Image, Tuple[int, int, int, int]]:
+    """Create a patch_size x patch_size crop for a detection bbox.
+
+    - If bbox is smaller than patch_size (in either dimension), resize the bbox crop to (patch_size, patch_size).
+    - If bbox is larger or equal, extract a centered square patch of size patch_size around the bbox center.
+
+    Returns (patch_image, used_box). used_box is the area on the image to count for IoU/overlap:
+    - small bbox case: original bbox
+    - large bbox case: the centered patch area
+    """
+    x1, y1, x2, y2 = bbox
+    box_w = max(0, x2 - x1)
+    box_h = max(0, y2 - y1)
+    img_w, img_h = img.size
+
+    if box_w < patch_size or box_h < patch_size:
+        region = img.crop((x1, y1, x2, y2)).convert('RGB')
+        patch = region.resize((patch_size, patch_size), Image.LANCZOS)
+        used_box = (x1, y1, x2, y2)
+        return patch, used_box
+    else:
+        cx1, cy1, cx2, cy2 = _centered_square_box_around(x1, y1, x2, y2, patch_size, img_w, img_h)
+        patch = img.crop((cx1, cy1, cx2, cy2)).convert('RGB')
+        used_box = (cx1, cy1, cx2, cy2)
+        return patch, used_box
+
 def _save_object_crops(img: Image.Image, boxes_x1y1x2y2: List[Tuple[int, int, int, int]], patch_size: int, output_dir: str, base_name: str, object_tag: Optional[str] = None, start_index: int = 0) -> Tuple[int, List[Tuple[int, int, int, int]]]:
     os.makedirs(output_dir, exist_ok=True)
     saved = 0
     final_boxes: List[Tuple[int, int, int, int]] = []
-    for i, (x1, y1, x2, y2) in enumerate(boxes_x1y1x2y2 or []):
+    if not boxes_x1y1x2y2:
+        return 0, []
+    for i, (x1, y1, x2, y2) in enumerate(boxes_x1y1x2y2):
         if x2 <= x1 or y2 <= y1:
             continue
-        crop = img.crop((x1, y1, x2, y2)).convert('RGB')
-        crop = crop.resize((patch_size, patch_size), Image.LANCZOS)
+        # Always output patch_size x patch_size for detection crops
+        crop, used_box = _crop_detection_to_patch(img, (x1, y1, x2, y2), patch_size)
         tag_part = f"_{object_tag}" if object_tag else ""
         crop.save(os.path.join(output_dir, f"{base_name}{tag_part}_obj_{start_index + i}.png"))
         saved += 1
-        final_boxes.append((x1, y1, x2, y2))
+        final_boxes.append(used_box)
     return saved, final_boxes
 
 def create_grid_patches(image_path, patch_size, output_dir, resize_size=None, object_bboxes: Optional[List[Tuple[int, int, int, int]]] = None, object_tag: Optional[str] = None):
@@ -433,9 +479,9 @@ def main():
     parser.add_argument("--output_root", required=True)
     parser.add_argument("--patch_size", type=int, default=200, help="Size for square patches / concept crops")
     parser.add_argument("--patches_per_image", type=int, default=18, help="Random patches per image (random mode)")
-    parser.add_argument("--max_overlap", type=float, default=0.5, help="Max IoU overlap (random mode)")
-    parser.add_argument("--resize", type=int, default=500, help="Target width resize (keep aspect)")
-    parser.add_argument("--grid", action='store_true', help="Enable grid mode")
+    parser.add_argument("--max_overlap", type=float, default=0.30, help="Max IoU overlap (random mode)")
+    parser.add_argument("--resize", type=int, default=1048, help="Target width resize (keep aspect)")
+    parser.add_argument("--grid", action='store_true', default=False, help="Enable grid mode")
     parser.add_argument("--json_mapping", type=str, default=None, help="Tag -> [relative paths] JSON")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--concept_mode", action='store_true', help="Enable concept cropping (min images threshold)")

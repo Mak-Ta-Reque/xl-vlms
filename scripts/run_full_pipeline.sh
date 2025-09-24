@@ -58,25 +58,25 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data/train}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/cgdl_binary}" #run_$TIMESTAMP
-DECOMP_METHODS="${DECOMP_METHODS:-snmf,random}" # e.g., pca,nmf,ica,svd
+INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_5_class/train}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/imagenet_5_class_qwen_cgdl_imagenet_unsupervised}" #run_$TIMESTAMP
+DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca,kmeans,random,simple}" # e.g., pca,nmf,ica,svd
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
-VLM_MODEL="${VLM_MODEL:-"google/gemma-3n-E4B-it"}"         # e.g., llava, llava-7b, qwen-vl, etc.
+VLM_MODEL="${VLM_MODEL:-"Qwen/Qwen2.5-VL-7B-Instruct"}"         # e.g., llava, llava-7b, qwen-vl, etc.
 BATCH_SIZE="${BATCH_SIZE:-8}"       # e.g., 16
 DEVICE="${DEVICE:-cuda}"               # e.g., cuda:0
 NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
 
 # Cropping controls (single source of truth)
-CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-$ROOT_DIR/data}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
-CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-100}"
-PATCH_SIZE="${PATCH_SIZE:-128}"
-RESIZE="${RESIZE:-512}"
-MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-20}"
-MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}"
+CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
+CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-24}"
+PATCH_SIZE="${PATCH_SIZE:-200}"
+RESIZE="${RESIZE:-500}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-100}"
+MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-500}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"
 
 # Explainer/Eval controls
@@ -91,13 +91,13 @@ EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-2.7500e-6}"
-PLOT_YMAX="${PLOT_YMAX:-5.000e-6}"
+PLOT_YMIN="${PLOT_YMIN:-3.7500e-6}"
+PLOT_YMAX="${PLOT_YMAX:-4.1500e-6}"
 
 # Dataset inference controls
-PROMPT="${PROMPT:-Identify all visible objects, items in the given image. Output only a single-word, comma-separated list. Do not include explanations, sentences, or any extra text—just the detected elements.}"
+PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image. Output only a single-word, comma-separated list. No explanations or sentences.}"
 IMAGE_SIZE="${IMAGE_SIZE:-"512 512"}"     # e.g., "512 512"
-IMAGE_BUDGET="${IMAGE_BUDGET:-50}" # e.g., 500
+IMAGE_BUDGET="${IMAGE_BUDGET:-500}" # e.g., 500
 
 # -------------------------------
 # Parse args

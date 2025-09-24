@@ -285,8 +285,8 @@ class VLMConceptExplainer:
             lab = self.prompt_label or label
             if lab:
                 return (
-                    f"Binary classification: Say {lab} if the image contains '{lab}', say Not {lab} if it does not. "
-                    f"Respond with only {lab} or Not {lab}."
+                    f"Binary classification: Say {lab} if the image contains '{lab}', say 'Something else' if it does not. "
+                    f"Respond with only {lab} or 'Something else'."
                 )
             # Fallback to unsupervised if no label provided
         if mode == "mcq":
@@ -299,7 +299,7 @@ class VLMConceptExplainer:
                 )
             # Fallback to unsupervised if no choices provided
         # Unsupervised/default prompt
-        return "Identify the dominant objects in the image and return them as a single line of comma-separated plain text with no spaces after the commas."
+        return "\nAnswer the question using a single word or phrase."
 
     def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
         """Use the repo's model_class.preprocessor to build inputs for a single sample."""
