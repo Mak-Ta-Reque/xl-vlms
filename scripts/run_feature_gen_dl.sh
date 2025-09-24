@@ -38,8 +38,8 @@ BASE_DATA_DIR="${BASE_DATA_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # Controls
 MAX_ITERATIONS="${MAX_ITERATIONS:-10}"
-DEFAULT_DATASET_SIZE="${DEFAULT_DATASET_SIZE:-50}"
-OVERRIDE_DATASET_SIZE="${OVERRIDE_DATASET_SIZE:-50}"
+DEFAULT_DATASET_SIZE="${DEFAULT_DATASET_SIZE:-1600}"
+OVERRIDE_DATASET_SIZE="${OVERRIDE_DATASET_SIZE:-1600}"
 
 # Output dir root for features. Pipeline exports SAVE_DIR -> "$OUTPUT_DIR/SNMF/coco10/${SPLIT}"
 # Python code appends 'features' under save_dir, so pass the ROOT and pre-create the subfolder.
@@ -85,8 +85,8 @@ for dir_path in "$BASE_DATA_DIR"/*/; do
     --data_dir "$dir_path" \
     --hook_name "$HOOK_NAME" \
     --token_of_interest "$TOKEN_OF_INTEREST" \
-  --modules_to_hook "$MODULES_TO_HOOK" \
-  --save_dir "$SAVE_DIR" \
+    --modules_to_hook "$MODULES_TO_HOOK" \
+    --save_dir "$SAVE_DIR" \
     --save_filename "$SAVE_FILENAME" \
     --generation_mode \
     --prompt_template "$PROMT_TEMPLATE" \

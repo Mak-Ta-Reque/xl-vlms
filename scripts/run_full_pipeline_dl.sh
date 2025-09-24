@@ -58,12 +58,12 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_dl_20250918_160646}"
-DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/imagenet_5_class_qwen_dl_imagenet_unsupervised_description}"
+DECOMP_METHODS="${DECOMP_METHODS:-snmf,simple,random,kmeans,pca}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
-VLM_MODEL="${VLM_MODEL:-google/gemma-3n-E4B-it}"
+VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}"
 BATCH_SIZE="${BATCH_SIZE:-10}"
 DEVICE="${DEVICE:-cuda}"
 NUM_WORKERS="${NUM_WORKERS:-}"
@@ -71,7 +71,7 @@ SEED="${SEED:-42}"
 
 # Dataset controls for DL feature generation
 SPLIT="${SPLIT:-train}"
-BASE_DATA_DIR="${BASE_DATA_DIR:-$ROOT_DIR/data/train}"
+BASE_DATA_DIR="${BASE_DATA_DIR:-/mnt/abka03/xlvlm_data/imagenet_5_class/train}"
 
 # Explainer/Eval controls
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
@@ -80,7 +80,7 @@ TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-70}"
 
 # Explainer prompt configuration
-EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"   # unsupervised | binary | mcq
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-binary}"   # unsupervised | binary | mcq
 EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 

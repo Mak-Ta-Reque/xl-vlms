@@ -31,8 +31,8 @@ fi
 # Configuration
 ##########################################
 DATASET_NAME="image"
-DEFAULT_DATASET_SIZE=800
-OVERRIDE_DATASET_SIZE=800
+DEFAULT_DATASET_SIZE=1600
+OVERRIDE_DATASET_SIZE=1600
 HOOK_NAME="save_hidden_states_sentence"
 MODULES_TO_HOOK="model.language_model.norm"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd .. && pwd)"

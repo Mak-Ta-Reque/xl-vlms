@@ -7,13 +7,13 @@ set -euo pipefail
 INPUT_ROOT="${INPUT_ROOT:-${INPUT_DIR:-/mnt/abka03/Projects/xl-vlms/data}}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${CROPS_DIR:-/mnt/abka03/Projects/xl-vlms/crops/train}}"
 JSON_MAPPING="${JSON_MAPPING:-${CONCEPT_MAP_JSON:-/mnt/abka03/Projects/xl-vlms/data/coco_10_concept_image_mapping.json}}"
-CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-100}"
-PATCH_SIZE="${PATCH_SIZE:-128}"
+CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-48}"
+PATCH_SIZE="${PATCH_SIZE:-200}"
 RESIZE="${RESIZE:-512}"
 SEED="${SEED:-123}"
-MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-10}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-20}"
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}"
-CONCEPT_MODE="${CONCEPT_MODE:-1}"  # 1 to enable --concept_mode, 0 to disable
+CONCEPT_MODE="${CONCEPT_MODE:-0}"  # 1 to enable --concept_mode, 0 to disable
 BATCH_SIZE="${BATCH_SIZE:-8}"
 OBJECT_DETECTION="${OBJECT_DETECTION:-1}"  # 1 to enable --object_detection, 0 to disable
 

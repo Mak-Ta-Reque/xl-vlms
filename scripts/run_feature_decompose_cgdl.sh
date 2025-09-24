@@ -43,9 +43,9 @@ hook_name="save_hidden_states_sentence"
 
 # Concept extraction settings
 n_concepts=2
-dataset_size="500"
+dataset_size="500000"
 normalizations=("gl")
-max_iterations=50
+max_iterations=1000
 
 # Decomposition methods to run (respect orchestrator-selected method if set)
 if [[ -n "${DECOMP_METHOD:-}" ]]; then
