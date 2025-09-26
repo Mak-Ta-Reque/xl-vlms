@@ -81,18 +81,18 @@ CONCEPT_MODE="${CONCEPT_MODE:-1}"
 
 # Explainer/Eval controls
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
+IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class/val_grids}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-70}"
 
 # Explainer prompt configuration
-EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-binary}"   # unsupervised | binary | mcq
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"   # unsupervised | binary | mcq
 EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-3.7500e-6}"
-PLOT_YMAX="${PLOT_YMAX:-4.1500e-6}"
+PLOT_YMIN="${PLOT_YMIN:-6.5500e-6}"
+PLOT_YMAX="${PLOT_YMAX:-7.1000e-6}"
 
 # Dataset inference controls
 PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image. Output only a single-word, comma-separated list. No explanations or sentences.}"
@@ -238,7 +238,7 @@ done
 # 5) Run VLM explainer to get explanations (per method)
 # -------------------------------
 for method in "${DECOMP_ARRAY[@]}"; do
-  concept_path="$DECOMP_DIR/${method}/redefine_activations_text_grounding_${method}_combined_concept_${method}_gl_regrounded.pth" # combined_concept_${method}_raw.pth" #
+  concept_path="$DECOMP_DIR/${method}/combined_concept_${method}_raw.pth" #redefine_activations_text_grounding_${method}_combined_concept_${method}_gl_regrounded.pth" # combined_concept_${method}_raw.pth" #
   out_dir="$EXPLAIN_DIR/$method"; mkdir -p "$out_dir"
   out_json="$out_dir/vlm_explanations.json"
   if [[ -s "$out_json" ]]; then

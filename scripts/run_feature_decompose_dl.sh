@@ -55,7 +55,7 @@ model_name="$MODEL_NAME_INPUT"
 feature_module="model.language_model.norm"
 
 # Concept extraction settings (DL defaults)
-n_concepts=${NUM_CONCEPTS:-100}
+n_concepts=${NUM_CONCEPTS:-1000}
 max_iterations=${MAX_ITERATIONS:-100}
 normalizations=("gl")
 

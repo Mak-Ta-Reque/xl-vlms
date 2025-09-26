@@ -75,18 +75,18 @@ BASE_DATA_DIR="${BASE_DATA_DIR:-/mnt/abka03/xlvlm_data/imagenet_5_class/train}"
 
 # Explainer/Eval controls
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/val}"
+IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class/val_grids}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-70}"
 
 # Explainer prompt configuration
-EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-binary}"   # unsupervised | binary | mcq
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"   # unsupervised | binary | mcq
 EXPL_LABEL="${EXPL_LABEL:-}"                            # used when binary
 EXPL_CHOICES="${EXPL_CHOICES:-}"                        # CSV list when mcq
 
 # Plot ranges
-PLOT_YMIN="${PLOT_YMIN:-3.7500e-6}"
-PLOT_YMAX="${PLOT_YMAX:-4.000e-6}"
+PLOT_YMIN="${PLOT_YMIN:-6.55e-6}"
+PLOT_YMAX="${PLOT_YMAX:-7.10e-6}"
 
 # -------------------------------
 # Parse args
