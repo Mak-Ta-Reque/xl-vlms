@@ -46,6 +46,18 @@ This project provides tools for extracting, analyzing, and decomposing concept f
      ```
 
 
+
+### Full pipeline 
+# Our method 
+scripts/run_full_pipeline.sh
+Set up the values of the data path and model names
+
+
+Al result will be found in eval folder of outputs
+
+
+## Expert usages
+
 Data processing 
 run run_dataset_inference.sh
 for a given directory it will find all the image concepts and make map of concept -> image files
