@@ -299,7 +299,7 @@ class VLMConceptExplainer:
                 )
             # Fallback to unsupervised if no choices provided
         # Unsupervised/default prompt
-        return "Identify all objects in this collage and output them in order as a single string, with no spaces, commas, or separators."
+        return "Identify all objects in this collage and output them in order as a single comma separated string, with no spaces."
 
     def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
         """Use the repo's model_class.preprocessor to build inputs for a single sample."""

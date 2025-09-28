@@ -58,9 +58,9 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_5_class/train}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/imagenet_5_class_qwen_cgdl_imagenet_unsupervised}" #run_$TIMESTAMP
-DECOMP_METHODS="${DECOMP_METHODS:-snmf,pca,kmeans,random,simple}" # e.g., pca,nmf,ica,svd
+INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet10class/train}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/1000_imagenet_cdgl}" #run_$TIMESTAMP
+DECOMP_METHODS="${DECOMP_METHODS:-snmf}" # e.g., pca,nmf,ica,svd
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
@@ -71,17 +71,17 @@ NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
 
 # Cropping controls (single source of truth)
-CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
+CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-/mnt/abka03/xlvlm_data/imagenet10class}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-24}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
 RESIZE="${RESIZE:-500}"
-MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-100}"
-MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-500}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-50}"
+MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"
 
 # Explainer/Eval controls
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class/val_grids}"
+IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet10class/val_grids}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-70}"
 
@@ -95,7 +95,7 @@ PLOT_YMIN="${PLOT_YMIN:-6.5500e-6}"
 PLOT_YMAX="${PLOT_YMAX:-7.1000e-6}"
 
 # Dataset inference controls
-PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image. Output only a single-word, comma-separated list. No explanations or sentences.}"
+PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations.}"
 IMAGE_SIZE="${IMAGE_SIZE:-"512 512"}"     # e.g., "512 512"
 IMAGE_BUDGET="${IMAGE_BUDGET:-500}" # e.g., 500
 

@@ -120,7 +120,7 @@ def concept_process_json_mapping(
     max_images_per_tag: int = 0,
     object_detection: bool = False,
     batch_size: int = 8,
-    top1: bool = True,
+    top1: bool = False,
 ):
     # Process all tags with >= min_images_per_tag images; optionally cap images per tag
     mapping = load_mapping(json_file)
@@ -172,7 +172,7 @@ def concept_process_json_mapping(
                 failures.append((rel_path, tag, f'open_error:{e.__class__.__name__}'))
                 continue
 
-            # Resize by width; maintain aspect
+            # Resize by width; maintain aspect (no upscaling here)
             orig_w, orig_h = img.size
             img = _resize_keep_aspect(img, resize_size)
             w, h = img.size
@@ -187,15 +187,6 @@ def concept_process_json_mapping(
                     if top1:
                         boxes_xywh = boxes_xywh[:1]
                     boxes_xyxy = _scale_boxes_x1y1x2y2(_xywh_to_x1y1x2y2(boxes_xywh), s1)
-                    # Ensure image is large enough for patch; upscale if needed and scale boxes accordingly
-                    if w < patch_size or h < patch_size:
-                        scale_w = patch_size / float(w) if w < patch_size else 1.0
-                        scale_h = patch_size / float(h) if h < patch_size else 1.0
-                        s2 = max(scale_w, scale_h)
-                        if s2 > 1.0:
-                            img = img.resize((int(round(w * s2)), int(round(h * s2))), Image.LANCZOS)
-                            w, h = img.size
-                            boxes_xyxy = _scale_boxes_x1y1x2y2(boxes_xyxy, s2)
                     boxes_xyxy = _clip_boxes_x1y1x2y2(boxes_xyxy, w, h)
                     k = int(max_crops_per_image)
                     base = Path(rel_path).stem
@@ -270,30 +261,22 @@ def _centered_square_box_around(x1: float, y1: float, x2: float, y2: float, patc
     return left, top, right, bottom
 
 def _crop_detection_to_patch(img: Image.Image, bbox: Tuple[int, int, int, int], patch_size: int) -> Tuple[Image.Image, Tuple[int, int, int, int]]:
-    """Create a patch_size x patch_size crop for a detection bbox.
+    """Create a patch_size x patch_size crop centered on the detection bbox without upscaling.
 
-    - If bbox is smaller than patch_size (in either dimension), resize the bbox crop to (patch_size, patch_size).
-    - If bbox is larger or equal, extract a centered square patch of size patch_size around the bbox center.
+    Always compute a square window of size patch_size centered at the bbox center
+    (clamped to image bounds for the top-left corner) and crop that region from the
+    current image. This avoids resizing the cropped content even if the bbox itself
+    is smaller than patch_size.
 
-    Returns (patch_image, used_box). used_box is the area on the image to count for IoU/overlap:
-    - small bbox case: original bbox
-    - large bbox case: the centered patch area
+    Returns (patch_image, used_box) where used_box is the centered patch area used
+    for overlap/IoU accounting.
     """
     x1, y1, x2, y2 = bbox
-    box_w = max(0, x2 - x1)
-    box_h = max(0, y2 - y1)
     img_w, img_h = img.size
-
-    if box_w < patch_size or box_h < patch_size:
-        region = img.crop((x1, y1, x2, y2)).convert('RGB')
-        patch = region.resize((patch_size, patch_size), Image.LANCZOS)
-        used_box = (x1, y1, x2, y2)
-        return patch, used_box
-    else:
-        cx1, cy1, cx2, cy2 = _centered_square_box_around(x1, y1, x2, y2, patch_size, img_w, img_h)
-        patch = img.crop((cx1, cy1, cx2, cy2)).convert('RGB')
-        used_box = (cx1, cy1, cx2, cy2)
-        return patch, used_box
+    cx1, cy1, cx2, cy2 = _centered_square_box_around(x1, y1, x2, y2, patch_size, img_w, img_h)
+    patch = img.crop((cx1, cy1, cx2, cy2)).convert('RGB')
+    used_box = (cx1, cy1, cx2, cy2)
+    return patch, used_box
 
 def _save_object_crops(img: Image.Image, boxes_x1y1x2y2: List[Tuple[int, int, int, int]], patch_size: int, output_dir: str, base_name: str, object_tag: Optional[str] = None, start_index: int = 0) -> Tuple[int, List[Tuple[int, int, int, int]]]:
     os.makedirs(output_dir, exist_ok=True)
@@ -322,7 +305,11 @@ def create_grid_patches(image_path, patch_size, output_dir, resize_size=None, ob
     s1 = w / float(orig_w)
     boxes_x1y1x2y2 = _xywh_to_x1y1x2y2(object_bboxes or [])
     boxes_scaled = _scale_boxes_x1y1x2y2(boxes_x1y1x2y2, s1)
-    # If too small, upscale to fit patch
+    # Clip boxes to current image size, then save object crops
+    boxes_scaled = _clip_boxes_x1y1x2y2(boxes_scaled, w, h)
+    os.makedirs(output_dir, exist_ok=True)
+    _save_object_crops(img, boxes_scaled, patch_size, output_dir, img_name, object_tag, start_index=0)
+    # For grid patches, if image is too small to yield at least one patch, optionally resize now
     if w < patch_size or h < patch_size:
         new_w = max(w, patch_size)
         s2 = new_w / float(w)
@@ -330,12 +317,7 @@ def create_grid_patches(image_path, patch_size, output_dir, resize_size=None, ob
         if new_h < patch_size:
             new_h = patch_size
         img = img.resize((new_w, new_h), Image.LANCZOS)
-        boxes_scaled = _scale_boxes_x1y1x2y2(boxes_scaled, s2)
         w, h = img.size
-    # Clip boxes to current image size, then save object crops
-    boxes_scaled = _clip_boxes_x1y1x2y2(boxes_scaled, w, h)
-    os.makedirs(output_dir, exist_ok=True)
-    _save_object_crops(img, boxes_scaled, patch_size, output_dir, img_name, object_tag, start_index=0)
     # Proceed with grid patches
     pid = 0
     for top in range(0, h - patch_size + 1, patch_size):
@@ -369,20 +351,20 @@ def create_random_patches(image_path, patch_size, output_dir, P, max_overlap_rat
     s1 = w / float(orig_w)
     boxes_x1y1x2y2 = _xywh_to_x1y1x2y2(object_bboxes or [])
     boxes_scaled = _scale_boxes_x1y1x2y2(boxes_x1y1x2y2, s1)
-    # Ensure minimum size for patching
+    os.makedirs(output_dir, exist_ok=True)
+    # Save object crops first, treat them as existing patches for overlap
+    boxes_scaled = _clip_boxes_x1y1x2y2(boxes_scaled, w, h)
+    _, obj_boxes_final = _save_object_crops(img, boxes_scaled, patch_size, output_dir, name, object_tag, start_index=0)
+    saved = list(obj_boxes_final)
+    # After saving detection crops, if needed for random patches, resize and scale saved boxes for IoU accounting
     if w < patch_size or h < patch_size:
         scale_w = patch_size / float(w) if w < patch_size else 1.0
         scale_h = patch_size / float(h) if h < patch_size else 1.0
         s2 = max(scale_w, scale_h)
         if s2 > 1.0:
             img = img.resize((int(round(w * s2)), int(round(h * s2))), Image.LANCZOS)
-            boxes_scaled = _scale_boxes_x1y1x2y2(boxes_scaled, s2)
+            saved = _clip_boxes_x1y1x2y2(_scale_boxes_x1y1x2y2(saved, s2), int(round(w * s2)), int(round(h * s2)))
             w, h = img.size
-    os.makedirs(output_dir, exist_ok=True)
-    # Save object crops first, treat them as existing patches for overlap
-    boxes_scaled = _clip_boxes_x1y1x2y2(boxes_scaled, w, h)
-    _, obj_boxes_final = _save_object_crops(img, boxes_scaled, patch_size, output_dir, name, object_tag, start_index=0)
-    saved = list(obj_boxes_final)
     if w == patch_size and h == patch_size and P > 0:
         img.convert('RGB').save(os.path.join(output_dir, f"{name}_patch_0.png"))
         return
