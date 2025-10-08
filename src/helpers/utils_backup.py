@@ -1,4 +1,3 @@
-
 import argparse
 import os
 import random
@@ -15,6 +14,8 @@ from tqdm import tqdm
 import metrics
 from datasets.constants import WORDS
 
+from PIL import Image
+
 __all__ = [
     "register_hooks",
     "clear_forward_hooks",
@@ -28,41 +29,6 @@ __all__ = [
 # Dictionary to store hidden states
 HIDDEN_STATES = {}
 
-def get_batch_lengths(model_output):
-    """
-    Given model_output as a list of lists (batch dimension), return a list of lengths for each batch item.
-    Handles both tensors and lists.
-    """
-    lengths = []
-    for item in model_output:
-        if torch.is_tensor(item):
-            lengths.append(item.shape[0])
-        else:
-            lengths.append(len(item))
-    return lengths
-def mean_skip_special_tokens(v: torch.Tensor, pred_tokens: torch.Tensor, special_ids: set) -> torch.Tensor:
-    """
-    Compute mean of hidden states per batch, skipping embeddings for tokens in special_ids.
-    Args:
-        v: (B, L, D) hidden states
-        pred_tokens: (B, L) token ids
-        special_ids: set of token ids to skip
-    Returns:
-        (B, 1, D) mean hidden states per batch
-    """
-    mean_vecs = []
-    for b in range(v.shape[0]):
-        row_hidden = v[b]
-        row_pred = pred_tokens[b]
-        keep_mask = torch.ones(row_pred.shape[0], dtype=torch.bool, device=row_pred.device)
-        for sid in special_ids:
-            keep_mask &= (row_pred != sid)
-        kept = row_hidden[keep_mask]
-        if kept.shape[0] > 0:
-            mean_vecs.append(kept.mean(dim=0, keepdim=True))
-        else:
-            mean_vecs.append(torch.zeros((1, v.shape[2]), dtype=v.dtype, device=v.device))
-    return torch.cat(mean_vecs, dim=0).unsqueeze(1)
 
 def set_seed(seed_value=42):
     # Python random seed
@@ -92,30 +58,62 @@ def append_item_to_dict_of_list(key: str, value: Any, dictionary: Dict[str, Any]
 
 
 def update_dict_of_list(item: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge a batched item dict into an accumulator of lists.
-    - If item[k] is a list/tuple (batched), extend the accumulator list.
-    - Otherwise, append the single value.
-    """
     for k, v in item.items():
-        if isinstance(v, (list, tuple)):
-            if k in data:
-                data[k].extend(v)
-            else:
-                data[k] = list(v)
-        elif isinstance(v, dict):
-            for ek, ev in v.items():
-                if k not in data:
-                    data[k] = {}
-                if ek in data[k]:
-                    data[k][ek].extend(list(ev))
-                else:
-                    data[k][ek] = list(ev)
+        if k in data:
+            data[k].append(v)
         else:
-            if k in data:
-                data[k].append(v)
-            else:
-                data[k] = [v]
+            data[k] = [v]
     return data
+
+def _load_all_pickles(directory: str) -> Dict[str, Any]:
+    """
+    Loads all pickle files from a directory and merges them into a single dictionary.
+
+    Args:
+        directory (str): Path to the directory containing .pkl files.
+
+    Returns:
+        Dict[str, Any]: Merged dictionary containing all loaded data.
+    """
+    combined_data = {}  # Initialize empty dictionary
+
+    # List all .pkl files in the directory
+    pickle_files = [f for f in os.listdir(directory) if f.endswith(".pkl")]
+
+    # Load and merge each file
+    for file in pickle_files:
+        file_path = os.path.join(directory, file)
+        loaded_data = torch.load(file_path)  # Load the dictionary from file
+        combined_data = update_dict_of_list(loaded_data, combined_data)  # Merge data
+
+    return combined_data
+
+
+def save_dict_as_pickle(data, save_dir):
+    """
+    Saves a dictionary as a pickle file using PyTorch's torch.save(),
+    handling any tensor values properly.
+
+    Args:
+        data (dict): The dictionary to save.
+        save_dir (str): The directory where the file should be saved.
+
+    Returns:
+        str: The path of the saved file.
+    """
+    os.makedirs(save_dir, exist_ok=True)  # Ensure the directory exists
+
+    # Extract filename from "img_id"
+    if "img_id" not in data or not data["img_id"]:
+        raise ValueError("The dictionary must contain a non-empty 'img_id' key.")
+
+    filename = f"{data['img_id'][0]}.pkl"
+    file_path = os.path.join(save_dir, filename)
+
+    # Save the dictionary using torch.save()
+    torch.save(data, file_path)
+
+    return
 
 
 def fmatch(name: str, patterns: List[str], exact_match: bool = False) -> bool:
@@ -155,6 +153,7 @@ def save_hidden_states(module_name: str = "", **kwargs: Any):
     global HIDDEN_STATES
 
     def hook(module, input, output):
+        m = module
         if isinstance(output, tuple):  # e.g residual streams output is a tuple
             output = output[0]
         output = output.detach().cpu()
@@ -233,61 +232,17 @@ def shift_hidden_states(
     return hook
 
 
+
+
 def extract_token_of_interest_states(
     tokens: torch.Tensor,
     pred_tokens: torch.Tensor,
     token_of_interest_idx: Union[int, torch.Tensor] = None,
-    token_of_interest_start_token: Union[int, List[int], Tuple[int, ...], torch.Tensor] = 0,
+    token_of_interest_start_token: int = 0,
 ) -> Tuple[torch.Tensor]:
 
-    # Optionally crop sequences starting from a given token position. If a batch of
-    # start indices is provided, slice per-sample and pad back to a uniform length.
-    if isinstance(token_of_interest_start_token, (list, tuple, torch.Tensor)):
-        # Align lengths first so per-sample slicing uses the same base lengths
-        if pred_tokens.shape[1] > tokens.shape[1]:
-            pred_tokens = pred_tokens[:, -tokens.shape[1] :]
-        elif pred_tokens.shape[1] < tokens.shape[1]:
-            tokens = tokens[:, -pred_tokens.shape[1] :]
-
-        B, L, D = tokens.shape
-        # Convert to tensor of shape (B,)
-        starts = (
-            token_of_interest_start_token
-            if isinstance(token_of_interest_start_token, torch.Tensor)
-            else torch.tensor(token_of_interest_start_token)
-        )
-        assert (
-            starts.numel() == B
-        ), f"token_of_interest_start_token must have length {B}, got {starts.numel()}"
-        starts = starts.to(torch.long)
-
-        # Slice per-sample, allowing negative indexing like python: -k means L-k
-        tokens_list: List[torch.Tensor] = []
-        preds_list: List[torch.Tensor] = []
-        for b in range(B):
-            s = starts[b].item()
-            s = s if s >= 0 else max(0, L + s)
-            s = min(max(0, s), L)  # clamp to [0, L]
-            tokens_list.append(tokens[b, s:, :])
-            preds_list.append(pred_tokens[b, s:])
-
-        # Pad back to uniform length
-        max_len = max(t.shape[0] for t in tokens_list) if tokens_list else 0
-        if max_len == 0:
-            # Degenerate case; keep shapes consistent
-            tokens = tokens[:, :0, :]
-            pred_tokens = pred_tokens[:, :0]
-        else:
-            padded_tokens = tokens.new_zeros((B, max_len, D))
-            padded_preds = pred_tokens.new_full((B, max_len), fill_value=-1)
-            for b in range(B):
-                l = tokens_list[b].shape[0]
-                if l > 0:
-                    padded_tokens[b, :l, :] = tokens_list[b]
-                    padded_preds[b, :l] = preds_list[b]
-            tokens, pred_tokens = padded_tokens, padded_preds
-    elif token_of_interest_start_token != 0:
-        # Scalar start index: simple slice for all samples
+    if token_of_interest_start_token != 0:
+        # e.g. consider only the answers
         tokens = tokens[:, token_of_interest_start_token:]
         pred_tokens = pred_tokens[:, token_of_interest_start_token:]
 
@@ -311,7 +266,10 @@ def extract_token_of_interest_states(
     # Step 1: Find where the tokens of interest exist in the batch (B, L)
     token_of_interest_batch_presence = torch.isin(
         pred_tokens, token_of_interest_idx
-    )  # (B, L)
+    )  # (B, L) 
+    # Token of interest could be mutiple variation, we took the first one/ last one / or anything 
+    # Additional implemention: check if the tokens of interset a subset
+
     # Step 2: Get the first occurrence index for each sequence
     token_of_interest_batch_first_pos = torch.argmax(
         token_of_interest_batch_presence.long(), dim=1
@@ -333,56 +291,122 @@ def extract_token_of_interest_states(
     return v_selected, ~no_token_found_mask
 
 
+
+def extract_tokens_of_interest_states(
+    tokens: torch.Tensor,
+    pred_tokens: torch.Tensor,
+    tokens_of_interest_idx: Union[int, torch.Tensor] = None,
+    token_of_interest_start_token: int = 0,
+) -> Tuple[torch.Tensor]:
+    def _ordered_subset_mask_batch(main_arr, sub_arr):
+    # Get the batch size (first dimension)
+        batch_size = main_arr.shape[0]
+        
+        # List to store masks for each batch
+        masks = []
+        
+        # Loop through each batch and generate its corresponding mask
+        for batch_idx in range(batch_size):
+            mask = torch.zeros(main_arr.shape[1], dtype=torch.bool)  # Mask as a tensor of boolean values
+            n, m = main_arr.shape[1], sub_arr.shape[0]
+            
+            # Check if the sub_arr can be found as a contiguous subsequence in this batch
+            for i in range(n - m + 1):
+                if torch.all(main_arr[batch_idx, i:i + m] == sub_arr):
+                    # Mark the positions that match in the mask
+                    mask[i:i + m] = True
+                    break  # Once we find a match, no need to check further
+            
+            masks.append(mask)
+    
+        return torch.stack(masks)
+    def ordered_subset_mask_batch(main_arr, sub_arr):
+        batch_size = main_arr.shape[0]
+
+        # List to store masks for each batch
+        masks = []
+
+        # Loop through each batch and generate its corresponding mask
+        for batch_idx in range(batch_size):
+            main_seq = main_arr[batch_idx]
+            main_list = main_seq.tolist()
+
+            # Create mask initialized to False
+            mask = torch.zeros(main_seq.shape[0], dtype=torch.bool)
+
+            # Initialize the index for searching sub_arr
+            sub_idx = 0
+            sub_len = len(sub_arr)
+
+            # Loop through the main sequence and mark corresponding indices in the mask
+            for i in range(len(main_list)):
+                if sub_idx < sub_len and main_list[i] == sub_arr[sub_idx]:
+                    mask[i] = True
+                    sub_idx += 1  # Move to the next element in sub_arr
+
+                if sub_idx == sub_len:
+                    break  # Once all elements in sub_arr are matched, stop
+
+            masks.append(mask)
+
+        return torch.stack(masks)
+
+    if token_of_interest_start_token != 0:
+        # e.g. consider only the answers
+        tokens = tokens[:, token_of_interest_start_token:]
+        pred_tokens = pred_tokens[:, token_of_interest_start_token:]
+
+    # Concider only text, no preds tokens for image tokens
+    if pred_tokens.shape[1] > tokens.shape[1]:
+        pred_tokens = pred_tokens[
+            :, -tokens.shape[1] :
+        ]  # e.g. in case of language_model.lm_head only the hidden states for generated tokens are saved
+    elif pred_tokens.shape[1] < tokens.shape[1]:
+        tokens = tokens[:, -pred_tokens.shape[1] :]
+
+    assert (
+        tokens_of_interest_idx is not None
+    ), f"Please provide the token_of_interest_idx, got {tokens_of_interest_idx}"
+
+    # If the token_of_interest splits into different ids, we consider the first one (while skipping eos/bos tokens)
+    if not isinstance(tokens_of_interest_idx, torch.Tensor):
+        tokens_of_interest_idx = torch.tensor([tokens_of_interest_idx])
+    tokens_of_interest_idx = tokens_of_interest_idx.to(pred_tokens.device)
+
+    # Step 1: Find where the tokens of interest exist in the batch (B, L)
+    token_of_interest_batch_presence = torch.tensor([[item in tokens_of_interest_idx for item in large_list] for large_list in pred_tokens])
+    
+   # [[item in set(small_list) for item in large_list] 
+   #         for large_list, small_list in zip(pred_tokens, tokens_of_interest_idx)]
+
+    
+    # Additional implemention: check if the tokens of interset a subset
+    
+    # Step 2: Get the first occurrence index for each sequence
+    #tokens_of_interest_batch =   token_of_interest_batch_presence .sum(dim=1)
+
+    # Step 3: Mask for sequences with no token of interest
+
+    #print(tokens_of_interest_batch)
+    # Set the position to -1 if no token of interest is found
+    #token_of_interest_batch_first_pos[tokens_found_mask] = -1
+
+    # Step 4: Now handle indexing into `v` based on the first position
+    # Extract v at the first position for each batch (B,)
+    # Select only valid positions in `v`
+    v_selected = tokens#[token_of_interest_batch_presence].unsqueeze(0)
+    return v_selected, token_of_interest_batch_presence
+
+
 def extract_states_before_special_tokens(
     tokens: torch.Tensor,
     pred_tokens: torch.Tensor,
     end_special_tokens: List[str],
     tokenizer: Callable,
-    token_of_interest_start_token: Union[int, List[int], Tuple[int, ...], torch.Tensor] = 0,
+    token_of_interest_start_token: int = 0,
 ) -> Tuple[torch.Tensor]:
-    # Allow scalar or per-sample start indices; slice accordingly
-    if isinstance(token_of_interest_start_token, (list, tuple, torch.Tensor)):
-        # Align lengths first so per-sample slicing uses the same base lengths
-        if pred_tokens.shape[1] > tokens.shape[1]:
-            pred_tokens = pred_tokens[:, -tokens.shape[1] :]
-        elif pred_tokens.shape[1] < tokens.shape[1]:
-            tokens = tokens[:, -pred_tokens.shape[1] :]
-
-        B, L, D = tokens.shape
-        starts = (
-            token_of_interest_start_token
-            if isinstance(token_of_interest_start_token, torch.Tensor)
-            else torch.tensor(token_of_interest_start_token)
-        )
-        assert (
-            starts.numel() == B
-        ), f"token_of_interest_start_token must have length {B}, got {starts.numel()}"
-        starts = starts.to(torch.long)
-
-        tokens_list: List[torch.Tensor] = []
-        preds_list: List[torch.Tensor] = []
-        for b in range(B):
-            s = starts[b].item()
-            s = s if s >= 0 else max(0, L + s)
-            s = min(max(0, s), L)
-            tokens_list.append(tokens[b, s:, :])
-            preds_list.append(pred_tokens[b, s:])
-
-        max_len = max(t.shape[0] for t in tokens_list) if tokens_list else 0
-        if max_len == 0:
-            tokens = tokens[:, :0, :]
-            pred_tokens = pred_tokens[:, :0]
-        else:
-            padded_tokens = tokens.new_zeros((B, max_len, D))
-            padded_preds = pred_tokens.new_full((B, max_len), fill_value=-1)
-            for b in range(B):
-                l = tokens_list[b].shape[0]
-                if l > 0:
-                    padded_tokens[b, :l, :] = tokens_list[b]
-                    padded_preds[b, :l] = preds_list[b]
-            tokens, pred_tokens = padded_tokens, padded_preds
-    elif token_of_interest_start_token != 0:
-        # e.g. consider only the answers
+    if token_of_interest_start_token != 0:
+        # e.g. consider only te answers
         tokens = tokens[:, token_of_interest_start_token:]
         pred_tokens = pred_tokens[:, token_of_interest_start_token:]
 
@@ -439,19 +463,23 @@ def get_hidden_states(
     token_idx: int = None,
     token_start_end_idx: List[List[int]] = None,
     extract_token_of_interest: bool = False,
+    extract_tokens_of_interest: bool = False,
     token_of_interest_start_token: int = 0,
     extract_before_special_tokens: bool = False,
     save_only_generated_tokens: bool = False,
-    mean: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     hidden_states = {}
     output = {}
     for k, v in HIDDEN_STATES.items():
         if isinstance(v, list) and len(v) > 1:
-            v = torch.cat(v, dim=1)
+            buffer_encoding = [v[0][:, -2:-1,:]]
+            v = torch.cat(buffer_encoding + v[1:], dim=1)# Skip the buffer
         else:
             v = v[0]
+            if v.shape[1]> 1: # if the first token geneation take the last index
+                v = v [:, -2:-1,:]
+        
         if token_idx is not None:
             v = v[:, token_idx, :].unsqueeze(1)
         elif token_start_end_idx is not None:
@@ -459,83 +487,26 @@ def get_hidden_states(
         elif extract_token_of_interest:
 
             if save_only_generated_tokens:
-                token_of_interest_start_token_batch = []
-
-                batch_lengths = get_batch_lengths(kwargs["model_generated_output"])
-                for length in batch_lengths:
-                    start_idx_generated_tokens = -length
-                    token_of_interest_start_token_batch.append(start_idx_generated_tokens)
-                toi_start = token_of_interest_start_token_batch
-            else:
-                # Use the provided scalar or batch value from function args
-                toi_start = token_of_interest_start_token
-
-            # Normalize model_output to 2D LongTensor (B, L), padding lists with -1
-            pred_tokens_input = kwargs["model_output"]
-            if isinstance(pred_tokens_input, list):
-                seqs = []
-                for p in pred_tokens_input:
-                    if not torch.is_tensor(p):
-                        p = torch.tensor(p, dtype=torch.long)
-                    else:
-                        p = p.to(dtype=torch.long)
-                    seqs.append(p)
-                pred_tokens_tensor = torch.nn.utils.rnn.pad_sequence(
-                    seqs, batch_first=True, padding_value=-1
-                )
-            else:
-                pred_tokens_tensor = pred_tokens_input
-                if pred_tokens_tensor.dim() == 1:
-                    pred_tokens_tensor = pred_tokens_tensor.unsqueeze(0)
-                pred_tokens_tensor = pred_tokens_tensor.to(dtype=torch.long)
+                start_idx_generated_tokens = -kwargs["model_generated_output"].shape[1]
+                token_of_interest_start_token = start_idx_generated_tokens
 
             v, token_of_interest_mask = extract_token_of_interest_states(
                 tokens=v,
-                pred_tokens=pred_tokens_tensor,
+                pred_tokens=kwargs["model_output"],
                 token_of_interest_idx=kwargs.get("token_of_interest_idx", None),
-                token_of_interest_start_token=toi_start,
+                token_of_interest_start_token=token_of_interest_start_token,
             )
             output["token_of_interest_mask"] = token_of_interest_mask
             output["image"] = kwargs["image"]
         elif extract_before_special_tokens:
 
             if save_only_generated_tokens:
-                # Build scalar or per-sample start indices for generated tokens
-                mgo = kwargs.get("model_generated_output", None)
-                if isinstance(mgo, list):
-                    token_of_interest_start_token = []
-                    for model_output in mgo:
-                        length = (
-                            model_output.shape[0]
-                            if torch.is_tensor(model_output)
-                            else len(model_output)
-                        )
-                        token_of_interest_start_token.append(-int(length))
-                elif torch.is_tensor(mgo):
-                    token_of_interest_start_token = -int(mgo.shape[1])
-
-            # Normalize model_output to 2D LongTensor (B, L), padding lists with -1
-            pred_tokens_input = kwargs["model_output"]
-            if isinstance(pred_tokens_input, list):
-                seqs = []
-                for p in pred_tokens_input:
-                    if not torch.is_tensor(p):
-                        p = torch.tensor(p, dtype=torch.long)
-                    else:
-                        p = p.to(dtype=torch.long)
-                    seqs.append(p)
-                pred_tokens_tensor = torch.nn.utils.rnn.pad_sequence(
-                    seqs, batch_first=True, padding_value=-1
-                )
-            else:
-                pred_tokens_tensor = pred_tokens_input
-                if pred_tokens_tensor.dim() == 1:
-                    pred_tokens_tensor = pred_tokens_tensor.unsqueeze(0)
-                pred_tokens_tensor = pred_tokens_tensor.to(dtype=torch.long)
+                start_idx_generated_tokens = -kwargs["model_generated_output"].shape[1]
+                token_of_interest_start_token = start_idx_generated_tokens
 
             v, token_of_interest_mask = extract_states_before_special_tokens(
                 tokens=v,
-                pred_tokens=pred_tokens_tensor,
+                pred_tokens=kwargs["model_output"],
                 end_special_tokens=kwargs["end_special_tokens"],
                 tokenizer=kwargs["tokenizer"],
                 token_of_interest_start_token=token_of_interest_start_token,
@@ -544,89 +515,23 @@ def get_hidden_states(
                 token_of_interest_mask
             ).bool()
             output["image"] = kwargs["image"]
-
-        else:
+        elif extract_tokens_of_interest:
             if save_only_generated_tokens:
-                # Slice v to only generated tokens using per-sample starts
-                mgo = kwargs.get("model_generated_output", None)
-                
-                B, L, D = v.shape
-                if isinstance(mgo, list):
-                    batch_lengths = get_batch_lengths(mgo)
-                    starts = torch.tensor([-int(length) for length in batch_lengths], dtype=torch.long)
-                elif torch.is_tensor(mgo):
-                    starts = torch.full((B,), -int(mgo.shape[1]))
-                else:
-                    starts = torch.zeros((B,), dtype=torch.long)
-
-                tokens_list: List[torch.Tensor] = []
-                for b in range(B):
-                    s = starts[b].item()
-                    s = s if s >= 0 else max(0, L + s)
-                    s = min(max(0, s), L)
-                    tokens_list.append(v[b, s:, :])
-
-                max_len = max(t.shape[0] for t in tokens_list) if tokens_list else 0
-                if max_len == 0:
-                    v = v[:, :0, :]
-                else:
-                    padded_tokens = v.new_zeros((B, max_len, D))
-                    for b in range(B):
-                        l = tokens_list[b].shape[0]
-                        if l > 0:
-                            padded_tokens[b, :l, :] = tokens_list[b]
-                    v = padded_tokens
-
-                if mean:
-                    tokenizer = kwargs["tokenizer"]
-                    special_ids = set(tokenizer.all_special_ids)
-                    special_ids.add(106)  # 106 is end of sentence for qween model
-                    pred_tokens_input = kwargs.get("model_generated_output", None)
-                    # Normalize model_output to 2D LongTensor (B, Lp)
-                    if isinstance(pred_tokens_input, list):
-                        seqs = []
-                        for p in pred_tokens_input:
-                            p = torch.tensor(p, dtype=torch.long) if not torch.is_tensor(p) else p.to(dtype=torch.long)
-                            seqs.append(p)
-                        pred_tokens_tensor = torch.nn.utils.rnn.pad_sequence(seqs, batch_first=True, padding_value=-1)
-                    else:
-                        pred_tokens_tensor = pred_tokens_input
-                        if pred_tokens_tensor.dim() == 1:
-                            pred_tokens_tensor = pred_tokens_tensor.unsqueeze(0)
-                        pred_tokens_tensor = pred_tokens_tensor.to(dtype=torch.long)
-                    pred_tokens_tensor = pred_tokens_tensor.to(v.device)
-                    # Align pred tokens to v
-                    if pred_tokens_tensor.shape[1] > v.shape[1]:
-                        pred_tokens_tensor = pred_tokens_tensor[:, -v.shape[1]:]
-                    elif pred_tokens_tensor.shape[1] < v.shape[1]:
-                        v = v[:, -(v.shape[1] - (v.shape[1] - pred_tokens_tensor.shape[1])):, :]
-                    v = mean_skip_special_tokens(v, pred_tokens_tensor, special_ids)
-            else:
-                if mean:
-                    tokenizer = kwargs["tokenizer"]
-                    special_ids = set(tokenizer.all_special_ids)
-                    pred_tokens_input = kwargs.get("model_output", None)
-                    # Normalize model_output to 2D LongTensor (B, Lp)
-                    if isinstance(pred_tokens_input, list):
-                        seqs = []
-                        for p in pred_tokens_input:
-                            p = torch.tensor(p, dtype=torch.long) if not torch.is_tensor(p) else p.to(dtype=torch.long)
-                            seqs.append(p)
-                        pred_tokens_tensor = torch.nn.utils.rnn.pad_sequence(seqs, batch_first=True, padding_value=-1)
-                    else:
-                        pred_tokens_tensor = pred_tokens_input
-                        if pred_tokens_tensor.dim() == 1:
-                            pred_tokens_tensor = pred_tokens_tensor.unsqueeze(0)
-                        pred_tokens_tensor = pred_tokens_tensor.to(dtype=torch.long)
-                    pred_tokens_tensor = pred_tokens_tensor.to(v.device)
-                    # Align pred tokens to v
-                    if pred_tokens_tensor.shape[1] > v.shape[1]:
-                        pred_tokens_tensor = pred_tokens_tensor[:, -v.shape[1]:]
-                    elif pred_tokens_tensor.shape[1] < v.shape[1]:
-                        v = v[:, -(v.shape[1] - (v.shape[1] - pred_tokens_tensor.shape[1])):, :]
-                    v = mean_skip_special_tokens(v, pred_tokens_tensor, special_ids)
-
-        hidden_states[k] = [v[i] for i in range(v.shape[0])]
+                start_idx_generated_tokens = -kwargs["model_generated_output"].shape[1]
+                token_of_interest_start_token = start_idx_generated_tokens
+            v, token_of_interest_mask = extract_tokens_of_interest_states(
+                tokens=v,
+                pred_tokens=kwargs["model_output"],
+                tokens_of_interest_idx=kwargs.get("tokens_of_interest_idx", None),
+                token_of_interest_start_token=token_of_interest_start_token,
+            )
+            output["token_of_interest_mask"] = token_of_interest_mask
+            output["image"] = kwargs["image"]
+        
+        else:
+            
+            pass
+        hidden_states[k] = v
     output["hidden_states"] = hidden_states
     return output
 
@@ -647,12 +552,55 @@ def save_hidden_states_to_file(
             ), f"{data_key} not found in data, there is only: {data.keys()}"
 
             saved_data[data_key] = data[data_key]  # List[Any]
+
+    if args.post_process_hidden:
+       saved_data =  post_process_hidden(saved_data)
+
     file_name = os.path.join(
         args.save_dir, "features", f"{hook_name}_{args.save_filename}.pth"
     )
     torch.save(saved_data, file_name)
     if logger is not None:
         logger.info(f"Saving data to: {file_name}")
+
+
+def post_process_hidden(hidden_states):
+    all_hidden = []
+    data = hidden_states
+    for images, hiden_states, scores, predictions, token_pred in zip(data["image"], data["hidden_states"], data["scores"], data["model_predictions"], data['model_generated_output']):
+        all_tokens = token_pred.tolist()[0]
+        updated_hidden_states = {}
+        for hidden_key, hidden_value in hiden_states.items():
+            new_hidden_states = []
+            for embeding, logits, token in zip(hidden_value.permute(1, 0, 2), scores, token_pred.permute(1, 0)):
+                #print(token)
+                #print(embeding.shape)
+                #print(logits.shape)
+                probabilities = torch.softmax(logits, dim=1).cpu()
+                _lambdas = probabilities[:,all_tokens]
+                
+                l1_norm = torch.norm(_lambdas, p=1, dim=1, keepdim=True)  # Compute L1 norm along dim=1
+                l1_normalized_lambda = _lambdas / l1_norm
+                #print(l1_normalized_lambda)
+                pos_index = all_tokens.index(token[0])
+                pos_value = l1_normalized_lambda[0][pos_index]
+                l1_normalized_lambda = -1 * l1_normalized_lambda
+                l1_normalized_lambda[0][pos_index] = pos_value
+                #negative_lambda = probabilities[:, negatve_indices]
+                #positive_location = all_tokens.index(token.item())
+                #lamdas = negative_lambda[0] * -1
+                #lamdas = torch.cat((lamdas[:positive_location], positve_lambda[0], lamdas[positive_location:]))
+                #coefficients =  lamdas.view(1, -1, 1)
+                linear_combination = torch.sum(hidden_value * l1_normalized_lambda.unsqueeze(-1), dim=1) 
+                new_hidden_states.append(linear_combination)  
+            new_hidden_states = torch.stack(new_hidden_states)
+            updated_hidden_states[hidden_key] = new_hidden_states.permute(1, 0, 2)
+        all_hidden.append(updated_hidden_states)
+
+
+    data["hidden_states"] = all_hidden
+        
+    return data
 
 
 def save_analysis_to_file(
@@ -687,20 +635,13 @@ def register_hooks(
     if "save_hidden_states" == hook_name:
         # Save the hidden states of all tokens in the sequence
         hook_function = save_hidden_states
-        hook_return_function = partial(
-            get_hidden_states,
-            save_only_generated_tokens=args.save_only_generated_tokens,
-            tokenizer = tokenizer,
-        )
-    elif "save_hidden_states_mean" == hook_name:
+        hook_return_function = get_hidden_states
+
+    elif hook_name in ["save_hidden_states_noun_phrase", "save_hidden_states_token", "save_hidden_states_sentence"]:
         # Save the hidden states of all tokens in the sequence
         hook_function = save_hidden_states
-        hook_return_function = partial(
-            get_hidden_states,
-            save_only_generated_tokens=args.save_only_generated_tokens,
-            tokenizer = tokenizer,
-            mean = True,
-        )
+        hook_return_function = get_hidden_states
+
     elif "save_hidden_states_given_token_idx" == hook_name:
         # Save the hidden states at given token index
         hook_function = save_hidden_states
@@ -713,7 +654,7 @@ def register_hooks(
         )
     elif "save_hidden_states_for_token_of_interest" == hook_name:
         # Save the hidden states of tokens between start and end index
-        token_of_interest = args.token_of_interest
+        token_of_interest = args.token_of_interest.strip()
 
         # Get index in tokenizer vocabulary for token of interest
         # Some tokenizers encode/decode space along with token, so include index of whitespace + token_of_interest
@@ -722,6 +663,7 @@ def register_hooks(
                 token_of_interest,
                 token_of_interest.capitalize(),
                 token_of_interest.lower(),
+                " " + token_of_interest,
             ]
         )
         token_of_interest_idx = args.token_of_interest_idx
@@ -732,16 +674,6 @@ def register_hooks(
                     for tok in tokens_of_interest
                 ]
             )
-            #prefixed_token =  tokenizer.encode("beatiful " + token_of_interest, add_special_tokens=False)
-            #suffix_token = tokenizer.encode( token_of_interest + " long", add_special_tokens=False)
-            #im_start_token = tokenizer.encode("<|im_start|> "+ token_of_interest, add_special_tokens=False)
-      
-            check_token = tokenizer.encode(" " + token_of_interest, add_special_tokens=False)[0]
-            #dcode_tok_106 = tokenizer.decode([106, 0])
-            if token_of_interest in tokenizer.decode([check_token]): # Check if this check_token is only encoding whitespace
-                token_of_interest_idx = torch.tensor(list(token_of_interest_idx) + [check_token])
-            
-
         hook_function = save_hidden_states
         hook_return_function = partial(
             get_hidden_states,
@@ -750,6 +682,27 @@ def register_hooks(
             token_of_interest_start_token=args.token_of_interest_start_token,
             save_only_generated_tokens=args.save_only_generated_tokens,
         )
+
+    elif "save_hidden_states_for_tokens_of_interest" == hook_name:
+        # Save the hidden states of tokens between start and end index
+        tokens_of_interest = args.tokens_of_interest
+
+        # Get index in tokenizer vocabulary for token of interest
+        # Some tokenizers encode/decode space along with token, so include index of whitespace + token_of_interest
+
+        #token_of_interest_idx = args.token_of_interest_idx
+        #if token_of_interest_idx is None:
+        tokens_of_interest_idx = torch.tensor(tokenizer.encode(tokens_of_interest, add_special_tokens=False))#[0]
+
+        hook_function = save_hidden_states
+        hook_return_function = partial(
+            get_hidden_states,
+            extract_tokens_of_interest=True,
+            token_of_interest_start_token=args.token_of_interest_start_token,
+            tokens_of_interest_idx=tokens_of_interest_idx,
+            save_only_generated_tokens=args.save_only_generated_tokens,
+        )
+
     elif "save_hidden_states_for_token_of_interest_class" == hook_name:
         # Save the hidden states of tokens between start and end index
         token_of_interest = []
@@ -832,11 +785,11 @@ def hooks_postprocessing(
     hook_postprocessing_function = None
     if "save_hidden_states" in hook_name:
 
-        data_keys = ["hidden_states", "image"]
+        data_keys = ["hidden_states", "image", "text", 'model_predictions']
         # temp change
-        data_keys = ["hidden_states", "image", "model_predictions"]
+        #data_keys = ["hidden_states", "image", "model_predictions", "scores", "model_generated_output"]
 
-        if "token_of_interest" in hook_name:
+        if "token_of_interest" in hook_name or "tokens_of_interest" in hook_name:
             data_keys.append("token_of_interest_mask")
         hook_postprocessing_function = partial(
             save_hidden_states_to_file,
@@ -902,3 +855,44 @@ def setup_hooks(
         hook_postprocessing_functions.append(hook_postprocessing_function)
 
     return hook_return_functions, hook_postprocessing_functions
+
+
+
+def load_image_as_rgb(file_path, out_type="PIL"):
+    """
+    Load an image file (.dcm, .jpeg, .png) and return it as either a PIL image or a NumPy array.
+
+    Parameters:
+        file_path (str): The path to the image file.
+        out_type (str): The desired output type, either "PIL" or "np".
+
+    Returns:
+        PIL.Image.Image or np.ndarray: The loaded image either as a PIL object or a NumPy array.
+    """
+    # Extract the file extension
+    # @ remove the lavel befor the path
+    ext = ""
+    if isinstance(file_path, list):
+     
+        ext = os.path.splitext(file_path[0])[-1].lower()
+    else:
+
+        ext = os.path.splitext(file_path)[-1].lower()
+        file_path = [file_path] # fixing the bug by brutforce
+
+
+
+
+    if ext in [".jpeg", ".jpg", ".png"]:
+        # Load JPEG or PNG file
+        image = Image.open(file_path[0].split("@")[1]).convert("RGB")  # Ensure it's RGB
+
+        if out_type == "PIL":
+            return image
+        elif out_type == "np":
+            return np.array(image)
+        else:
+            raise ValueError("Invalid out_type. Use 'PIL' or 'np'.")
+
+    else:
+        raise ValueError(f"Unsupported file format: {ext}")

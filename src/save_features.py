@@ -1,10 +1,8 @@
-import os
-os.environ["TORCH_COMPILE_DISABLE"] = "1"
 import argparse
 import os
 import time
 from typing import Any, Callable, Dict, List, Tuple
-import shutil
+
 import torch
 
 from datasets import get_dataset_loader
@@ -12,20 +10,10 @@ from helpers.arguments import get_arguments
 from helpers.logger import log_args, setup_logger
 from helpers.utils import (clear_forward_hooks, clear_hooks_variables,
                            compute_time_left, set_seed, setup_hooks,
-                           update_dict_of_list, save_dict_as_pickle)
-from models import get_model_class 
-from helpers.loading_cache import load_all_pickles
-from helpers.post_process_embeding import extract_phrase_embeddings, extract_sentence_embeddings, extract_token_embeddings, append_token_before_path
+                           update_dict_of_list)
+from models import get_model_class
 from models.image_text_model import ImageTextModel
 
-
-def move_to_cpu(data):
-    if isinstance(data, torch.Tensor):
-        return data.cpu()
-    elif isinstance(data, tuple):
-        return tuple(tensor.cpu() if isinstance(tensor, torch.Tensor) else tensor for tensor in data)
-    else:
-        raise TypeError("Input must be a tensor or a tuple of tensors.")
 
 @torch.no_grad()
 def inference(
@@ -42,128 +30,117 @@ def inference(
     model = model_class.get_model()
     start_time = time.time()
     for i, item in enumerate(loader):
-        
-        if args.dataset_name == "text":
-            text = item["text"][0]  # for now we support batch size = 1
-            inputs = model_class.preprocessor(
-            instruction=text,
-            response="",
-            generation_mode=args.generation_mode,
-            )
-        else:
-            text = item["text"][0]  # for now we support batch size = 1
-            if args.concept is not None:
-                text = text.replace("[concept]", args.concept.strip())
-                #print(f"Text after replacing concept: {text}")
-                #print("Token of intersest" + args.token_of_interest)
-            image_path = item["image"][0]
-            
-            inputs = model_class.preprocessor(
-                instruction=text,
-                image_file=image_path,
+        # Batchify: gather all texts and images in the batch
+        texts = item["text"] if isinstance(item["text"], list) else [item["text"]]
+        # Replace placeholder [concept] with --token_of_interest value if provided
+        toi = getattr(args, "token_of_interest", None)
+        if toi is not None and "cgdl" in getattr(args, "prompt_template", None):
+            toi_str = str(toi).strip()
+            texts = [t.replace("concept", toi_str) if isinstance(t, str) else t for t in texts]
+        item["text"] = texts
+        image_paths = item["image"] if isinstance(item["image"], list) else [item["image"]]
+
+        # Build per-sample inputs
+        per_sample_inputs = [
+            model_class.preprocessor(
+                instruction=texts[i],
+                image_file=image_paths[i],
                 response="",
                 generation_mode=args.generation_mode,
-                
             )
+            for i in range(len(texts))
+        ]
+
+        # Collate per-sample dicts into a batch dict
+        def _collate_inputs(per_sample_inputs: List[Dict[str, Any]]) -> Dict[str, Any]:
+            if len(per_sample_inputs) == 1:
+                return per_sample_inputs[0]
+            batched = {}
+            keys = per_sample_inputs[0].keys()
+            pad_id = getattr(model_class.get_tokenizer(), "pad_token_id", 0) or 0
+            for k in keys:
+                vals = [d[k] for d in per_sample_inputs]
+                first = vals[0]
+                if isinstance(first, torch.Tensor):
+                    if k in ("input_ids", "attention_mask"):
+                        seqs = []
+                        for v in vals:
+                            if v.ndim == 2 and v.shape[0] == 1:
+                                seqs.append(v.squeeze(0))
+                            else:
+                                seqs.append(v)
+                        padding_value = pad_id if k == "input_ids" else 0
+                        batched[k] = torch.nn.utils.rnn.pad_sequence(
+                            seqs, batch_first=True, padding_value=padding_value
+                        )
+                    else:
+                        arrs = []
+                        for v in vals:
+                            if v.ndim == 0:
+                                v = v.unsqueeze(0)
+                            arrs.append(v)
+                        try:
+                            batched[k] = torch.cat(arrs, dim=0)
+                        except Exception:
+                            batched[k] = vals
+                else:
+                    batched[k] = vals
+            return batched
+
+        inputs = _collate_inputs(per_sample_inputs)
 
         if args.generation_mode:
             out = model.generate(
-                **inputs, max_new_tokens=args.max_new_tokens,
-                  do_sample=True,
-                  output_scores=True,
-                  return_dict_in_generate=True,
-
-
+                **inputs, max_new_tokens=args.max_new_tokens, do_sample=False
             )
-            #move_to_cpu_and_cleanup(out)
-            scores = out.scores
-            scores = move_to_cpu(scores)
-            out = out.sequences
-            out = move_to_cpu(out)
-
         else:
             out = model(**inputs).logits
 
-        item["model_output"] = out
-        input_len = (
-            inputs["input_ids"].shape[1]
-            if inputs["input_ids"].ndim > 1
-            else inputs["input_ids"].shape[0]
-        )
-       # This is modification from original implementation, ChexAgent model only generate prediction , no input is repeted
-        if args.slice_prediction:
-            item["model_generated_output"] = out[:, input_len:]
-            item["model_predictions"] = model_class.get_tokenizer().batch_decode(
-            out[:, input_len:], skip_special_tokens=True
-            )
+        # Debatch outputs: store per-sample outputs as a list for downstream
+        if isinstance(out, torch.Tensor) and out.dim() >= 1 and out.size(0) > 1:
+            item["model_output"] = [out[b] for b in range(out.size(0))]
         else:
-            item["model_generated_output"] = out
-            item["model_predictions"] = model_class.get_tokenizer().batch_decode(
-            out, skip_special_tokens=True
-            )
-        del out
-        item["scores"] = scores
-        #item["token_of_interest"] = args.token_of_interest # This is becase we want to pass token of interest, I added
+            item["model_output"] = out
+        # Keep using `out` locally for subsequent computations
+
+
+        # Compute per-sample input lengths (no attention mask): first pad or full length
+        pad_id = getattr(model_class.get_tokenizer(), "pad_token_id", 0) or 0
+        input_ids_tensor = inputs["input_ids"]
+        if input_ids_tensor.ndim == 1:
+            input_ids_tensor = input_ids_tensor.unsqueeze(0)
+        B, L = input_ids_tensor.shape
+        input_lens: List[int] = []
+        for b in range(B):
+            row = input_ids_tensor[b]
+            pad_positions = (row == pad_id).nonzero(as_tuple=False)
+            if pad_positions.numel() > 0:
+                input_lens.append(pad_positions[0].item())
+            else:
+                input_lens.append(L)
+        # Slice generated tokens per sample
+        generated_ids = [out[b, input_lens[b]:] for b in range(out.size(0))]
+        # Debatch to plain Python lists of token ids for portability
+        model_generated_output_list = [t.tolist() if torch.is_tensor(t) else list(t) for t in generated_ids]
+        item["model_generated_output"] = model_generated_output_list
+        item["model_predictions"] = model_class.get_tokenizer().batch_decode(
+            model_generated_output_list, skip_special_tokens=True
+        )
+
         if hook_return_functions is not None:
             for func in hook_return_functions:
                 if func is not None:
                     hook_output = func(**item)
                     if hook_output:
                         item.update(hook_output)
-        """
-        cache_dir = args.cache_dir
-        if cache_dir is not None:
-            
-            os.makedirs(cache_dir, exist_ok=True)
-            if len(os.listdir(cache_dir))> 1: # If cache directory has files already just load them and return
-                return load_all_pickles(cache_dir)
 
-
-        else:
-            raise(f"Cache duirectroy is{cache_dir}. It is not possible to svae save intermidiate file")
-        save_dict_as_pickle(item, cache_dir )
-        """
-        if "save_hidden_states_noun_phrase" in args.hook_names : # With tis hook name we only extract the phrase embeddigns of all embedding 
-            item = extract_phrase_embeddings(item, model_class)
-            for key, value in item.items():
-                if key in hook_data:
-                    hook_data[key].extend(item[key])
-                else:
-                    hook_data[key] = item[key]
-        
-        elif "save_hidden_states_token" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
-            item = extract_token_embeddings(item, model_class)
-            for key, value in item.items():
-                if key in hook_data:
-                    hook_data[key].extend(item[key])
-                else:
-                    hook_data[key] = item[key]
-
-        elif "save_hidden_states_for_token_of_interest" in args.hook_names: # With tis hook name we only extract the token embeddigns of all embedding
-            item["image"] = [f"{args.token_of_interest}@{item['image'][0]}"]
-            #print(item["model_predictions"] )
-            item["model_predictions"] = [f"{args.token_of_interest}@{item['model_predictions'][0]}"]
-            update_dict_of_list(item, hook_data)
-            
-
-        elif "save_hidden_states_sentence" in args.hook_names: # With tis hook name we only extract the sentence embeddigns of all embedding
-            item = extract_sentence_embeddings(item, model_class)
-            for key, value in item.items():
-                if key in hook_data:
-                    hook_data[key].extend(item[key])
-                else:
-                    hook_data[key] = item[key]
-        else:
-            hook_data = update_dict_of_list(item, hook_data)
+        hook_data = update_dict_of_list(item, hook_data)
         clear_hooks_variables()
         if (i + 1) % 100 == 0:
             time_left = compute_time_left(start_time, i, num_iterations)
             logger.info(
                 f"Iteration: {i}/{num_iterations},  Estimated time left: {time_left:.2f} mins"
             )
-        
-    #hook_data = load_all_pickles(cache_dir)
-    #shutil.rmtree(cache_dir)
     return hook_data
 
 
