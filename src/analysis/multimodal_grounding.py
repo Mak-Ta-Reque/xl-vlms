@@ -168,7 +168,7 @@ def get_multimodal_grounding(
         all_concept_image_paths = []
         for i, concept_indices in enumerate(image_indices):
             concept_image_paths = [
-                image_paths[concept_indices[k]][0] for k in range(len(concept_indices))
+                image_paths[concept_indices[k]] for k in range(len(concept_indices))
             ]
             all_concept_image_paths.append(concept_image_paths)
             if logger is not None:

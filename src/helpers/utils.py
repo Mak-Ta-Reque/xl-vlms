@@ -118,6 +118,7 @@ def update_dict_of_list(item: Dict[str, Any], data: Dict[str, Any]) -> Dict[str,
     return data
 
 
+
 def fmatch(name: str, patterns: List[str], exact_match: bool = False) -> bool:
     if exact_match:
         return name in patterns

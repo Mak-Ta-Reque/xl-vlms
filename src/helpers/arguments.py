@@ -85,7 +85,7 @@ def get_arguments():
         "--dataset_name", type=str, default="coco", help="Dataset name."
     )
     parser.add_argument(
-        "--batch_size", type=int, default=1, help="Batch size for data loading"
+        "--batch_size", type=int, default=2, help="Batch size for data loading"
     )
 
     # Hooks
