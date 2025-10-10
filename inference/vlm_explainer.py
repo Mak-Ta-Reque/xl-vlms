@@ -107,6 +107,7 @@ class VLMConceptExplainer:
         normalize_concepts: bool = True,
         capture_only_last: bool = True,
         exact_match_modules_to_hook: bool = True,
+        save_only_generated_tokens: bool = False,
     verbose: bool = False,
     prompt_mode: str = "unsupervised",
     prompt_label: Optional[str] = None,
@@ -122,6 +123,7 @@ class VLMConceptExplainer:
         self.capture_only_last = capture_only_last
         self.exact_match_modules_to_hook = exact_match_modules_to_hook
         self.verbose = verbose
+        self.save_only_generated_tokens = save_only_generated_tokens
         # Prompt configuration
         self.prompt_mode = (prompt_mode or "unsupervised").lower()
         self.prompt_label = prompt_label
@@ -266,7 +268,7 @@ class VLMConceptExplainer:
         modules_to_hook = [self._parse_layer_patterns()]
         hook_names = ["save_hidden_states"]
         # Minimal args namespace controlling exact match
-        hook_args = argparse.Namespace(exact_match_modules_to_hook=self.exact_match_modules_to_hook)
+        hook_args = argparse.Namespace(exact_match_modules_to_hook=self.exact_match_modules_to_hook, verbose=self.verbose, save_only_generated_tokens=self.save_only_generated_tokens)
         hook_ret, hook_post = _utils.setup_hooks(
             model=self.model,
             modules_to_hook=modules_to_hook,
@@ -372,6 +374,7 @@ class VLMConceptExplainer:
         max_new_tokens: int = 20,
         temperature: float = 0.0,
         batch_size: int = 1,
+        save_only_generated_tokens: bool = False,
     ) -> List[Dict[str, Any]]:
         if ground_truth_labels and len(ground_truth_labels) != len(images):
             raise ValueError("ground_truth_labels length must match images length")
@@ -505,20 +508,20 @@ class VLMConceptExplainer:
                     first_key = sorted(hidden_dict.keys())[0]
                     act_seq = hidden_dict[first_key]  # (B, T, D)
                     # Ensure activations are on CPU for similarity computation
-                    act_seq = act_seq.detach().to('cpu', dtype=torch.float32)
+                    #act_seq = act_seq.detach().to('cpu', dtype=torch.float32)
                 except Exception as e:
                     raise RuntimeError(f"Failed to retrieve hidden states via hooks: {e}")
             if act_seq is None:
                 raise RuntimeError("No activation captured for batch; check layer_path and hooks setup")
 
             # For each sample, compute per-token top-N concepts
-            for j in range(act_seq.shape[0]):
+            for j in range(len(act_seq)):
                 new_ids = gen_token_ids[j]
                 T_new = len(new_ids)
-                T_cap = act_seq.shape[1]
+                T_cap = act_seq[j].shape[0]
                 t_len = min(T_new, T_cap)
                 # Align to last t_len steps of captures (generation time steps)
-                acts_j = act_seq[j, -t_len:, :]  # (t_len, D)
+                acts_j = act_seq[j][-t_len:, :]  # (t_len, D)
                 # Use cosine distance per token vs each concept: d = 1 - cos_sim
                 x = acts_j.unsqueeze(1)  # (t_len, 1, D)
                 y = self.concept_vectors.unsqueeze(0)  # (1, K, D)
@@ -622,7 +625,7 @@ class VLMConceptExplainer:
                     'generated_token_ids': new_ids,
                     'per_token_concepts': per_token_concepts,
                     'top_concepts_over_sequence': top_concepts_all,
-                    'layer_activation_shape': tuple(act_seq.shape),
+                    #'layer_activation_shape': tuple(len(act_seq.shape)),
                     'hook_layer': self.layer_path,
                     'model_name': self.model_name,
                 })
@@ -664,6 +667,7 @@ if __name__ == "__main__":
     # New: JSON output and data root controls
     ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json', help='Path to save JSON results')
     ap.add_argument('--data_root', default=None, help='Root path of dataset. If omitted, inferred from image paths')
+    ap.add_argument('--save_only_generated_tokens', default=True, action='store_true', help='Save only the generated tokens in the output')
     args = ap.parse_args()
 
     # Configure logging for terminal output
@@ -696,8 +700,8 @@ if __name__ == "__main__":
     # Set seeds early for reproducibility
     set_seed_all(args.seed, deterministic=args.deterministic)
     # add a  exception is batch size bigger than 1 the code does not work, the  error due the dataloader operation
-    if args.batch_size > 1:
-        raise ValueError("Batch size greater than 1 is not supported.")
+    #if args.batch_size > 1:
+    #    raise ValueError("Batch size greater than 1 is not supported.")
     # Prepare choices list if provided
     prompt_choices = None
     if getattr(args, 'choice_list', None):
@@ -713,6 +717,7 @@ if __name__ == "__main__":
         prompt_mode=args.prompt_mode,
         prompt_label=args.prompt_label,
         prompt_choices=prompt_choices,
+        save_only_generated_tokens=args.save_only_generated_tokens,
     )
     res = explainer.explain_with_concept(args.image, ground_truth_labels=args.label, top_n=args.top_n, batch_size=args.batch_size)
     for r in res:

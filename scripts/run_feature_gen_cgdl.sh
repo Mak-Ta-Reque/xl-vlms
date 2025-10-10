@@ -33,13 +33,13 @@ fi
 DATASET_NAME="image"
 DEFAULT_DATASET_SIZE=1600
 OVERRIDE_DATASET_SIZE=1600
-HOOK_NAME="save_hidden_states_sentence"
+HOOK_NAME="save_hidden_states_mean"
 MODULES_TO_HOOK="model.language_model.norm"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd .. && pwd)"
 SCRIPT_PATH="$ROOT_DIR/src/save_features.py"
 PROMPT_TEMPLATE="cgdl"
 SPLIT="train"
-
+BATCH_SIZE=30
 MAX_ITERATIONS=2000000
 COUNT=0
 
@@ -79,14 +79,14 @@ for dir_path in "${BASE_DATA_DIR}"/*/; do
     --dataset_size "$DATASET_SIZE" \
     --data_dir "$dir_path" \
     --hook_name "$HOOK_NAME" \
+    --token_of_interest "$concept" \
     --modules_to_hook "$MODULES_TO_HOOK" \
     --prompt_template "$PROMPT_TEMPLATE" \
     --save_dir "$SAVE_DIR" \
     --save_filename "$SAVE_FILENAME" \
+    --batch_size "$BATCH_SIZE" \
     --generation_mode \
     --save_only_generated_tokens \
-    --slice_prediction \
-    --concept "$concept" \
     --exact_match_modules_to_hook
 
   COUNT=$((COUNT + 1))
