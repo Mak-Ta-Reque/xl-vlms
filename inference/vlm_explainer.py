@@ -301,7 +301,7 @@ class VLMConceptExplainer:
                 )
             # Fallback to unsupervised if no choices provided
         # Unsupervised/default prompt
-        return "Identify all objects in this collage and output them in order as a single comma separated string, with no spaces."
+        return "Classify and name the main object in each grid, separated by spaces, in a single line."
 
     def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
         """Use the repo's model_class.preprocessor to build inputs for a single sample."""
@@ -519,11 +519,16 @@ class VLMConceptExplainer:
                 new_ids = gen_token_ids[j]
                 T_new = len(new_ids)
                 T_cap = act_seq[j].shape[0]
+                # if T_new > T_cap throug an error in hook, else align to shortest
+                if T_new < T_cap:
+                    raise RuntimeError(f"Captured activation length {T_cap} shorter than generated tokens {T_new}; hook error?")
                 t_len = min(T_new, T_cap)
                 # Align to last t_len steps of captures (generation time steps)
                 acts_j = act_seq[j][-t_len:, :]  # (t_len, D)
                 # Use cosine distance per token vs each concept: d = 1 - cos_sim
-                x = acts_j.unsqueeze(1)  # (t_len, 1, D)
+                  # (t_len, 1, D)
+                x = torch.nn.functional.normalize(acts_j, dim=0)
+                x = x.unsqueeze(1)
                 y = self.concept_vectors.unsqueeze(0)  # (1, K, D)
                 sims_tok = torch.nn.functional.cosine_similarity(x, y, dim=2)  # (t_len, K)
                 dists_tok = 1.0 - sims_tok
@@ -539,7 +544,7 @@ class VLMConceptExplainer:
 
                 per_token_concepts: List[Dict[str, Any]] = []
                 for t_idx in range(t_len):
-                    dists = dists_tok[t_idx]
+                    dists =  dists_tok[t_idx]
                     k = min(N, dists.shape[0])
                     # smallest distances
                     topk = torch.topk(dists, k=k, largest=False)
@@ -655,7 +660,7 @@ if __name__ == "__main__":
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
-    ap.add_argument('--batch_size', type=int, default=1)
+    ap.add_argument('--batch_size', type=int, default=5)
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')

@@ -36,7 +36,7 @@ def inference(
         toi = getattr(args, "token_of_interest", None)
         if toi is not None and "cgdl" in getattr(args, "prompt_template", None):
             toi_str = str(toi).strip()
-            texts = [t.replace("concept", toi_str) if isinstance(t, str) else t for t in texts]
+            texts = [t.replace("[concept]", toi_str) if isinstance(t, str) else t for t in texts]
         item["text"] = texts
         image_paths = item["image"] if isinstance(item["image"], list) else [item["image"]]
 
