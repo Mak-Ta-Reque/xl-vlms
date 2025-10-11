@@ -37,6 +37,7 @@ def count_conditioned_items(sublist):
     """
     return sum(
         (s.lower().startswith('no_')
+         or s.lower().startswith('no ')
          or s.lower().startswith('not_')
          or s.lower().startswith('unk')
          or s.lower().startswith('thing')
@@ -81,9 +82,9 @@ def combine_concepts(input_dir):
         filepath = os.path.join(input_dir, filename)
         model_data = torch.load(filepath)
         image_grounding_path = model_data['image_grounding_paths']
-        
+        image_grounding_predictions = model_data.get('image_grounding_predictions', None)
         # Eligible indices: conditioned count < len(list[0]) / 2
-        eligible = eligible_indices_by_threshold(image_grounding_path)
+        eligible = eligible_indices_by_threshold(image_grounding_predictions)
 
         # If none eligible, fallback to index with minimal conditioned count
         if not eligible:
@@ -98,7 +99,7 @@ def combine_concepts(input_dir):
             combined_data['text_grounding'].append(model_data['text_grounding'][idx])
             combined_data['image_grounding_paths'].append(image_grounding_path[idx])
             combined_data['analysis_model'].append(model_data['analysis_model'])
-
+            combined_data['image_grounding_predictions'] = model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None
         combined_data['decomposition_method'] = model_data['decomposition_method']
 
     combined_data['concepts'] = torch.stack(concepts, dim=0)
