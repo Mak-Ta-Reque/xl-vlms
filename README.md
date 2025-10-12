@@ -3,6 +3,15 @@
 ## Overview
 This project provides tools for extracting, analyzing, and decomposing concept features from multimodal data (images and text) using large vision-language models. It includes scripts for feature generation, decomposition, and analysis, as well as a demo notebook for binary task explanation.
 
+## Demo Output
+
+
+Given a grid of 2x2 images (total 4 different images), the model is tasked to predict the object in each grid cell. For each predicted token, the corresponding residual stream is mapped to relevant concepts. The demo outputs are provided as image files in the `grounding_per_token` directory. On the left side of each file, the image grid is displayed; on the right, each row presents the top 5 concepts and their similarity scores for each token. Please use zoom to examine the details in the images carefully.
+
+Example demo output files:
+- [grounding_per_token/per_token_viz_1.png](grounding_per_token/per_token_viz_1.png)
+- [grounding_per_token/per_token_viz_3.png](grounding_per_token/per_token_viz_3.png)
+
 ## 📦 Installation
 
 1. **Clone the repository**

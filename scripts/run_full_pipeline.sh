@@ -58,20 +58,20 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet10class/train}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/1000_imagenet_cdgl}" #run_$TIMESTAMP
+INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_1000/train}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/1000_imagenet_cgdl_2}" #run_$TIMESTAMP
 DECOMP_METHODS="${DECOMP_METHODS:-snmf}" # e.g., pca,nmf,ica,svd
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
 VLM_MODEL="${VLM_MODEL:-"Qwen/Qwen2.5-VL-7B-Instruct"}"         # e.g., llava, llava-7b, qwen-vl, etc.
-BATCH_SIZE="${BATCH_SIZE:-8}"       # e.g., 16
+BATCH_SIZE="${BATCH_SIZE:-12}"       # e.g., 16
 DEVICE="${DEVICE:-cuda}"               # e.g., cuda:0
 NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
 
 # Cropping controls (single source of truth)
-CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-/mnt/abka03/xlvlm_data/imagenet10class}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
+CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-/mnt/abka03/xlvlm_data/imagenet_1000}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-24}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
 RESIZE="${RESIZE:-500}"
@@ -97,7 +97,7 @@ PLOT_YMAX="${PLOT_YMAX:-7.1000e-6}"
 # Dataset inference controls
 PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations.}"
 IMAGE_SIZE="${IMAGE_SIZE:-"512 512"}"     # e.g., "512 512"
-IMAGE_BUDGET="${IMAGE_BUDGET:-500}" # e.g., 500
+IMAGE_BUDGET="${IMAGE_BUDGET:-200}" # e.g., 500
 
 # -------------------------------
 # Parse args
