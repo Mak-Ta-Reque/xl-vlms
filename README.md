@@ -21,10 +21,10 @@ Example demo output files:
    ```
 
 2. **Set up Python environment**
-   - Recommended: Python 3.9
+   - Recommended: Python 3.10 or higher.
    - You can use Conda or a virtualenv:
      ```bash
-     conda create -n xlvlms python=3.9
+     conda create -n xlvlms python=3.10
      conda activate xlvlms
      # or
      python3 -m venv .venv
