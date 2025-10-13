@@ -14,6 +14,41 @@ import inflect
 import re
 p = inflect.engine()
 
+# Prefer spaCy stop words if available; otherwise use a small fallback set.
+try:
+    import spacy
+    _nlp = spacy.blank("en")
+    STOPWORDS = set(_nlp.Defaults.stop_words)
+except Exception:
+    # Lightweight fallback
+    STOPWORDS = {"a", "an", "the", "in", "on", "at", "by", "for", "with", "and", "or", "is", "are", "was", "were", "be", "been", "this", "that", "these", "those"}
+
+
+def sanitize_concept(cleaned: str):
+    """Return a sanitized concept string or None.
+
+    Rules:
+    - Remove stopwords (articles/prepositions/etc.). If nothing remains, return None.
+    - Reject non-ascii concepts.
+    - Reject concepts containing digits.
+    """
+    if not cleaned:
+        return None
+    # split into words and remove stopwords
+    words = [w for w in cleaned.split() if w and w not in STOPWORDS]
+    if not words:
+        return None
+    sanitized = ' '.join(words)
+    # reject non-ascii
+    try:
+        sanitized.encode('ascii')
+    except Exception:
+        return None
+    # reject if contains digits
+    if any(char.isdigit() for char in sanitized):
+        return None
+    return sanitized
+
 
 def clean_concept(concept: str) -> str:
     concept = concept.strip().lower().strip('"\'')
@@ -73,14 +108,13 @@ def process_csv_file(csv_file_path, output_file_path=None):
             
             for concept in concepts:
                 cleaned_concept = clean_concept(concept)
-                
-                # Skip empty concepts
-                if not cleaned_concept:
+                # Sanitize and remove stopwords/non-ascii/digit-containing entries
+                sanitized = sanitize_concept(cleaned_concept)
+                if not sanitized:
                     continue
-                    
                 # Add image to concept mapping
-                if image_id not in concept_to_images[cleaned_concept]:
-                    concept_to_images[cleaned_concept].append(image_id)
+                if image_id not in concept_to_images[sanitized]:
+                    concept_to_images[sanitized].append(image_id)
             
             processed_rows += 1
             
@@ -92,6 +126,7 @@ def process_csv_file(csv_file_path, output_file_path=None):
     print(f"Found {len(concept_to_images)} unique concepts")
     
     # Convert defaultdict to regular dict for JSON serialization
+    # CCould be improved by language processing
     concept_mapping = dict(concept_to_images)
     
     # Save to JSON file if output path is provided
