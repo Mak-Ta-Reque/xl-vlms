@@ -651,6 +651,13 @@ def save_hidden_states_to_file(
     file_name = os.path.join(
         args.save_dir, "features", f"{hook_name}_{args.save_filename}.pth"
     )
+    # Ensure parent directory exists before saving
+    parent_dir = os.path.dirname(file_name)
+    if not os.path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)
+        msg = f"Created directory {parent_dir} for saving hidden states."
+        logger.info(msg)
+
     torch.save(saved_data, file_name)
     if logger is not None:
         logger.info(f"Saving data to: {file_name}")
