@@ -49,11 +49,6 @@ Example demo output files:
      pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
      ```
 
-   - Or use the provided install script:
-     ```bash
-     bash install.sh
-     ```
-
 
 
 ### Full pipeline 
