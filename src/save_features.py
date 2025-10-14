@@ -19,7 +19,7 @@ from models.image_text_model import ImageTextModel
 def inference(
     loader: Callable,
     model_class: ImageTextModel,
-    hook_return_function: Callable,
+    hook_return_functions: List[Callable] | None,
     device: torch.device,
     logger: Callable = None,
     args: argparse.Namespace = None,
@@ -71,7 +71,7 @@ def inference(
                                 seqs.append(v)
                         padding_value = pad_id if k == "input_ids" else 0
                         batched[k] = torch.nn.utils.rnn.pad_sequence(
-                            seqs, batch_first=True, padding_value=padding_value
+                            seqs, batch_first=True, padding_side='left', padding_value=padding_value
                         )
                     else:
                         arrs = []
@@ -123,7 +123,7 @@ def inference(
         # Debatch to plain Python lists of token ids for portability
         model_generated_output_list = [t.tolist() if torch.is_tensor(t) else list(t) for t in generated_ids]
         item["model_generated_output"] = model_generated_output_list
-        item["model_predictions"] = model_class.get_tokenizer().batch_decode(
+        item["model_predictions"] = model_class.get_tokenizer( ).batch_decode(
             model_generated_output_list, skip_special_tokens=True
         )
 
@@ -176,18 +176,54 @@ if __name__ == "__main__":
     loader = get_dataset_loader(
         dataset_name=args.dataset_name, logger=logger, args=args
     )
+    # if loader is a list run inference on each and aggregate the results and update the args accordingly
+    if args.dataset_name == "json_crop_map":
+        all_hook_data = {}
+        
+        for key, ld in loader.items():
 
-    hook_data = inference(
-        loader=loader,
-        model_class=model_class,
-        device=device,
-        hook_return_function=hook_return_functions,
-        logger=logger,
-        args=args,
-    )
 
-    clear_forward_hooks(model_class.model_)
-    if hook_postprocessing_functions is not None:
-        for func in hook_postprocessing_functions:
-            if func is not None:
-                func(data=hook_data, args=args, logger=logger)
+            hook_return_functions, hook_postprocessing_functions = setup_hooks(
+                model=model_class.model_,
+                modules_to_hook=args.modules_to_hook,
+                hook_names=args.hook_names,
+                tokenizer=model_class.get_tokenizer(),
+                logger=logger,
+                args=args,
+            )
+            logger.info(f"Running inference on dataset split: {key}")
+            #add args"--token_of_interest",  value as key
+            #--save_filename 
+            args.token_of_interest = key
+            args.save_filename = f"qwen2_patched_image_cat_token_of_interest_concept_generation_split_train_{key}"
+            hook_data = inference(
+                loader=ld,
+                model_class=model_class,
+                device=device,
+                hook_return_functions=hook_return_functions,
+                logger=logger,
+                args=args,
+            )
+            clear_forward_hooks(model_class.model_)
+            if hook_postprocessing_functions is not None:
+                for func in hook_postprocessing_functions:
+                    if func is not None:
+                        func(data=hook_data, args=args, logger=logger)
+            
+    
+    else:
+
+        hook_data = inference(
+            loader=loader,
+            model_class=model_class,
+            device=device,
+            hook_return_functions=hook_return_functions,
+            logger=logger,
+            args=args,
+        )
+
+        clear_forward_hooks(model_class.model_)
+        if hook_postprocessing_functions is not None:
+            for func in hook_postprocessing_functions:
+                if func is not None:
+                    func(data=hook_data, args=args, logger=logger)

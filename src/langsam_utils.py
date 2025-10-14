@@ -154,11 +154,25 @@ def _bboxes_from_xywh_boxes(boxes: Union[np.ndarray, Sequence], image_size: tupl
     return out
 
 
-def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: bool = True) -> List[List[int]]:
+def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: bool = False) -> List[List[int]]:
     boxes = result.get("boxes")
     masks = result.get("masks")
-    if masks is None:
-        masks = result.get("mask")
+    scores = result.get("scores")
+
+    if scores is not None:
+        #scores = _to_numpy(scores).reshape(-1)  # ensure 1D
+        idx = np.argsort(-scores, kind="stable")
+
+        if boxes is not None:
+            #boxes_np = _to_numpy(boxes)
+            if boxes.shape[0] == scores.shape[0]:
+                boxes = boxes[idx]
+
+        if masks is not None:
+            #masks_np = _to_numpy(masks)
+            # Expect masks with shape (N, H, W) or (N, ...)
+            if masks.shape[0] == scores.shape[0]:
+                masks = masks[idx]
 
     if prefer_masks and masks is not None:
         bbs = _bboxes_from_masks(masks, image_size)
@@ -213,6 +227,7 @@ def predict_bboxes_for_tag_batched(
     tag: str,
     prefer_masks: bool = True,
     batch_size: int = 8,
+    topn: int = 2,
 ) -> List[List[List[int]]]:
     """
     Batched version of predict_bboxes_for_tag for faster throughput.
@@ -235,6 +250,8 @@ def predict_bboxes_for_tag_batched(
             results = model.predict(imgs_chunk, tags_chunk)
         except Exception:
             # Fallback to per-image if batch call not supported
+            # Log the message that batch size or overflowed using single batch
+            print(f"Probably batch size {batch_size} overflowed; using single image prediction.")
             for idx, im in enumerate(imgs_chunk, start=start):
                 single_res = model.predict([im], [tag])
                 img_bbs: List[List[int]] = []

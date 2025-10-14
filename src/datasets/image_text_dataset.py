@@ -1,9 +1,9 @@
 import json
 import os
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple, Optional
 
 import numpy as np
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 import random
 from datasets.constants import WORDS
 from models.constants import TASK_PROMPTS
@@ -67,7 +67,9 @@ class ImageTextDataset(Dataset):
 
     def __len__(
         self,
-    ) -> None:
+    ) -> int:
+        if isinstance(self.data, dict):
+            return sum(len(v) for v in self.data.values())
         return len(self.data)
 
     def get_difference_variations_of_token_of_interest(
@@ -243,6 +245,286 @@ class _ImageDataset(ImageTextDataset):
 
         self.data = data
 
+
+class JSONDataset(ImageTextDataset):
+    def create_dataset(self) -> None:
+        data = {}
+
+        # Helper to resolve the annotation JSON path robustly
+        def _resolve_json_path() -> str:
+            # Prefer explicit file path in annotation_file
+            if isinstance(self.annotation_file, str) and os.path.isfile(self.annotation_file):
+                return self.annotation_file
+            # Try relative to data_dir
+            if isinstance(self.annotation_file, str):
+                candidate = os.path.join(self.data_dir, self.annotation_file)
+                if os.path.isfile(candidate):
+                    return candidate
+            # As a fallback, if data_dir itself is a json file, use it as annotation
+            if isinstance(self.data_dir, str) and os.path.isfile(self.data_dir) and self.data_dir.endswith(".json"):
+                return self.data_dir
+            return ""
+
+        # Try to load annotations if a JSON path is provided
+        annotation_json_path = _resolve_json_path()
+        if annotation_json_path.endswith(".json") and os.path.isfile(annotation_json_path) and self.prompt_template == "cgdl" :
+            with open(annotation_json_path, "r") as f:
+                annotations = json.load(f)
+
+            # Case 1: annotations is a dict of dicts (e.g., {"key": {"relative/image.jpg": {...}}})
+            if isinstance(annotations, dict) and all(
+                isinstance(v, dict) for v in annotations.values()
+            ):
+                for top_key, file_map in annotations.items():
+                    concept_data = []
+                    if not isinstance(file_map, dict):
+                        continue
+                    for rel_path, meta in file_map.items():
+                        # Filter by split if rel_path starts with split directory (e.g., "train/"
+                        # Resolve image path
+                        image_path = os.path.join(self.data_dir, rel_path) if self.data_dir else rel_path
+
+                        # Derive img_id
+                        if isinstance(meta, dict):
+                            for key, value in meta.items():
+                                image_size_raw = meta.get("image_size", None)
+                                # Normalize image size to a 2-int list [w, h] and avoid None
+                                image_size: List[int] = [0, 0]
+                                if isinstance(image_size_raw, dict):
+                                    w = image_size_raw.get("width") or image_size_raw.get("w")
+                                    h = image_size_raw.get("height") or image_size_raw.get("h")
+                                    if isinstance(w, int) and isinstance(h, int):
+                                        image_size = [w, h]
+                                elif isinstance(image_size_raw, (list, tuple)) and len(image_size_raw) >= 2:
+                                    try:
+                                        w = int(image_size_raw[0])
+                                        h = int(image_size_raw[1])
+                                        image_size = [w, h]
+                                    except Exception:
+                                        image_size = [0, 0]
+                                locations = ["detections_xyxy", "random_crops"]
+
+                                for loc in locations:
+                                    if loc in meta:
+                                        bboxes = meta[loc]
+                                        if isinstance(bboxes, list) and len(bboxes) > 0 and isinstance(bboxes[0], list):
+                                            for i, bbox in enumerate(bboxes):
+                                                img_id = f"{os.path.splitext(os.path.basename(rel_path))[0]}_{loc}_{i}"
+                                                instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                                                    "ShortCaptioning", "An image of "
+                                                )
+                                                response = ""  # Assuming response generation is handled elsewhere
+
+                                                item = {
+                                                    "img_id": img_id,
+                                                    "instruction": instruction,
+                                                    "response": response,
+                                                    "image": image_path,
+                                                    "targets": "",  # No targets since no JSON file
+                                                    "bbox": bbox,
+                                                    "image_size": image_size,
+                                                    "concept": top_key,  # keep track of which bucket the sample came from
+                                                }
+                                                concept_data.append(item)
+                    if self.dataset_size > 0:
+                        random.shuffle(concept_data)
+                        concept_data = self.rng.choice(concept_data, size=self.dataset_size, replace=False)
+                        # Ensure list type if numpy array is returned
+                        if hasattr(concept_data, "tolist"):
+                            concept_data = concept_data.tolist()
+                    data[top_key] = concept_data
+
+        # Store grouped data by concept (top_key)
+        self.data = data
+
+        # Build flat index for unified indexing, useful if this dataset is used directly
+        self._rebuild_flat_index()
+
+    # ----- Helpers for grouped datasets -----
+    def _rebuild_flat_index(self) -> None:
+        """
+        Build a flat index mapping global idx -> (concept_key, local_idx).
+        This lets the dataset behave like a standard Dataset even when data is grouped by concept.
+        """
+        self._flat_index = []
+        if isinstance(self.data, dict):
+            for concept_key, items in self.data.items():
+                for i in range(len(items)):
+                    self._flat_index.append((concept_key, i))
+
+    def __len__(self) -> int:  # type: ignore[override]
+        if isinstance(self.data, dict):
+            return sum(len(v) for v in self.data.values())
+        return super().__len__()
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:  # type: ignore[override]
+        # Support both grouped (dict) and flat (list) storage
+        if isinstance(self.data, dict):
+            # Rebuild index if missing or out-of-date
+            if not hasattr(self, "_flat_index") or len(self._flat_index) != sum(
+                len(v) for v in self.data.values()
+            ):
+                self._rebuild_flat_index()
+            concept_key, local_idx = self._flat_index[idx]
+            item = dict(self.data[concept_key][local_idx])  # shallow copy
+            # Keep track of concept the sample came from
+            item["concept"] = concept_key
+            item["text"] = self.apply_prompt(item, mode=self.mode)
+            return item
+        # Fallback to base implementation for non-dict storage
+        return super().__getitem__(idx)
+
+    def per_concept_datasets(self) -> Dict[str, Dataset]:
+        """
+        Return a dict mapping concept_key -> torch Dataset containing only that concept's items.
+        Each item is augmented with a `text` field using the dataset's prompt mode.
+        """
+        if not isinstance(self.data, dict):
+            # If data isn't grouped, treat the whole thing as a single concept
+            return {"all": _ListDictDataset(self.data, mode=self.mode, apply_prompt_fn=self.apply_prompt)}  # type: ignore[arg-type]
+
+        per_ds: Dict[str, Dataset] = {}
+        for concept_key, items in self.data.items():
+            per_ds[concept_key] = _ListDictDataset(items, mode=self.mode, apply_prompt_fn=self.apply_prompt, concept_key=concept_key)
+        return per_ds
+
+    def build_dataloaders(
+        self,
+        batch_size: int = 1,
+        shuffle: bool = False,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+        drop_last: bool = False,
+        collate_fn: Optional[Callable] = None,
+    ) -> Tuple[Dict[str, DataLoader], DataLoader]:
+        """
+        Build DataLoaders for each concept, plus a single combined DataLoader.
+
+        Returns:
+            - loaders_by_concept: Dict[concept_key, DataLoader]
+            - combined_loader: DataLoader concatenating all concept datasets
+        """
+        per_ds = self.per_concept_datasets()
+        loaders_by_concept: Dict[str, DataLoader] = {}
+        for k, ds in per_ds.items():
+            loaders_by_concept[k] = DataLoader(
+                ds,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                drop_last=drop_last,
+                collate_fn=collate_fn,
+            )
+
+        if len(per_ds) == 0:
+            empty_ds = _ListDictDataset([], mode=self.mode, apply_prompt_fn=self.apply_prompt)
+            combined_loader = DataLoader(
+                empty_ds,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                drop_last=drop_last,
+                collate_fn=collate_fn,
+            )
+        else:
+            combined_loader = DataLoader(
+                ConcatDataset(list(per_ds.values())),
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                drop_last=drop_last,
+                collate_fn=collate_fn,
+            )
+
+        return loaders_by_concept, combined_loader
+
+    def build_dataloaders_list(
+        self,
+        batch_size: int = 1,
+        shuffle: bool = False,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+        drop_last: bool = False,
+        collate_fn: Optional[Callable] = None,
+    ) -> Tuple[List[DataLoader], DataLoader, List[str]]:
+        """
+        Build and return (list_of_loaders, combined_loader, concept_keys).
+        The order of loaders corresponds to the order of concept_keys.
+        """
+        per_ds = self.per_concept_datasets()
+        concept_keys = list(per_ds.keys())
+        loader_list: List[DataLoader] = []
+        for k in concept_keys:
+            ds = per_ds[k]
+            loader_list.append(
+                DataLoader(
+                    ds,
+                    batch_size=batch_size,
+                    shuffle=shuffle,
+                    num_workers=num_workers,
+                    pin_memory=pin_memory,
+                    drop_last=drop_last,
+                    collate_fn=collate_fn,
+                )
+            )
+
+        if len(per_ds) == 0:
+            empty_ds = _ListDictDataset([], mode=self.mode, apply_prompt_fn=self.apply_prompt)
+            combined_loader = DataLoader(
+                empty_ds,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                drop_last=drop_last,
+                collate_fn=collate_fn,
+            )
+        else:
+            combined_loader = DataLoader(
+                ConcatDataset(list(per_ds.values())),
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                drop_last=drop_last,
+                collate_fn=collate_fn,
+            )
+
+        return loader_list, combined_loader, concept_keys
+
+
+class _ListDictDataset(Dataset):
+    """Simple wrapper dataset over a list of item dicts.
+
+    Adds a `text` field using the provided apply_prompt_fn and optionally attaches `concept`.
+    """
+
+    def __init__(
+        self,
+        items: List[Dict[str, Any]],
+        mode: str,
+        apply_prompt_fn: Callable[[Dict[str, Any], str], str],
+    concept_key: Optional[str] = None,
+    ) -> None:
+        self.items = items
+        self.mode = mode
+        self.apply_prompt_fn = apply_prompt_fn
+        self.concept_key = concept_key
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        item = dict(self.items[idx])  # shallow copy
+        if self.concept_key is not None:
+            item["concept"] = self.concept_key
+        item["text"] = self.apply_prompt_fn(item, mode=self.mode)
+        return item
+
+            
 
 
 class ImageDataset(ImageTextDataset):
