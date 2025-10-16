@@ -151,6 +151,7 @@ class VLMConceptExplainer:
         self.concept_names = self.concept_data.get("concept_names") or self.concept_data.get("names")
         self.text_grounding = self.concept_data.get("text_grounding")
         self.image_grounding_paths = self.concept_data.get("image_grounding_paths")
+        self.image_grounding_bboxes = self.concept_data.get("image_grounding_bboxes")
 
         # Hook setup via project utils
         self._hook_return_fn = None
@@ -553,11 +554,14 @@ class VLMConceptExplainer:
                     top_concepts_tok: List[Dict[str, Any]] = []
                     for rank, (ci, dist_val) in enumerate(zip(concept_indices, concept_scores), 1):
                         img_gp = None
+                        img_gbbx = None
                         if self.image_grounding_paths and ci < len(self.image_grounding_paths):
                             try:
                                 img_gp = str(self.image_grounding_paths[ci])
+                                
                             except Exception:
                                 img_gp = self.image_grounding_paths[ci]
+                        img_gbbx = str(self.image_grounding_bboxes[ci]) if self.image_grounding_bboxes and ci < len(self.image_grounding_bboxes) else None
                         top_concepts_tok.append({
                             'rank': rank,
                             'concept_index': ci,
@@ -566,6 +570,7 @@ class VLMConceptExplainer:
                             'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                             'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                             'image_grounding_path': img_gp,
+                            'image_grounding_bboxes': img_gbbx,
                         })
                     per_token_concepts.append({
                         'token_index': t_idx,
@@ -609,11 +614,17 @@ class VLMConceptExplainer:
                 top_concepts_all: List[Dict[str, Any]] = []
                 for rank, (ci, sim_val) in enumerate(zip(idx_all, sim_vals), 1):
                     img_gp = None
+                    img_gbbx = None
                     if self.image_grounding_paths and ci < len(self.image_grounding_paths):
                         try:
                             img_gp = str(self.image_grounding_paths[ci])
                         except Exception:
                             img_gp = self.image_grounding_paths[ci]
+                    if self.image_grounding_bboxes and ci < len(self.image_grounding_bboxes):
+                        try:
+                            img_gbbx = str(self.image_grounding_bboxes[ci])
+                        except Exception:
+                            img_gbbx = self.image_grounding_bboxes[ci]
                     top_concepts_all.append({
                         'rank': rank,
                         'concept_index': ci,
@@ -621,6 +632,7 @@ class VLMConceptExplainer:
                         'concept_name': self.concept_names[ci] if self.concept_names and ci < len(self.concept_names) else None,
                         'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                         'image_grounding_path': img_gp,
+                        'image_grounding_bboxes': img_gbbx,
                     })
 
                 results.append({

@@ -552,14 +552,16 @@ def process_dataset(
                         text=text_prompts,
                         images=valid_images,
                         return_tensors="pt",
-                        padding=True
+                        padding=True,
+                        padding_side="left"
                     )
                 else:
                     inputs = processor(
                         text=valid_prompts,
                         images=valid_images,
                         return_tensors="pt",
-                        padding=True
+                        padding=True,
+                        padding_side="left"
                     )
             elif 'gemma' in model_name.lower():
                 messages = [
@@ -583,7 +585,8 @@ def process_dataset(
                     text=valid_prompts,
                     images=valid_images,
                     return_tensors="pt",
-                    padding=True
+                    padding=True,
+                    padding_side="left"
                 )
 
             device = next(model.parameters()).device

@@ -41,7 +41,35 @@ def load_langsam(device: Optional[str] = None, **kwargs) -> LangSAM:
     Returns:
         LangSAM model instance.
     """
-    _ = device  # Placeholder for potential future use
+    # Best-effort device control:
+    # - If a specific cuda:N is requested, prefer setting the active device
+    #   without breaking constructors that don't accept a 'device' kwarg.
+    try:
+        import os as _os  # local import to avoid polluting module scope
+        if device:
+            dev = str(device).lower()
+            if dev.startswith("cuda") and torch is not None and torch.cuda.is_available():  # type: ignore[attr-defined]
+                # Try to parse index from cuda:N
+                idx = None
+                if ":" in dev:
+                    try:
+                        idx = int(dev.split(":", 1)[1])
+                    except Exception:
+                        idx = None
+                if idx is not None and idx >= 0:
+                    # Option A: set current cuda device
+                    try:
+                        torch.cuda.set_device(idx)  # type: ignore[attr-defined]
+                    except Exception:
+                        # Option B: narrow visibility to the requested index
+                        _os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(idx))
+            elif dev == "cpu":
+                # Force CPU path where possible
+                _os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+    except Exception:
+        # Non-fatal; fall back to library defaults
+        pass
+
     return LangSAM(**kwargs)
 
 

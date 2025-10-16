@@ -287,21 +287,16 @@ class JSONDataset(ImageTextDataset):
                         # Derive img_id
                         if isinstance(meta, dict):
                             for key, value in meta.items():
-                                image_size_raw = meta.get("image_size", None)
-                                # Normalize image size to a 2-int list [w, h] and avoid None
-                                image_size: List[int] = [0, 0]
-                                if isinstance(image_size_raw, dict):
-                                    w = image_size_raw.get("width") or image_size_raw.get("w")
-                                    h = image_size_raw.get("height") or image_size_raw.get("h")
-                                    if isinstance(w, int) and isinstance(h, int):
-                                        image_size = [w, h]
-                                elif isinstance(image_size_raw, (list, tuple)) and len(image_size_raw) >= 2:
+                                image_size = meta.get("meta", {}).get("image_size", None)
+                                patch_size = meta.get("meta", {}).get("patch_size", None)
+                                if isinstance(image_size, (list, tuple)) and len(image_size) >= 2:
                                     try:
-                                        w = int(image_size_raw[0])
-                                        h = int(image_size_raw[1])
+                                        w = int(image_size[0])
+                                        h = int(image_size[1])
                                         image_size = [w, h]
                                     except Exception:
                                         image_size = [0, 0]
+
                                 locations = ["detections_xyxy", "random_crops"]
 
                                 for loc in locations:
@@ -323,6 +318,7 @@ class JSONDataset(ImageTextDataset):
                                                     "targets": "",  # No targets since no JSON file
                                                     "bbox": bbox,
                                                     "image_size": image_size,
+                                                    "patch_size": patch_size,
                                                     "concept": top_key,  # keep track of which bucket the sample came from
                                                 }
                                                 concept_data.append(item)

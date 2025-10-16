@@ -4,6 +4,7 @@ import time
 from typing import Any, Callable, Dict, List, Tuple
 
 import torch
+from PIL import Image
 
 from datasets import get_dataset_loader
 from helpers.arguments import get_arguments
@@ -39,18 +40,70 @@ def inference(
             texts = [t.replace("[concept]", toi_str) if isinstance(t, str) else t for t in texts]
         item["text"] = texts
         image_paths = item["image"] if isinstance(item["image"], list) else [item["image"]]
+        crop_locations = item.get("bbox", None)
 
-        # Build per-sample inputs
-        per_sample_inputs = [
-            model_class.preprocessor(
-                instruction=texts[i],
-                image_file=image_paths[i],
-                response="",
-                generation_mode=args.generation_mode,
-            )
-            for i in range(len(texts))
-        ]
+        # Build per-sample inputs. If bboxes provided, crop and pass PIL Image; else pass paths.
+        per_sample_inputs: List[Dict[str, Any]] = []
 
+        def _clip(val, lo, hi):
+            return max(lo, min(hi, val))
+
+        def _ensure_per_image_bbox_list(crops, n_imgs):
+            # Accept: None, single 4-elt tuple/list, list of 4-elt per image
+            if crops is None:
+                return [None] * n_imgs
+            if isinstance(crops, (list, tuple)) and len(crops) == 4 and all(isinstance(v, (int, float)) for v in crops):
+                return [list(crops)] * n_imgs
+            # if it's a list of per-image bboxes
+            if isinstance(crops, (list, tuple)) and len(crops) == n_imgs:
+                return list(crops)
+            # Fallback: broadcast None
+            return [None] * n_imgs
+        
+        per_image_bboxes = _ensure_per_image_bbox_list(crop_locations, len(image_paths))
+
+        for idx in range(len(image_paths)):
+            img_ref = image_paths[idx]
+            bbox = per_image_bboxes[idx]
+            if bbox is not None:
+                # open, crop (xyxy), clip to bounds
+                img = Image.open(img_ref).convert("RGB") if not isinstance(img_ref, Image.Image) else img_ref
+                W, H = img.size
+                x1, y1, x2, y2 = bbox
+                x1 = int(_clip(x1, 0, W - 1))
+                y1 = int(_clip(y1, 0, H - 1))
+                x2 = int(_clip(x2, x1 + 1, W))
+                y2 = int(_clip(y2, y1 + 1, H))
+                crop_img = img.crop((x1, y1, x2, y2))
+                per_sample_inputs.append(
+                    model_class.preprocessor(
+                        instruction=texts[idx],
+                        image_file= crop_img,
+                        response="",
+                        generation_mode=args.generation_mode,
+                    )
+                )
+            else:
+                # no bbox -> default behavior
+                per_sample_inputs.append(
+                    model_class.preprocessor(
+                        instruction=texts[idx],
+                        image_file= image_paths[idx],
+                        response="",
+                        generation_mode=args.generation_mode,
+                    )
+                )
+        #count the number image token per sample
+        image_token_id = model_class.processor_.image_token_id
+        num_image_tokens_per_sample = []
+        for sample in per_sample_inputs:
+            input_ids = sample["input_ids"]
+            if isinstance(input_ids, torch.Tensor):
+                input_ids = input_ids.tolist()[0] if input_ids.ndim == 2 and input_ids.shape[0] == 1 else input_ids.tolist()
+            count = sum(1 for id in input_ids if id == image_token_id)
+            num_image_tokens_per_sample.append(count)
+
+        
         # Collate per-sample dicts into a batch dict
         def _collate_inputs(per_sample_inputs: List[Dict[str, Any]]) -> Dict[str, Any]:
             if len(per_sample_inputs) == 1:
@@ -72,7 +125,7 @@ def inference(
                         padding_value = pad_id if k == "input_ids" else 0
                         batched[k] = torch.nn.utils.rnn.pad_sequence(
                             seqs, batch_first=True, padding_side='left', padding_value=padding_value
-                        )
+                        ) 
                     else:
                         arrs = []
                         for v in vals:
@@ -113,11 +166,7 @@ def inference(
         input_lens: List[int] = []
         for b in range(B):
             row = input_ids_tensor[b]
-            pad_positions = (row == pad_id).nonzero(as_tuple=False)
-            if pad_positions.numel() > 0:
-                input_lens.append(pad_positions[0].item())
-            else:
-                input_lens.append(L)
+            input_lens.append(row.shape[0])
         # Slice generated tokens per sample
         generated_ids = [out[b, input_lens[b]:] for b in range(out.size(0))]
         # Debatch to plain Python lists of token ids for portability

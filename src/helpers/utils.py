@@ -842,7 +842,7 @@ def hooks_postprocessing(
 
         data_keys = ["hidden_states", "image"]
         # temp change
-        data_keys = ["hidden_states", "image", "model_predictions"]
+        data_keys = ["hidden_states", "image", "model_predictions", "bbox"]
 
         if "token_of_interest" in hook_name:
             data_keys.append("token_of_interest_mask")
