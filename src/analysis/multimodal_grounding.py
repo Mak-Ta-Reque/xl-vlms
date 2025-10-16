@@ -148,6 +148,7 @@ def get_multimodal_grounding(
             num_images_per_concept=num_most_activating_samples,
         )
         image_paths = metadata.get("image", [])
+        concept_bbox = metadata.get("bbox", [])
         predictions = metadata.get("model_predictions", [])
         logger.info(f"Image paths length: {len(image_paths)}")
         # Only keep image paths for samples with token_of_interest_mask True
@@ -168,21 +169,29 @@ def get_multimodal_grounding(
 
         all_concept_image_paths = []
         all_concept_predictions = []
+        all_concept_bbox = []
         for i, concept_indices in enumerate(image_indices):
             concept_image_paths = [
                 image_paths[concept_indices[k]] for k in range(len(concept_indices))
             ]
             all_concept_image_paths.append(concept_image_paths)
-
+        
             concept_predictions = [
                 predictions[concept_indices[k]] for k in range(len(concept_indices))
             ]
             all_concept_predictions.append(concept_predictions)
+            
+            concept_bboxes = [
+                concept_bbox[concept_indices[k]] for k in range(len(concept_indices))
+            ]
+            all_concept_bbox.append(concept_bboxes)
+           
             if logger is not None:
                 logger.info(f"Concept {i} image paths: {concept_image_paths}")
 
         grounding_dict["image_grounding_paths"] = all_concept_image_paths
         grounding_dict["image_grounding_predictions"] = all_concept_predictions
+        grounding_dict["image_grounding_bboxes"] = all_concept_bbox
 
     grounding_dict["concepts"] = concepts
     grounding_dict["activations"] = activations

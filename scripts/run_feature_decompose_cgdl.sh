@@ -7,9 +7,9 @@
 set -euo pipefail
 
 # Positional arguments with defaults (override order: CLI > ENV > hardcoded default)
-HF_HOME_INPUT=${1:-${HF_HOME:-"/mnt/abka03/huggingface/hub"}}
-MODEL_NAME_INPUT=${2:-${VLM_MODEL:-${MODEL_NAME:-"google/gemma-3n-E4B-it"}}}
-FEATURE_SAVE_DIR_INPUT=${3:-${FEATURES_DIR:-${FEATURE_SAVE_DIR:-"/mnt/abka03/Projects/xl-vlms/outputs/cdgl/train"}}}
+HF_HOME_INPUT=${1:-${HF_HOME:-"/mnt/sdz/abka03_data/models"}}
+MODEL_NAME_INPUT=${2:-${VLM_MODEL:-${MODEL_NAME:-"Qwen/Qwen2.5-VL-3B-Instruct"}}}
+FEATURE_SAVE_DIR_INPUT=${3:-${FEATURES_DIR:-${FEATURE_SAVE_DIR:-"/mnt/sdz/abka03_data/outputs"}}}
 # Resolve Python interpreter
 if command -v "${PYTHON:-${PYTHON_BIN:-python}}" >/dev/null 2>&1; then
     PYTHON_BIN="${PYTHON:-${PYTHON_BIN:-python}}"

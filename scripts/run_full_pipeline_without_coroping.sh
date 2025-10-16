@@ -1,0 +1,368 @@
+#!/usr/bin/env bash
+# Single-script XL-VLMs pipeline: defines constants at top and calls Python directly (no nested bash wrappers).
+# Steps:
+# 1) Dataset inference -> concepts map
+# 2) Build crops JSON from concept→image mapping
+# 3) Generate features from crops JSON (on-the-fly cropping)
+# 4) Decompose features (one or more methods)
+# 5) Run VLM explainer per method
+# 6) Concept deletion eval per method
+# 7) (Optional) Plots per method + summary
+
+set -Eeuo pipefail
+
+# -------------------------------
+# Utility
+# -------------------------------
+usage() {
+  cat <<USAGE
+Usage: $(basename "$0") [--input-dir PATH] [--output-dir PATH] [--decomp METHODS] [--plot-ymin VAL] [--plot-ymax VAL]
+
+Options:
+  --input-dir PATH     Root dataset/images directory. Default: ${INPUT_DIR:-/mnt/sdz/abka03_data/xl-vlms/data/train}
+  --output-dir PATH    Root output directory. Default: ${OUTPUT_DIR:-$PWD/outputs/run_<timestamp>}
+  --decomp METHODS     Comma-separated decomposition methods. Default: ${DECOMP_METHODS:-snmf}
+  --plot-ymin VAL      Y-axis min for plots (default: ${PLOT_YMIN:-6.55e-6})
+  --plot-ymax VAL      Y-axis max for plots (default: ${PLOT_YMAX:-7.10e-6})
+  -h, --help           Show this help
+
+Env overrides supported for all constants below.
+USAGE
+}
+
+ts() { date '+%F %T'; }
+log() { echo "[$(ts)] $*"; }
+warn() { echo "[$(ts)] [WARN] $*" >&2; }
+
+run_step() {
+  local name="$1"; shift
+  local cmd="$*"
+  local logfile="$OUTPUT_DIR/logs/${name// /_}.log"
+  log "START: ${name}"
+  {
+    eval "$cmd" 2>&1 | tee -a "$logfile"
+  }
+  log "DONE:  ${name}"
+}
+
+trap 'rc=$?; warn "Pipeline failed at line $LINENO (exit $rc). Check logs at: $OUTPUT_DIR/logs"; exit $rc' ERR
+
+# -------------------------------
+# Paths and constants (override via env)
+# -------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+
+# Data & outputs
+INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/xl-vlms/data}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20251016_140704}"
+HF_HOME="${HF_HOME:-/mnt/sdz/abka03_data/models}"
+
+# Model/runtime knobs
+VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
+BATCH_SIZE="${BATCH_SIZE:-12}"
+SEED="${SEED:-42}"
+DEVICE_ID="${DEVICE_ID:-1}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
+
+# Crops JSON generation
+CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-50}"
+PATCH_SIZE="${PATCH_SIZE:-200}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-20}"
+MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-128}"
+PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-24}"
+CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
+OBJECT_DETECTION="${OBJECT_DETECTION:-1}"      # 1 to enable LangSAM
+DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-8}"
+DETECTION_TOPN="${DETECTION_TOPN:-10}"
+
+# Inference prompt and image preproc
+PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations.}"
+IMAGE_SIZE="${IMAGE_SIZE:-512 512}"             # two ints
+IMAGE_BUDGET="${IMAGE_BUDGET:-200}"            # per-subfolder budget
+
+# Decomposition methods
+DECOMP_METHODS="${DECOMP_METHODS:-snmf}"
+
+# Explainer/Eval
+LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
+IMAGE_ROOT="${IMAGE_ROOT:-/mnt/sdz/abka03_data/xl-vlms/data/grids}"
+TOP_N="${TOP_N:-5}"
+NUM_POINTS="${NUM_POINTS:-70}"
+EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"
+EXPL_LABEL="${EXPL_LABEL:-}"
+EXPL_CHOICES="${EXPL_CHOICES:-}"
+
+# Plot
+PLOT_YMIN="${PLOT_YMIN:-6.5500e-6}"
+PLOT_YMAX="${PLOT_YMAX:-7.1000e-6}"
+
+# -------------------------------
+# CLI
+# -------------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --input-dir)  INPUT_DIR="$2"; shift 2;;
+    --output-dir) OUTPUT_DIR="$2"; shift 2;;
+    --decomp)     DECOMP_METHODS="$2"; shift 2;;
+    --plot-ymin)  PLOT_YMIN="$2"; shift 2;;
+    --plot-ymax)  PLOT_YMAX="$2"; shift 2;;
+    -h|--help)    usage; exit 0;;
+    *) warn "Unknown arg: $1"; usage; exit 1;;
+  esac
+done
+
+# -------------------------------
+# Prepare directories
+# -------------------------------
+mkdir -p "$OUTPUT_DIR"/logs
+mkdir -p "$OUTPUT_DIR"/inference "$OUTPUT_DIR"/features "$OUTPUT_DIR"/concept \
+         "$OUTPUT_DIR"/explanations "$OUTPUT_DIR"/eval "$OUTPUT_DIR"/plots
+
+CONCEPT_MAP_JSON="$OUTPUT_DIR/inference/concepts_to_images.json"
+CROPS_JSON="$OUTPUT_DIR/inference/crops.json"
+FEATURES_DIR="$OUTPUT_DIR"         # save_features.py controls internal layout
+DECOMP_DIR="$OUTPUT_DIR/concept"
+EXPLAIN_DIR="$OUTPUT_DIR/explanations"
+EVAL_DIR="$OUTPUT_DIR/eval"
+PLOTS_DIR="$OUTPUT_DIR/plots"
+
+export HF_HOME
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$DEVICE_ID}"
+
+log "Root:       $ROOT_DIR"
+log "Input dir:  $INPUT_DIR"
+log "Output dir: $OUTPUT_DIR"
+log "Model:      $VLM_MODEL | Batch: $BATCH_SIZE | Seed: $SEED | Device: cuda:$CUDA_VISIBLE_DEVICES"
+log "Decompose:  $DECOMP_METHODS"
+log "Crops: data_dir=$INPUT_DIR k=$CONCEPT_CROPS_PER_IMAGE patch=$PATCH_SIZE min=$MIN_IMAGES_PER_TAG max=$MAX_IMAGES_PER_TAG concept_mode=$CONCEPT_MODE det=$OBJECT_DETECTION"
+log "Explainer:  layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N mode=$EXPL_PROMPT_MODE"
+log "Plots Y:    [$PLOT_YMIN, $PLOT_YMAX]"
+
+# -------------------------------
+# 1) Dataset inference -> concept map
+# -------------------------------
+OBJECTS_CSV="$OUTPUT_DIR/inference/objects.csv"
+if [[ -s "$OBJECTS_CSV" && -s "$CONCEPT_MAP_JSON" ]]; then
+  log "Skip Dataset Inference (found $OBJECTS_CSV and $CONCEPT_MAP_JSON)"
+else
+  mkdir -p "$(dirname "$OBJECTS_CSV")"
+  # dataset_inference.py expects --image_size as two ints; pass via eval-expanded string
+  run_step "Dataset Inference" \
+    "python -u \"$ROOT_DIR/inference/dataset_inference.py\" \
+      --dataset_path \"$INPUT_DIR/train\" \
+      --model_name \"$VLM_MODEL\" \
+      --output_csv \"$OBJECTS_CSV\" \
+      --prompt \"$PROMPT\" \
+      --batch_size \"$BATCH_SIZE\" \
+      --image_size $IMAGE_SIZE \
+      --image_budget \"$IMAGE_BUDGET\" \
+      --trust_remote_code"
+
+  run_step "Build Concept Map" \
+    "python -u \"$ROOT_DIR/concept_image_mapping.py\" --input \"$OBJECTS_CSV\" --output \"$CONCEPT_MAP_JSON\""
+fi
+
+# -------------------------------
+# 2) Build crops JSON from concept→image map
+# -------------------------------
+if [[ -s "$CROPS_JSON" ]]; then
+  log "Skip Crops JSON (found $CROPS_JSON)"
+else
+  mkdir -p "$(dirname "$CROPS_JSON")"
+  # Build flag strings
+  CONCEPT_FLAG=$([[ "$CONCEPT_MODE" == "1" ]] && echo "--concept_mode --concept_crops_per_image $CONCEPT_CROPS_PER_IMAGE" || echo "")
+  DETECT_FLAG=$([[ "$OBJECT_DETECTION" == "1" ]] && echo "--object_detection --batch_size $DETECTION_BATCH_SIZE --topn $DETECTION_TOPN" || echo "")
+  run_step "Crops JSON" \
+    "python -u \"$ROOT_DIR/preprocessing/crops_to_json.py\" \
+      --input_root \"$INPUT_DIR\" \
+      --json_mapping \"$CONCEPT_MAP_JSON\" \
+      --output_json \"$CROPS_JSON\" \
+      --patch_size \"$PATCH_SIZE\" \
+      --patches_per_image \"$PATCHES_PER_IMAGE\" \
+      --min_images_per_tag \"$MIN_IMAGES_PER_TAG\" \
+      --max_images_per_tag \"$MAX_IMAGES_PER_TAG\" \
+      --seed \"$SEED\" \
+      --device cuda:1 \
+      $CONCEPT_FLAG \
+      $DETECT_FLAG"
+fi
+
+# -------------------------------
+# 3) Generate features from crops JSON
+# -------------------------------
+if find "$FEATURES_DIR/features" -type f -name '*.pth' -print -quit | grep -q .; then
+  log "Skip Feature Generation (found features under $FEATURES_DIR/features)"
+else
+  run_step "Generate Features" \
+    "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/src/save_features.py\" \
+      --model_name_or_path \"$VLM_MODEL\" \
+      --processor_name \"$VLM_MODEL\" \
+      --dataset_name json_crop_map \
+      --dataset_size 400 \
+      --data_dir \"$INPUT_DIR\" \
+      --annotation_file \"$CROPS_JSON\" \
+      --split train \
+      --hook_names save_hidden_states_mean \
+      --modules_to_hook $LAYER_PATH \
+      --prompt_template cgdl \
+      --save_dir \"$FEATURES_DIR\" \
+      --batch_size 30 \
+      --generation_mode \
+      --save_only_generated_tokens \
+      --exact_match_modules_to_hook"
+fi
+
+# -------------------------------
+# 4) Decompose features across methods (direct Python)
+# -------------------------------
+IFS=',' read -r -a DECOMP_ARRAY <<< "$DECOMP_METHODS"
+for method in "${DECOMP_ARRAY[@]}"; do
+  out_raw="$DECOMP_DIR/$method/combined_concept_${method}_raw.pth"
+  mkdir -p "$DECOMP_DIR/$method"
+  if [[ -s "$out_raw" ]]; then
+    log "Skip Decompose ($method) (found $out_raw)"
+    continue
+  fi
+
+  # Analyse each feature file
+  base_analysis_name="decompose_activations_text_grounding_image_grounding"
+  feature_module="$LAYER_PATH"
+  n_concepts=2
+  normalizations=("gl")
+  max_iterations=100000
+
+  count=0
+  for saved_features_path in "$FEATURES_DIR"/features/*.pth; do
+    [[ -e "$saved_features_path" ]] || break
+    if (( count >= max_iterations )); then break; fi
+    folder_name="$(basename "$saved_features_path" .pth)"
+    results_filename="individual_concept_${folder_name}_${method}"
+    run_step "Decompose:$method -> $(basename "$saved_features_path")" \
+      "python -u \"$ROOT_DIR/src/analyse_features.py\" \
+        --model_name \"$VLM_MODEL\" \
+        --analysis_name \"${base_analysis_name}_${method}\" \
+        --features_path \"$saved_features_path\" \
+        --module_to_decompose \"$feature_module\" \
+        --num_concepts \"$n_concepts\" \
+        --decomposition_method \"$method\" \
+        --save_filename \"$results_filename\" \
+        --save_dir \"$DECOMP_DIR/$method/intermediate_${method}\""
+    count=$((count + 1))
+  done
+
+  mkdir -p "$DECOMP_DIR/$method"
+  run_step "Combine Concepts ($method)" \
+    "python -u \"$ROOT_DIR/src/combine_concepts.py\" \
+      --input_dir \"$DECOMP_DIR/$method/intermediate_${method}\" \
+      --output_path \"$DECOMP_DIR/$method/combined_concept_${method}.pth\" \
+      --normalization gl"
+
+  # Regrounding
+  run_step "Reground Concepts ($method)" \
+    "python -u \"$ROOT_DIR/src/analyse_features.py\" \
+      --model_name \"$VLM_MODEL\" \
+      --analysis_name \"redefine_activations_text_grounding_${method}\" \
+      --analysis_saving_path \"$DECOMP_DIR/$method/combined_concept_${method}_raw.pth\" \
+      --module_to_decompose \"$feature_module\" \
+      --decomposition_method \"$method\" \
+      --save_filename \"combined_concept_${method}_gl_regrounded\" \
+      --save_dir \"$DECOMP_DIR/$method\" \
+      --load_matched_features"
+
+  # Cleanup
+  rm -rf "$DECOMP_DIR/$method/intermediate_${method}" || true
+done
+
+# -------------------------------
+# 5) VLM explainer per method
+# -------------------------------
+for method in "${DECOMP_ARRAY[@]}"; do
+  concept_path="$DECOMP_DIR/${method}/combined_concept_${method}_raw.pth"
+  out_dir="$EXPLAIN_DIR/$method"; mkdir -p "$out_dir"
+  out_json="$out_dir/vlm_explanations.json"
+  if [[ -s "$out_json" ]]; then
+    log "Skip Explainer ($method) (found $out_json)"
+    continue
+  fi
+  EXTRA_PROMPT_ARGS="--prompt_mode $EXPL_PROMPT_MODE"
+  [[ -n "$EXPL_LABEL" ]] && EXTRA_PROMPT_ARGS+=" --prompt_label \"$EXPL_LABEL\""
+  [[ -n "$EXPL_CHOICES" ]] && EXTRA_PROMPT_ARGS+=" --choices \"$EXPL_CHOICES\""
+  run_step "Explainer ($method)" \
+    "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/inference/vlm_explainer.py\" \
+      --model_name \"$VLM_MODEL\" \
+      --concept_path \"$concept_path\" \
+      --layer_path \"$LAYER_PATH\" \
+      --image_root \"$IMAGE_ROOT\" \
+      --top_n \"$TOP_N\" \
+      --out_json \"$out_json\" \
+      $EXTRA_PROMPT_ARGS"
+done
+
+# -------------------------------
+# 6) Concept deletion eval per method
+# -------------------------------
+for method in "${DECOMP_ARRAY[@]}"; do
+  concept_path="$DECOMP_DIR/${method}/combined_concept_${method}_raw.pth"
+  in_json="$EXPLAIN_DIR/$method/vlm_explanations.json"
+  out_dir="$EVAL_DIR/$method"; mkdir -p "$out_dir"
+  if find "$out_dir" -type f -name '*.csv' -print -quit | grep -q .; then
+    log "Skip Eval (Token) - $method (CSVs exist)"
+    continue
+  fi
+  for RANK in 1 2 3; do
+    run_step "Eval Insert (rank=$RANK, $method)" \
+      "python -u \"$ROOT_DIR/eval/concept_deletion_eval.py\" \
+        --results_json \"$in_json\" \
+        --concept_path \"$concept_path\" \
+        --model_name \"$VLM_MODEL\" \
+        --layer_path \"$LAYER_PATH\" \
+        --mode token \
+        --num_points \"$NUM_POINTS\" \
+        --out_dir \"$out_dir\" \
+        --device cuda \
+        --rank \"$RANK\" \
+        --insertion"
+    run_step "Eval Delete (rank=$RANK, $method)" \
+      "python -u \"$ROOT_DIR/eval/concept_deletion_eval.py\" \
+        --results_json \"$in_json\" \
+        --concept_path \"$concept_path\" \
+        --model_name \"$VLM_MODEL\" \
+        --layer_path \"$LAYER_PATH\" \
+        --mode token \
+        --num_points \"$NUM_POINTS\" \
+        --out_dir \"$out_dir\" \
+        --device cuda \
+        --rank \"$RANK\""
+  done
+done
+
+# -------------------------------
+# 7) Plots per method (optional)
+# -------------------------------
+PLOT_TOKEN_SCRIPT="$ROOT_DIR/scripts/plot_concept_deletion_eval_token.py"
+if [[ -f "$PLOT_TOKEN_SCRIPT" ]]; then
+  for method in "${DECOMP_ARRAY[@]}"; do
+    plot_dir="$EVAL_DIR/$method"
+    if find "$plot_dir" -type f -name 'c_*_token_rank*.csv' -print -quit | grep -q .; then
+      run_step "Plot Token ($method)" \
+        "python -u \"$PLOT_TOKEN_SCRIPT\" --out_dir \"$plot_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
+    else
+      warn "No CSVs in $plot_dir for plotting; skipping $method."
+    fi
+  done
+else
+  warn "Plot script not found; skipping per-method plots."
+fi
+
+# 8) Summary overlays across methods
+SUMMARY_SCRIPT="$ROOT_DIR/scripts/plot_eval_summary_across_methods.py"
+if [[ -f "$SUMMARY_SCRIPT" ]]; then
+  run_step "Plot Summary Across Methods" \
+    "python -u \"$SUMMARY_SCRIPT\" --eval_dir \"$EVAL_DIR\" --out_dir \"$PLOTS_DIR\" --methods \"$DECOMP_METHODS\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
+else
+  warn "Summary plotter not found; skipping overlay plots."
+fi
+
+log "Pipeline completed. Outputs: $OUTPUT_DIR"
+log "Logs: $OUTPUT_DIR/logs"

@@ -68,7 +68,7 @@ def _already_done(result: Dict[str, dict], tag: str, rel_path: str) -> bool:
 _LANGSAM_MODEL = None
 
 
-def _load_langsam_model():
+def _load_langsam_model(device: Optional[str] = None):
     global _LANGSAM_MODEL
     if _LANGSAM_MODEL is not None:
         return _LANGSAM_MODEL
@@ -77,7 +77,8 @@ def _load_langsam_model():
         from src.langsam_utils import load_langsam
     except Exception as e:
         raise RuntimeError(f"Could not import src.langsam_utils.load_langsam: {e}")
-    _LANGSAM_MODEL = load_langsam()
+    # Forward device hint to loader (best-effort device selection handled inside)
+    _LANGSAM_MODEL = load_langsam(device=device)
     return _LANGSAM_MODEL
 
 
@@ -313,6 +314,7 @@ def process_folder_structure_to_json(
     object_detection: bool = False,
     batch_size: int = 8,
     topn: int = 10,
+    device: Optional[str] = None,
     result: Optional[Dict[str, dict]] = None,
     output_json: Optional[str] = None,
     verbose: bool = False,
@@ -330,7 +332,7 @@ def process_folder_structure_to_json(
     boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
     if object_detection:
         # Load model once and reuse across all tags
-        model = _load_langsam_model()
+        model = _load_langsam_model(device=device)
         for tag, paths in tag_to_paths.items():
             if not paths:
                 continue
@@ -418,6 +420,7 @@ def process_json_mapping_to_json(
     object_detection: bool = False,
     batch_size: int = 8,
     topn: int = 10,
+    device: Optional[str] = None,
     result: Optional[Dict[str, dict]] = None,
     output_json: Optional[str] = None,
     verbose: bool = False,
@@ -427,7 +430,7 @@ def process_json_mapping_to_json(
     result = result or {}
 
     # Preload detection model once if needed
-    detection_model: Optional[Any] = _load_langsam_model() if object_detection else None
+    detection_model: Optional[Any] = _load_langsam_model(device=device) if object_detection else None
 
     for tag, rels in mapping.items():
         if not isinstance(rels, list):
@@ -523,6 +526,7 @@ def concept_process_json_mapping_to_json(
     object_detection: bool = False,
     batch_size: int = 8,
     topn: int = 10,
+    device: Optional[str] = None,
     result: Optional[Dict[str, dict]] = None,
     output_json: Optional[str] = None,
     max_overlap: float = 0.30,
@@ -533,7 +537,7 @@ def concept_process_json_mapping_to_json(
     result = result or {}
 
     # Preload detection model once if needed
-    detection_model: Optional[Any] = _load_langsam_model() if object_detection else None
+    detection_model: Optional[Any] = _load_langsam_model(device=device) if object_detection else None
 
     for tag, rel_paths in mapping.items():
         if not isinstance(rel_paths, list):
@@ -648,6 +652,7 @@ def main():
     parser.add_argument("--object_detection", action="store_true", help="Enable LangSAM object detection")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size for LangSAM detection")
     parser.add_argument("--verbose", action="store_true", help="Print per-tag diagnostics and hints")
+    parser.add_argument("--device", type=str, default=None, help="Device for detection: cpu, cuda or cuda:N")
 
     args = parser.parse_args()
     # Check Pillow early to provide actionable feedback
@@ -682,6 +687,7 @@ def main():
             object_detection=args.object_detection,
             batch_size=args.batch_size,
             topn=args.topn,
+            device=args.device,
             result=result,
             output_json=args.output_json,
             max_overlap=args.max_overlap,
@@ -706,6 +712,7 @@ def main():
                 object_detection=args.object_detection,
                 batch_size=args.batch_size,
                 topn=args.topn,
+                device=args.device,
                 result=result,
                 output_json=args.output_json,
                 verbose=args.verbose,
@@ -722,6 +729,7 @@ def main():
                 object_detection=args.object_detection,
                 batch_size=args.batch_size,
                 topn=args.topn,
+                device=args.device,
                 result=result,
                 output_json=args.output_json,
                 verbose=args.verbose,
