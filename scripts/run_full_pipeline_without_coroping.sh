@@ -92,6 +92,7 @@ NUM_POINTS="${NUM_POINTS:-70}"
 EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"
 EXPL_LABEL="${EXPL_LABEL:-}"
 EXPL_CHOICES="${EXPL_CHOICES:-}"
+  # Eval ranks: iterate RANK from 1..TOPN
 
 # Plot
 PLOT_YMIN="${PLOT_YMIN:-6.5500e-6}"
@@ -194,23 +195,22 @@ fi
 if find "$FEATURES_DIR/features" -type f -name '*.pth' -print -quit | grep -q .; then
   log "Skip Feature Generation (found features under $FEATURES_DIR/features)"
 else
-  run_step "Generate Features" \
-    "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/src/save_features.py\" \
-      --model_name_or_path \"$VLM_MODEL\" \
-      --processor_name \"$VLM_MODEL\" \
-      --dataset_name json_crop_map \
-      --dataset_size 400 \
-      --data_dir \"$INPUT_DIR\" \
-      --annotation_file \"$CROPS_JSON\" \
-      --split train \
-      --hook_names save_hidden_states_mean \
-      --modules_to_hook $LAYER_PATH \
-      --prompt_template cgdl \
-      --save_dir \"$FEATURES_DIR\" \
-      --batch_size 30 \
-      --generation_mode \
-      --save_only_generated_tokens \
-      --exact_match_modules_to_hook"
+run_step "Generate Features" \
+  "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/src/save_features.py\" \
+    --model_name \"$VLM_MODEL\" \
+    --dataset_name json_crop_map \
+    --dataset_size 400 \
+    --data_dir \"$INPUT_DIR\" \
+    --annotation_file \"$CROPS_JSON\" \
+    --split train \
+    --hook_names save_hidden_states_mean \
+    --modules_to_hook $LAYER_PATH \
+    --prompt_template cgdl \
+    --save_dir \"$FEATURES_DIR\" \
+    --batch_size 30 \
+    --generation_mode \
+    --save_only_generated_tokens \
+    --exact_match_modules_to_hook"
 fi
 
 # -------------------------------
@@ -310,7 +310,7 @@ for method in "${DECOMP_ARRAY[@]}"; do
     log "Skip Eval (Token) - $method (CSVs exist)"
     continue
   fi
-  for RANK in 1 2 3; do
+  for RANK in $(seq 1 "$TOP_N"); do
     run_step "Eval Insert (rank=$RANK, $method)" \
       "python -u \"$ROOT_DIR/eval/concept_deletion_eval.py\" \
         --results_json \"$in_json\" \

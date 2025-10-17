@@ -204,7 +204,7 @@ if __name__ == "__main__":
     logger.info(f"Loading model: {args.model_name_or_path}")
     log_args(args, logger)
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device(args.device)
 
     model_class = get_model_class(
         args.model_name_or_path,

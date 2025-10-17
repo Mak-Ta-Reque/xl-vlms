@@ -461,5 +461,12 @@ def get_arguments():
         default=None,
         help="Concept should be searched in the image.",
     )
+    # add a device argument and set cuda:0 as default if available
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda:0",
+        help="Device to use for computation.",
+    )
 
     return parser.parse_args()

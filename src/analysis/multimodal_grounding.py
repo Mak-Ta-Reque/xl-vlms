@@ -46,7 +46,7 @@ def concept_text_grounding(
     num_concepts = concepts.shape[0]
 
     concepts = concepts.to(next(lm_head.parameters()).device)
-    token_logits = lm_head(concepts.float())
+    token_logits = lm_head(concepts)
     assert (
         pre_num_top_tokens > num_top_tokens
     ), f"pre_num_top_tokens {pre_num_top_tokens} <= num_top_tokens {num_top_tokens}"
@@ -107,8 +107,8 @@ def get_multimodal_grounding(
     args: argparse.Namespace = None,
 ) -> None:
     #model_class = model_class.get_lm_head()
-    lm_head = model_class.get_lm_head().float()
-    tokenizer = model_class.get_tokenizer()
+    lm_head = model_class["lm_head"] # should be changed
+    tokenizer = model_class["tokenizer"] # should be changed
     grounding_dict = {}
 
     activations = torch.Tensor(activations)
@@ -231,8 +231,8 @@ def get_refined_multimodal_grounding(
     args: argparse.Namespace = None,
 ) -> None:
     #model_class = model_class.get_lm_head()
-    lm_head = model_class.get_lm_head().float()
-    tokenizer = model_class.get_tokenizer()
+    lm_head = model_class["lm_head"] 
+    tokenizer = model_class["tokenizer"]
     grounding_dict = {}
 
     #activations = torch.Tensor(activations)
