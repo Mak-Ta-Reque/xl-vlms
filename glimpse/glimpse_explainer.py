@@ -27,7 +27,6 @@ from typing import Dict, List, Tuple, Any, Optional, Callable
 import argparse
 from collections import defaultdict
 import matplotlib.pyplot as plt
-import seaborn as sns
 import math
 
 class GLIMPSEExplainer:
@@ -60,6 +59,7 @@ class GLIMPSEExplainer:
             lambda_flow: Flow strength parameter for relevance redistribution (Eq. 22)
             device: Device for computation
         """
+
         self.model = model
         self.tokenizer = tokenizer
         self.lambda_head = lambda_head
@@ -77,6 +77,9 @@ class GLIMPSEExplainer:
         self.visual_indices = None  # V = {1, ..., K}
         self.prompt_indices = None  # P = {K+1, ..., K+M}  
         self.generated_indices = None  # Y = {K+M+1, ..., N}
+        # Internal stores for safe attention capture
+        self._captured_attn = {}
+        self._captured_attn_grads = {}
         
     def register_hooks(self):
         """Register forward and backward hooks to capture attention weights and gradients."""
@@ -110,7 +113,8 @@ class GLIMPSEExplainer:
                 if attn_weights is not None:
                     if layer_idx not in self.attention_weights:
                         self.attention_weights[layer_idx] = {}
-                    self.attention_weights[layer_idx][head_idx] = attn_weights.detach()
+                    # Keep the computation graph to allow autograd.grad
+                    self.attention_weights[layer_idx][head_idx] = attn_weights
                     print(f"Captured attention weights for layer {layer_idx}, shape: {attn_weights.shape}")
                 else:
                     print(f"No attention weights found for layer {layer_idx}, module: {type(module).__name__}")
@@ -122,7 +126,8 @@ class GLIMPSEExplainer:
                 if grad_output is not None and len(grad_output) > 0 and grad_output[0] is not None:
                     if layer_idx not in self.attention_gradients:
                         self.attention_gradients[layer_idx] = {}
-                    self.attention_gradients[layer_idx][head_idx] = grad_output[0].detach()
+                    # Keep reference; do not detach to preserve shape info and avoid losing graph prematurely
+                    self.attention_gradients[layer_idx][head_idx] = grad_output[0]
                     print(f"Captured attention gradients for layer {layer_idx}, shape: {grad_output[0].shape}")
             return hook
         
@@ -146,10 +151,15 @@ class GLIMPSEExplainer:
                 )
                 self.hooks.append(handle_fwd)
                 
-                # Backward hook  
-                handle_bwd = module.register_backward_hook(
-                    attention_backward_hook(layer_idx, 0)
-                )
+                # Backward hook: prefer full backward hooks to avoid conflicts
+                if hasattr(module, 'register_full_backward_hook'):
+                    handle_bwd = module.register_full_backward_hook(
+                        attention_backward_hook(layer_idx, 0)
+                    )
+                else:
+                    handle_bwd = module.register_backward_hook(
+                        attention_backward_hook(layer_idx, 0)
+                    )
                 self.hooks.append(handle_bwd)
                 
                 layer_idx += 1
@@ -204,7 +214,8 @@ class GLIMPSEExplainer:
                         if attn_weights is not None:
                             if layer_idx not in self.attention_weights:
                                 self.attention_weights[layer_idx] = {}
-                            self.attention_weights[layer_idx][0] = attn_weights.detach()
+                            # Keep graph
+                            self.attention_weights[layer_idx][0] = attn_weights
                             print(f"Patched capture: attention weights for layer {layer_idx}, shape: {attn_weights.shape}")
                         
                         return result
@@ -260,6 +271,51 @@ class GLIMPSEExplainer:
                 layer_idx += 1
         
         print(f"Registered SDPA hooks on {layer_idx} modules")
+
+    def _register_self_attn_hooks_safe(self):
+        """Register safe hooks on self-attn modules to capture attention tensors without altering outputs."""
+        # Clear previous hooks
+        for h in self.hooks:
+            try:
+                h.remove()
+            except Exception:
+                pass
+        self.hooks = []
+        self._captured_attn = {}
+        self._captured_attn_grads = {}
+
+        if not hasattr(self.model, 'language_model') or not hasattr(self.model.language_model, 'layers'):
+            print("No language_model.layers found; using generic registration.")
+            self.register_hooks()
+            return
+
+        print("Registering safe self-attn hooks...")
+        for i, layer in enumerate(self.model.language_model.layers):
+            if not hasattr(layer, 'self_attn'):
+                continue
+            attn_mod = layer.self_attn
+
+            def fwd_hook(mod, inp, out, li=i):
+                attn = None
+                if isinstance(out, (tuple, list)) and len(out) >= 2 and torch.is_tensor(out[1]):
+                    attn = out[1]
+                elif hasattr(out, 'attentions'):
+                    attn = getattr(out, 'attentions')
+                if attn is not None:
+                    self._captured_attn[li] = attn
+                # Do not return anything to avoid modifying outputs
+
+            def bwd_hook(mod, gin, gout, li=i):
+                if isinstance(gout, (tuple, list)) and len(gout) >= 2 and gout[1] is not None:
+                    self._captured_attn_grads[li] = gout[1]
+
+            self.hooks.append(attn_mod.register_forward_hook(fwd_hook))
+            # Prefer full backward hook when available
+            if hasattr(attn_mod, 'register_full_backward_hook'):
+                self.hooks.append(attn_mod.register_full_backward_hook(bwd_hook))
+            else:
+                self.hooks.append(attn_mod.register_backward_hook(bwd_hook))
+        print(f"Registered hooks on {len(self.hooks)//2} self-attn modules")
     
     def _fallback_attention_capture(self, inputs, logits):
         """Fallback method to generate synthetic attention weights when capture fails."""
@@ -602,6 +658,17 @@ class GLIMPSEExplainer:
                 print("Set model.output_attentions = True")
             except Exception as e:
                 print(f"Error setting model.output_attentions: {e}")
+
+    def _prepare_token_indices(self, seq_len: int, visual_tokens: int):
+        """Infer V, P, Y indices assuming [V || P || Y(last one)] layout."""
+        K = max(0, min(visual_tokens, seq_len))
+        # Reserve last position as generated token (target)
+        M = max(0, seq_len - K - 1)
+        T = 1
+        self.set_token_indices(K, M, T)
+        # Generated token is last index
+        self.generated_indices = [K + M] if (K + M) < seq_len else [seq_len - 1]
+        return K, M, T
     
     def set_token_indices(
         self, 
@@ -914,6 +981,56 @@ class GLIMPSEExplainer:
         
         print(f"Successfully processed {successful_layers}/{num_layers} attention layers")
         return R
+
+    def compute_adaptive_layer_weights_for_keys(self, layer_keys: List[int]) -> torch.Tensor:
+        """Compute adaptive layer weights α aligned to provided layer keys."""
+        if not layer_keys:
+            return torch.tensor([], device=self.device)
+        gradient_norms = []
+        for key in layer_keys:
+            if key in self.attention_gradients:
+                layer_grads = list(self.attention_gradients[key].values())
+                if layer_grads:
+                    aggregated = torch.stack(layer_grads).sum(dim=0)
+                    g_l = torch.norm(aggregated, p=1)
+                    gradient_norms.append(g_l)
+                else:
+                    gradient_norms.append(torch.tensor(0.0, device=self.device))
+            else:
+                gradient_norms.append(torch.tensor(0.0, device=self.device))
+        gradient_norms = torch.stack([g.to(self.device) for g in gradient_norms])
+
+        # Depth prior based on order in layer_keys
+        depth_values = torch.tensor([self.lambda_depth * (i + 1) for i in range(len(layer_keys))], dtype=torch.float32, device=self.device)
+        depth_weights = torch.exp(depth_values)
+        depth_weights = depth_weights / (depth_weights.sum() + 1e-8)
+
+        combined = gradient_norms * depth_weights
+        alpha = combined / (combined.sum() + 1e-8)
+        return alpha
+
+    def propagate_relevance_v2(self, layer_keys: List[int], sequence_length: int) -> torch.Tensor:
+        """Propagate relevance across layers using actual layer keys alignment."""
+        R = torch.eye(sequence_length, device=self.device)
+        if not layer_keys:
+            return R
+        alpha = self.compute_adaptive_layer_weights_for_keys(layer_keys)
+        if torch.all(alpha == 0):
+            return R
+        successful = 0
+        for idx, key in enumerate(layer_keys):
+            try:
+                E_l = self.compute_layer_relevance(key)
+                if E_l.shape[-1] != sequence_length or E_l.shape[-2] != sequence_length:
+                    print(f"Warning: Layer {key} E_l shape {E_l.shape} != ({sequence_length},{sequence_length})")
+                    continue
+                L_l = torch.eye(sequence_length, device=self.device) + alpha[idx] * E_l.to(self.device)
+                R = R + L_l @ R
+                successful += 1
+            except Exception as e:
+                print(f"Skipping layer {key}: {e}")
+        print(f"Successfully processed {successful}/{len(layer_keys)} attention layers")
+        return R
     
     def compute_cross_modal_weights(
         self, 
@@ -951,8 +1068,14 @@ class GLIMPSEExplainer:
             v_t = visual_relevance.mean(dim=1)  # Average over visual tokens
             results['visual_alignment'] = v_t
         
-        # Eq. 17: Confidence weights (softmax probabilities)
-        p_t = F.softmax(logits, dim=-1)
+        # Eq. 17: Confidence weights as scalar probability for selected token
+        # logits can be [V] or [B, V]. We take max probability as confidence for this token position.
+        probs = F.softmax(logits, dim=-1)
+        if probs.dim() == 2:
+            # Batch size 1 assumed; take the max prob
+            p_t = probs.max(dim=-1)[0].squeeze()
+        else:
+            p_t = probs.max().squeeze()
         results['confidence'] = p_t
         
         return results
@@ -979,6 +1102,7 @@ class GLIMPSEExplainer:
         
         if a_t is not None and p_t is not None:
             # Eq. 19: Token weights for visual saliency (m = V)
+            # p_t is scalar; a_t is [T]
             beta_t_V = (p_t * a_t) / (p_t * a_t).sum()
             results['visual_saliency_weights'] = beta_t_V
         
@@ -1157,13 +1281,134 @@ class GLIMPSEExplainer:
         """
         print("=== GLIMPSE Explanation with autograd.grad() ===")
         
-        # Use the new autograd-based method
+        # Use the new autograd-based method on provided inputs
         return self.glimpse_explain(
-            input_image=pixel_values,
-            textual_prompt=textual_prompt,
-            generated_tokens=generated_tokens,
-            redistribute_flow=redistribute_flow
+            inputs=inputs,
+            visual_tokens=visual_tokens,
+            target_token_idx=target_token_idx if target_token_idx is not None else -1,
+            redistribute_flow=redistribute_flow,
         )
+
+    def glimpse_explain(
+        self,
+        inputs: Dict[str, torch.Tensor],
+        visual_tokens: int = 576,
+        target_token_idx: int = -1,
+        redistribute_flow: bool = False,
+    ) -> Dict[str, Any]:
+        """End-to-end GLIMPSE pipeline following the implementation guide."""
+        # 0) Encourage attention outputs and add safe hooks
+        self.force_attention_output()
+        self._register_self_attn_hooks_safe()
+
+        # 1) Forward pass to capture attentions
+        outputs = self.model(**inputs)
+        logits = outputs.logits if hasattr(outputs, 'logits') else None
+        if logits is None:
+            raise RuntimeError("Model outputs do not contain logits; unsupported model for GLIMPSE.")
+
+        input_ids = inputs.get('input_ids')
+        if input_ids is None:
+            raise RuntimeError("inputs must include 'input_ids'")
+        seq_len = int(input_ids.shape[1])
+
+        # 2) Select target token position and id
+        pos = seq_len - 1 if target_token_idx == -1 else (target_token_idx % seq_len)
+        with torch.no_grad():
+            pred_token_id = torch.argmax(logits[:, pos, :], dim=-1)
+        target_logit = logits[0, pos, pred_token_id[0]]
+
+        # 3) Autograd: gradients wrt captured attention tensors
+        attn_tensors: List[torch.Tensor] = []
+        attn_layer_indices: List[int] = []
+        for li in sorted(self._captured_attn.keys()):
+            t = self._captured_attn[li]
+            if isinstance(t, torch.Tensor):
+                attn_tensors.append(t)
+                attn_layer_indices.append(li)
+
+        if not attn_tensors:
+            # Fallback to generic registration
+            self.clear_hooks()
+            self.register_hooks()
+            outputs = self.model(**inputs)
+            logits = outputs.logits
+            for li in sorted(self.attention_weights.keys()):
+                for h_idx, t in self.attention_weights[li].items():
+                    attn_tensors.append(t)
+                    attn_layer_indices.append(li)
+
+        grads = torch.autograd.grad(
+            outputs=target_logit,
+            inputs=attn_tensors,
+            retain_graph=False,
+            create_graph=False,
+            allow_unused=True,
+        )
+
+        # 4) Store per-layer/head attention and gradients
+        self.attention_weights = {}
+        self.attention_gradients = {}
+
+        def _store(layer_idx: int, attn: torch.Tensor, grad: Optional[torch.Tensor]):
+            if layer_idx not in self.attention_weights:
+                self.attention_weights[layer_idx] = {}
+            if grad is not None and layer_idx not in self.attention_gradients:
+                self.attention_gradients[layer_idx] = {}
+            if attn.dim() == 4:  # [B, H, N, N]
+                H = attn.shape[1]
+                for h in range(H):
+                    self.attention_weights[layer_idx][h] = attn[:, h, :, :]
+                    if grad is not None:
+                        self.attention_gradients[layer_idx][h] = grad[:, h, :, :]
+            elif attn.dim() == 3:  # [B, N, N]
+                self.attention_weights[layer_idx][0] = attn
+                if grad is not None:
+                    self.attention_gradients[layer_idx][0] = grad
+
+        for i, li in enumerate(attn_layer_indices):
+            g = grads[i] if i < len(grads) else None
+            _store(li, attn_tensors[i], g)
+
+        # 5) Prepare token partitions and indices
+        K, M, T = self._prepare_token_indices(seq_len, visual_tokens)
+        # Ensure generated index aligned with selected pos
+        self.generated_indices = [pos]
+
+        # 6) Propagate relevance (Stage 2) using actual captured layer keys
+        layer_keys = sorted(self.attention_weights.keys())
+        num_layers = len(layer_keys)
+        R = self.propagate_relevance_v2(layer_keys=layer_keys, sequence_length=seq_len)
+
+        # 7) Cross-modal weights and token relevance (Stage 3)
+        cross_modal = self.compute_cross_modal_weights(R, logits[:, pos, :])
+        token_scores = self.compute_token_relevance_scores(cross_modal)
+
+        # 8) Holistic saliency (Stage 4)
+        visual_sal = None
+        prompt_sal = None
+        if 'visual_saliency_weights' in token_scores:
+            visual_sal = self.compute_holistic_saliency(R, token_scores['visual_saliency_weights'], 'visual')
+        if 'prompt_saliency_weights' in token_scores:
+            prompt_sal = self.compute_holistic_saliency(R, token_scores['prompt_saliency_weights'], 'prompt')
+
+        if redistribute_flow and prompt_sal is not None:
+            prompt_sal = self._redistribute_flow(
+                R_tilde_P=prompt_sal,
+                R=R,
+                P=self.prompt_indices,
+                function_words=None,
+                lambda_flow=self.lambda_flow,
+            )
+
+        return {
+            'visual_saliency': visual_sal if visual_sal is not None else torch.zeros(K, device=self.device),
+            'prompt_saliency': prompt_sal if prompt_sal is not None else torch.zeros(M, device=self.device),
+            'cross_modal_relevance': token_scores.get('cross_modal_relevance'),
+            'relevance_matrix': R,
+            'sequence_length': seq_len,
+            'num_layers': num_layers,
+        }
 
     def create_simplified_explain_method(
         self,
@@ -1308,7 +1553,7 @@ class GLIMPSEExplainer:
     
         return s_l
     
-    def compute_adaptive_layer_weights(self, g_dict, s_list):
+    def compute_adaptive_layer_weights_from_g(self, g_dict, s_list):
         """
         Compute adaptive layer weights α_l = (g_l * s_l) / Σ_k (g_k * s_k)
         
@@ -1433,38 +1678,8 @@ class GLIMPSEExplainer:
         
         return R
 
-    def attention_forward_hook(layer_name):
-        def hook(module, input, output):
-            # For attention modules, we need to extract attention weights
-            # The structure depends on your model architecture
-            
-            if hasattr(module, 'attn_weights') and module.attn_weights is not None:
-                # Some models store attention weights as an attribute
-                attn_weights = module.attn_weights
-            elif isinstance(output, tuple) and len(output) > 1:
-                # Many models return (output, attention_weights) or (output, attention_weights, past_key_value)
-                attn_weights = output[1] if len(output) > 1 else None
-            elif hasattr(output, 'attentions') and output.attentions is not None:
-                # Some models have attentions in the output object
-                attn_weights = output.attentions
-            else:
-                # Try to extract from the computation
-                # This is model-specific and might need adjustment
-                attn_weights = None
-                
-            if attn_weights is not None:
-                # Store the attention weights (detach to avoid gradient issues)
-                activations[f"{layer_name}_attention"] = attn_weights.detach()
-                
-                # If you need gradients on attention weights for GLIMPSE
-                attn_weights_grad = attn_weights.detach().requires_grad_(True)
-                activations[f"{layer_name}_attention_grad"] = attn_weights_grad
-                
-                print(f"Captured attention weights for {layer_name}: {attn_weights.shape}")
-            else:
-                print(f"No attention weights found for {layer_name}")
-                
-        return hook
+    # Note: Removed an unused attention_forward_hook helper that referenced an undefined
+    # 'activations' variable. Hooking utilities are implemented in register_hooks above.
 
     def print_all_model_layers(self):
         """
@@ -1559,37 +1774,35 @@ class GLIMPSEExplainer:
         
         def forward_hook(name):
             def hook(module, input, output):
-                # Save activation and ensure it requires grad
-                out = output[0].detach()
-                out.requires_grad_(True)
-                activations[name] = out
-                return out
+                # Record activations without altering module outputs
+                try:
+                    if isinstance(output, (tuple, list)):
+                        activations[name] = output[0]
+                    else:
+                        activations[name] = output
+                except Exception:
+                    pass
+                return None
             return hook
         def forward_hook_q(name):
             def hook(module, input, output):
-                # Save activation and ensure it requires grad
-                out = output.detach()
-                
-                activations_q[name] = out
-                return out
+                # Record Q projections without modifying outputs
+                activations_q[name] = output
+                return None
             return hook
         
         def forward_hook_k(name):
             def hook(module, input, output):
-                # Save activation and ensure it requires grad
-                out = output.detach()
-                
-                activations_k[name] = out
-                return out
+                # Record K projections without modifying outputs
+                activations_k[name] = output
+                return None
             return hook
         
         def forward_hook_v(name):
             def hook(module, input, output):
-                # Save activation and ensure it requires grad
-                out = output.detach()
-               
-                activations_v[name] = out
-                return out
+                # Record V projections without modifying outputs
+                activations_v[name] = output
+                return None
             return hook
 
 
@@ -1635,6 +1848,7 @@ class GLIMPSEExplainer:
             current_inputs = {
                 'input_ids': input_ids,
                 'attention_mask': attention_mask,
+                'image_grid_thw' : image_grid_thw
             }
             
             # Add pixel_values only for the first step (Qwen2-VL processes images once)
@@ -1644,7 +1858,7 @@ class GLIMPSEExplainer:
 
             # Forward pass
             #with torch.no_grad():
-            outputs= self.model(**current_inputs, output_attentions=True)
+            outputs= self.model(**current_inputs)
 
             # Get logits for the last token
             next_token_logits = outputs.logits[:, -1, :]  # [batch_size, vocab_size]
@@ -1692,21 +1906,7 @@ class GLIMPSEExplainer:
             
             print(f"  Generated token: '{decoded_token}' (ID: {next_token[0].item()})")
 
-            logit = next_token_logits[:, next_token[0]]
-        
-
-            for name, act in activations.items():
-                grad = torch.autograd.grad(logit, act, retain_graph=True)[0]
-                gradients[name] = grad
-
-
-            local_relevance = self.compute_local_relevance(gradients, activations) # equation 8 E_l
-            agrigate_gradient = self.aggregated_attention_gradient(gradients) # equaiton 9 g_l
-            num_layers = len(local_relevance.keys())
-            print(f"Number of layers with attention: {num_layers}")
-            depth_weights = self.compute_depth_weights(num_layers, lambda_d=1.0) # equation 10 s_l
-            adaptive_layer_weights = self.compute_adaptive_layer_weights(agrigate_gradient, depth_weights) # equation 11 a_l
-            R = self.relevance_propagation(adaptive_layer_weights, local_relevance, seq_len + step, device=device) # equation 15
+            # Skip per-step GLIMPSE computation; final explanation is produced in interpret()
 
 
 
@@ -1756,75 +1956,67 @@ class GLIMPSEExplainer:
             start_layer=start_layer,
             start_layer_text=start_layer_text):
         
-    
-        
-    # Dictionaries to store activations and gradients
-        activations = {}
-        gradients = {}
+        # Route to the complete GLIMPSE pipeline
+        return self.glimpse_explain(
+            inputs=inputs,
+            visual_tokens=visual_tokens,
+            target_token_idx=target_token_idx if target_token_idx is not None else -1,
+            redistribute_flow=redistribute_flow,
+        )
 
-        # Forward hook to save activations
-        def forward_hook(name):
-            def hook(module, input, output):
-                # Save activation and ensure it requires grad
-                out = output.detach()
-                out.requires_grad_(True)
-                activations[name] = out
-                return out
-            return hook
+    def visualize_explanations(
+        self,
+        explanations: Dict[str, Any],
+        input_text: str,
+        image: Optional[np.ndarray] = None,
+        save_path: Optional[str] = None,
+        show_plot: bool = False,
+    ):
+        """Simple visualization for visual and prompt saliency."""
+        import matplotlib.pyplot as plt
+        from math import sqrt
 
-        #self.print_all_model_layers() debugging
+        visual_sal = explanations.get('visual_saliency')
+        prompt_sal = explanations.get('prompt_saliency')
 
-        # Register hooks on all post_attention_layernorm layers
-        for i, layer in enumerate(self.model.language_model.layers):
-            layer_name = f"model.language_model.layers.{i}.post_attention_layernorm"
-            layer.post_attention_layernorm.register_forward_hook(forward_hook(layer_name))
-        
+        cols = 2 if prompt_sal is not None else 1
+        fig, axes = plt.subplots(1, cols, figsize=(6 * cols, 5))
+        if cols == 1:
+            axes = [axes]
 
-        prediction_results = self.iterative_forward_explantion(
-                inputs=inputs,
-                max_new_tokens=10,
-                do_sample=False  # Use greedy for reproducible explanations
-            )
-        # Set model to eval mode
+        if visual_sal is not None and image is not None:
+            vs = visual_sal.detach().float().cpu().numpy()
+            n = vs.shape[0]
+            grid = int(round(sqrt(n)))
+            if grid * grid != n:
+                for g in [24, 16, 14]:
+                    if g * g == n:
+                        grid = g
+                        break
+            heat = vs.reshape(grid, grid) if grid * grid == n else vs[None, :]
+            axes[0].imshow(image)
+            axes[0].imshow(heat, cmap='jet', alpha=0.5, interpolation='bilinear')
+            axes[0].set_title('Visual Saliency')
+            axes[0].axis('off')
+        elif visual_sal is not None:
+            axes[0].plot(visual_sal.detach().cpu().numpy())
+            axes[0].set_title('Visual Saliency (1D)')
 
-        # ===== Forward Pass =====
-        #outputs = self.model(**inputs)  # inputs = {'input_ids': ..., 'pixel_values': ...} depending on model
-        #logits_per_image = outputs.logits[:, -1, :]  # last token logits
-        #probs = logits_per_image.softmax(dim=-1)
-        # Print the decoded value max logit
-        #predicted_indices = torch.argmax(probs, dim=-1)
-        #predicted_tokens = [self.tokenizer.decode([idx]) for idx in predicted_indices]
-        #print(f"Predicted tokens: {predicted_tokens}")
-        # ===== Define "pseudo-loss" as max probability for each sample =====
-        # You can pick the max prob per sample (or any specific target index)
-        #max_probs = probs.max(dim=-1)[0]  # shape: (batch_size,)
+        if cols == 2 and prompt_sal is not None:
+            ps = prompt_sal.detach().float().cpu().numpy()
+            axes[1].bar(range(len(ps)), ps)
+            axes[1].set_title('Prompt Saliency')
+            axes[1].set_xlabel('Prompt token index')
+            axes[1].set_ylabel('Importance')
 
-        # For autograd, sum over batch to get a scalar
-        #pseudo_loss = max_probs.sum()
-
-        # ===== Compute gradients using autograd =====
-        #for name, act in activations.items():
-        #    grad = torch.autograd.grad(pseudo_loss, act, retain_graph=True)[0]
-        #    gradients[name] = grad
-        
-
-        # =====Layer Relevance Extraction===
-
-        local_relevance = self.compute_local_relevance(gradients, activations) # equation 8 E_l
-        agrigate_gradient = self.aggregated_attention_gradient(gradients) # equaiton 9 g_l
-        num_layers = len(local_relevance.keys())
-        print(f"Number of layers with attention: {num_layers}")
-        depth_weights = self.compute_depth_weights(num_layers, lambda_d=1.0) # equation 10 s_l
-        adaptive_layer_weights = self.compute_adaptive_layer_weights(agrigate_gradient, depth_weights) # equation 11 a_l
-
-        
-        for layer_name, E_l in agrigate_gradient.items():
-            print(f"Local relevance for layer {layer_name}: {E_l.shape}")  
-            
-
-            self.tensor_to_image( E_l.detach().cpu(), filename=f'local_relevance_{layer_name.replace(".", "_")}.png')
-
-        
+        plt.suptitle('GLIMPSE Explanations')
+        if save_path is not None:
+            plt.savefig(save_path, bbox_inches='tight')
+        if show_plot:
+            plt.show()
+        plt.close(fig)
 
 
-    
+
+
+
