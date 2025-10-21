@@ -57,8 +57,14 @@ def eligible_indices_by_threshold(lists):
     """
     if not lists or not lists[0]:
         return []
-    threshold = len(lists[0]) / 2.0
-    return [i for i, sub in enumerate(lists) if count_conditioned_items(sub) < threshold]
+    threshold = 30 * len(lists[0]) / 100
+    # Count conditioned items per sublist
+    counts = [count_conditioned_items(sub) for sub in lists]
+    # Filter indices that satisfy the threshold, keep (index, count)
+    eligible = [(i, c) for i, c in enumerate(counts) if c < threshold]
+    # Sort by ascending count (fewest conditioned items first) and return top-2 indices
+    eligible_sorted = sorted(eligible, key=lambda x: x[1])
+    return [i for i, _ in eligible_sorted[:1]]
 
 
 
@@ -74,6 +80,7 @@ def combine_concepts(input_dir):
         'image_grounding_paths': [],
         'image_grounding_bboxes': [],
         'analysis_model': [],
+        'image_grounding_predictions': [],
     }
 
     concepts = []
@@ -87,9 +94,10 @@ def combine_concepts(input_dir):
         
         # Eligible indices: conditioned count < len(list[0]) / 2
         eligible = eligible_indices_by_threshold(image_grounding_predictions)
-
+        
         # If none eligible, fallback to index with minimal conditioned count
-        if not eligible:
+        if len(eligible) < 1:
+            continue
             counts = [count_conditioned_items(sub) for sub in image_grounding_path]
             min_idx = int(np.argmin(counts)) if counts else 0
             eligible = [min_idx]
@@ -101,7 +109,7 @@ def combine_concepts(input_dir):
             combined_data['text_grounding'].append(model_data['text_grounding'][idx])
             combined_data['image_grounding_paths'].append(image_grounding_path[idx])
             combined_data['analysis_model'].append(model_data['analysis_model'])
-            combined_data['image_grounding_predictions'] = model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None
+            combined_data['image_grounding_predictions'].append(model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None)
             combined_data['image_grounding_bboxes'].append(model_data.get('image_grounding_bboxes', [])[idx])
         combined_data['decomposition_method'] = model_data['decomposition_method']
 

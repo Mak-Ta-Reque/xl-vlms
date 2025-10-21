@@ -225,31 +225,20 @@ for method in "${DECOMP_ARRAY[@]}"; do
     continue
   fi
 
-  # Analyse each feature file
+  # Analyse features in batch (Python handles per-file iteration)
   base_analysis_name="decompose_activations_text_grounding_image_grounding"
   feature_module="$LAYER_PATH"
   n_concepts=2
-  normalizations=("gl")
-  max_iterations=100000
 
-  count=0
-  for saved_features_path in "$FEATURES_DIR"/features/*.pth; do
-    [[ -e "$saved_features_path" ]] || break
-    if (( count >= max_iterations )); then break; fi
-    folder_name="$(basename "$saved_features_path" .pth)"
-    results_filename="individual_concept_${folder_name}_${method}"
-    run_step "Decompose:$method -> $(basename "$saved_features_path")" \
-      "python -u \"$ROOT_DIR/src/analyse_features.py\" \
-        --model_name \"$VLM_MODEL\" \
-        --analysis_name \"${base_analysis_name}_${method}\" \
-        --features_path \"$saved_features_path\" \
-        --module_to_decompose \"$feature_module\" \
-        --num_concepts \"$n_concepts\" \
-        --decomposition_method \"$method\" \
-        --save_filename \"$results_filename\" \
-        --save_dir \"$DECOMP_DIR/$method/intermediate_${method}\""
-    count=$((count + 1))
-  done
+  run_step "Decompose:$method (batch)" \
+    "python -u \"$ROOT_DIR/src/analyse_features.py\" \
+      --model_name \"$VLM_MODEL\" \
+      --analysis_name \"${base_analysis_name}_${method}\" \
+      --features_path \"$FEATURES_DIR/features\" \
+      --module_to_decompose \"$feature_module\" \
+      --num_concepts \"$n_concepts\" \
+      --decomposition_method \"$method\" \
+      --save_dir \"$DECOMP_DIR/$method/intermediate_${method}\""
 
   mkdir -p "$DECOMP_DIR/$method"
   run_step "Combine Concepts ($method)" \

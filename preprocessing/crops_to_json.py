@@ -635,7 +635,7 @@ def main():
     parser.add_argument("--output_json", required=True, help="Path to write the coordinates JSON")
     parser.add_argument("--patch_size", type=int, default=200, help="Square patch size")
     parser.add_argument("--patches_per_image", type=int, default=18, help="Random patches per image (random mode)")
-    parser.add_argument("--max_overlap", type=float, default=0.30, help="Max IoU overlap among patches (random mode)")
+    parser.add_argument("--max_overlap", type=float, default=0.50, help="Max IoU overlap among patches (random mode)")
     # No resize performed: different crop sizes allowed
     parser.add_argument("--grid", action="store_true", default=False, help="Enable grid mode instead of random")
     parser.add_argument("--json_mapping", type=str, default=None, help="Tag -> [relative paths] JSON")
