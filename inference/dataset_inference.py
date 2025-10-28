@@ -37,6 +37,7 @@ import torch._dynamo
 from tqdm import tqdm
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModelForCausalLM
+from transformers.generation.logits_process import LogitsProcessor
 
 # Configure torch dynamo settings
 torch._dynamo.disable()
@@ -72,6 +73,21 @@ POPULAR_MODELS = {
     'idefics2-8b': 'HuggingFaceM4/idefics2-8b',
     'pixtral-12b': 'mistral-community/Pixtral-12B-2409',
 }
+
+
+class SafeNanLogitsProcessor(LogitsProcessor):
+    """Sanitize logits to avoid NaNs/Infs before sampling.
+
+    Replaces NaN with a large negative value, clamps infinities, and bounds scores.
+    """
+    def __init__(self, neg_inf: float = -1e9, pos_inf: float = 1e9):
+        super().__init__()
+        self.neg_inf = neg_inf
+        self.pos_inf = pos_inf
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        scores = torch.nan_to_num(scores, nan=self.neg_inf, posinf=self.pos_inf, neginf=self.neg_inf)
+        return torch.clamp(scores, min=self.neg_inf, max=self.pos_inf)
 
 
 def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed: int = 42) -> List[Tuple[str, str, str]]:
@@ -212,12 +228,14 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
     try:
         # Try different model classes based on model name
         if 'qwen' in model_name.lower():
+            # Prefer bfloat16 to reduce overflow/NaNs when supported
+            preferred_dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
             model = AutoModelForVision2Seq.from_pretrained(
                 model_name,
                 cache_dir=hf_cache_dir,
                 token=loading_kwargs['token'] if 'token' in loading_kwargs else None,
                 device_map="auto",
-                torch_dtype=torch.float16,
+                torch_dtype=preferred_dtype,
             ).eval()
         elif 'gemma' in model_name.lower():
             # Use specific Gemma3nForConditionalGeneration if available
@@ -257,6 +275,26 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
             model_name,
             **loading_kwargs
         )
+
+        # Ensure tokenizer padding/eos are set and left padding for decoder-only
+        if hasattr(processor, 'tokenizer'):
+            tok = processor.tokenizer
+            if getattr(tok, 'pad_token_id', None) is None and getattr(tok, 'eos_token_id', None) is not None:
+                try:
+                    tok.pad_token = tok.eos_token
+                except Exception:
+                    pass
+            try:
+                tok.padding_side = 'left'
+            except Exception:
+                pass
+            # Reflect into generation_config when available
+            gen_cfg = getattr(model, 'generation_config', None)
+            if gen_cfg is not None:
+                if getattr(gen_cfg, 'eos_token_id', None) is None and getattr(tok, 'eos_token_id', None) is not None:
+                    gen_cfg.eos_token_id = tok.eos_token_id
+                if getattr(gen_cfg, 'pad_token_id', None) is None and getattr(tok, 'pad_token_id', None) is not None:
+                    gen_cfg.pad_token_id = tok.pad_token_id
         
         logger.info(f"Model loaded successfully on device: {model.device}")
         return model, processor
@@ -394,12 +432,15 @@ def infer_image_description(
                 # Extract only the new tokens (remove input tokens)
                 new_tokens = outputs[0][input_len:]
             else:
-                # Standard generation for other models
+                # Standard generation for other models with safe logits processing
+                logits_processor = [SafeNanLogitsProcessor()]
+                safe_temperature = max(1e-4, 0.7)  # ensure > 0
                 outputs = model.generate(
                     **inputs,
                     max_new_tokens=150,
                     do_sample=True,
-                    temperature=0.7,
+                    temperature=safe_temperature,
+                    logits_processor=logits_processor,
                     pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
                 )
                 new_tokens = outputs[0]
@@ -604,11 +645,14 @@ def process_dataset(
                     new_tokens = [out[input_len:] for out in outputs]
                     generated_texts = [processor.decode(nt, skip_special_tokens=True).strip() for nt in new_tokens]
                 else:
+                    logits_processor = [SafeNanLogitsProcessor()]
+                    safe_temperature = max(1e-4, 0.7)
                     outputs = model.generate(
                         **inputs,
                         max_new_tokens=150,
                         do_sample=True,
-                        temperature=0.7,
+                        temperature=safe_temperature,
+                        logits_processor=logits_processor,
                         pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
                     )
                     if hasattr(processor, 'tokenizer'):

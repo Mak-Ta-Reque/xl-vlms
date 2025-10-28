@@ -35,7 +35,6 @@ import random
 import re
 import torch
 import torch.nn.functional as F
-from transformers import AutoProcessor, AutoModelForCausalLM, AutoModelForVision2Seq
 from transformers.utils import logging as hf_logging
 # Route HF logs through Python logging and keep them quiet by default
 hf_logging.set_verbosity_error()
@@ -45,11 +44,7 @@ hf_logging.enable_propagation()
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", module="transformers")
 
-try:
-    from transformers import Gemma3nForConditionalGeneration  # type: ignore
-    _GEMMA3N_AVAILABLE = True
-except Exception:
-    _GEMMA3N_AVAILABLE = False
+# Note: Specific model classes are loaded via the project's model loader.
 
 
 def set_seed_all(seed: int, deterministic: bool = True) -> None:
@@ -104,7 +99,7 @@ class VLMConceptExplainer:
         hf_token: Optional[str] = None,
         activation_pool: Union[str, Callable[[torch.Tensor], torch.Tensor]] = 'mean',
         default_top_n: int = 5,
-        normalize_concepts: bool = True,
+        normalize_concepts: bool = False,
         capture_only_last: bool = True,
         exact_match_modules_to_hook: bool = True,
         save_only_generated_tokens: bool = False,
@@ -304,35 +299,6 @@ class VLMConceptExplainer:
         # Unsupervised/default prompt
         return "Classify and name the main object in each grid, separated by spaces, in a single line."
 
-    def _prepare_inputs_single(self, image: Union[Image.Image, str, Path], label: Optional[str]):
-        """Use the repo's model_class.preprocessor to build inputs for a single sample."""
-        instruction = self._build_instruction(label)
-        # Prefer the repository preprocessor if available
-        if getattr(self, "_model_class", None) is not None:
-            return self._model_class.preprocessor(
-                instruction=instruction,
-                image_file=image,
-                response="",
-                generation_mode=True,
-            )
-        # Fallback: approximate behavior via processor.apply_chat_template
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": instruction},
-                ],
-            }
-        ]
-        return self.processor.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
-
     # ---------- Utils ----------
     
     @staticmethod
@@ -345,25 +311,7 @@ class VLMConceptExplainer:
         nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
         return img.resize((nw, nh), Image.Resampling.LANCZOS)
 
-    def _pool_activation(self, act: torch.Tensor) -> torch.Tensor:
-        if act is None:
-            raise RuntimeError("Activation not captured; check layer_path")
-        if callable(self.activation_pool):
-            return self.activation_pool(act)
-        if self.activation_pool == 'cls':
-            # take first token if sequence available
-            return act[:, 0] if act.dim() >= 3 else act
-        # default 'mean': average across non-batch, non-feature dims; keep last dim as features
-        if act.dim() == 1:
-            return act
-        if act.dim() == 2:
-            # (B, D) already pooled
-            return act
-        # (B, T, D) or (B, H, W, C) -> mean over all dims except last (feature) and batch
-        reduce_dims = tuple(range(1, act.dim() - 1))
-        if reduce_dims:
-            return act.mean(dim=reduce_dims)
-        return act
+    # Note: pooling helpers removed; per-token and mean-over-selected tokens are applied inline.
 
     # ---------- API ----------
     @torch.inference_mode()
@@ -434,120 +382,192 @@ class VLMConceptExplainer:
                     self._utils.clear_hooks_variables()
                 except Exception:
                     pass
-            # Using repo preprocessor which returns device/dtype-aligned inputs.
-            # Note: batch_size>1 is not supported; process one by one.
-            #assert len(img_chunk) == 1, "Batching not supported; expected single item per chunk"
-            inputs = self._prepare_inputs_single(img_chunk[0], lab_chunk[0])
-            inputs = {k: (v.to(self.device) if isinstance(v, torch.Tensor) else v) for k, v in inputs.items()}
 
+            # Build per-sample inputs using repo preprocessor
+            per_sample_inputs: List[Dict[str, Any]] = []
+            for i in range(len(img_chunk)):
+                per_sample_inputs.append(
+                    self._model_class.preprocessor(
+                        instruction=self._build_instruction(lab_chunk[i]),
+                        image_file=img_chunk[i],
+                        response="",
+                        generation_mode=True,
+                    )
+                )
+
+            # Acquire tokenizer and pad id
             tokenizer = None
             if getattr(self, "_model_class", None) is not None:
                 tokenizer = getattr(self._model_class, "get_tokenizer", lambda: None)()
             if tokenizer is None and hasattr(self.processor, 'tokenizer'):
                 tokenizer = self.processor.tokenizer
+            pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
 
-            gen_kwargs = dict(
+            # Collate per-sample dicts into a batch dict (simple, with LEFT padding for seqs)
+            def _left_pad_stack(seqs: List[torch.Tensor], padding_value: int) -> torch.Tensor:
+                # Normalize to 1D (L,)
+                norm = []
+                for v in seqs:
+                    if v.ndim == 2 and v.shape[0] == 1:
+                        norm.append(v.squeeze(0))
+                    else:
+                        norm.append(v)
+                # Left-pad by reversing, right-padding, then reversing back
+                rev = [t.flip(-1) for t in norm]
+                padded = torch.nn.utils.rnn.pad_sequence(rev, batch_first=True, padding_value=padding_value)
+                return padded.flip(-1)
+
+            def _collate_inputs(per_sample_inputs: List[Dict[str, Any]]) -> Dict[str, Any]:
+                if len(per_sample_inputs) == 1:
+                    return per_sample_inputs[0]
+                batched: Dict[str, Any] = {}
+                keys = per_sample_inputs[0].keys()
+                for k in keys:
+                    vals = [d[k] for d in per_sample_inputs]
+                    first = vals[0]
+                    if isinstance(first, torch.Tensor):
+                        if k in ("input_ids", "attention_mask"):
+                            padding_value = pad_id if k == "input_ids" else 0
+                            batched[k] = _left_pad_stack(vals, padding_value=padding_value)
+                        else:
+                            arrs: List[torch.Tensor] = []
+                            for v in vals:
+                                if v.ndim == 0:
+                                    v = v.unsqueeze(0)
+                                arrs.append(v)
+                            try:
+                                batched[k] = torch.cat(arrs, dim=0)
+                            except Exception:
+                                batched[k] = vals
+                    else:
+                        batched[k] = vals
+                return batched
+
+            inputs = _collate_inputs(per_sample_inputs)
+            # Move tensors to device
+            inputs = {k: (v.to(self.device) if isinstance(v, torch.Tensor) else v) for k, v in inputs.items()}
+
+            # Compute per-sample non-pad input lengths and the uniform left-padded length
+            # We collated with LEFT padding to a uniform width; generated tokens start at this width.
+            if isinstance(inputs.get("attention_mask"), torch.Tensor):
+                attn = inputs["attention_mask"]
+                if attn.ndim == 1:
+                    attn = attn.unsqueeze(0)
+                input_lens = attn.sum(dim=1).tolist()  # number of real (non-pad) tokens per sample
+            else:
+                iid = inputs["input_ids"]
+                if iid.ndim == 1:
+                    iid = iid.unsqueeze(0)
+                input_lens = (iid != pad_id).sum(dim=1).tolist()
+            # After left padding in collate, all rows have same width; this is the split index for decoder-only models
+            pre_len = int(inputs["input_ids"].shape[1])
+
+            # Generation
+            # Simple generation call without constructing a GenerationConfig
+            out_tokens = self.model.generate(
+                **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=temperature > 0,
-                pad_token_id=(tokenizer.eos_token_id if tokenizer is not None else None),
+                do_sample=(temperature > 0),
+                pad_token_id=(pad_id if tokenizer is not None else None) or (getattr(tokenizer, 'eos_token_id', None) if tokenizer is not None else None),
                 use_cache=True,
                 early_stopping=True,
             )
-            # Avoid passing unsupported kwargs to prevent HF warnings; use a cloned generation_config instead
-            gen_config = getattr(self.model, 'generation_config', None)
-            if gen_config is not None:
-                try:
-                    gen_config = gen_config.clone()
-                except Exception:
-                    from copy import deepcopy
-                    gen_config = deepcopy(gen_config)
-                if temperature > 0:
-                    try:
-                        gen_config.temperature = float(temperature)
-                    except Exception:
-                        pass
 
-            if gen_config is not None:
-                out_tokens = self.model.generate(**inputs, generation_config=gen_config, **gen_kwargs)
-            else:
-                out_tokens = self.model.generate(**inputs, **gen_kwargs)
+            # Ensure 2D
+            if out_tokens.ndim == 1:
+                out_tokens = out_tokens.unsqueeze(0)
 
-            # Decode full texts and collect token IDs per sample
-            input_len = inputs['input_ids'].shape[-1]
-            batch_texts: List[str] = []
+            # Slice generated token ids per sample
+            # For decoder-only models, `generate` returns [input_ids | new_tokens].
+            # For encoder-decoder models, it usually returns only new tokens.
+            is_enc_dec = bool(getattr(getattr(self.model, 'config', None), 'is_encoder_decoder', False))
+            B = out_tokens.size(0)
             gen_token_ids: List[List[int]] = []
-            for row in out_tokens:
-                new = row[input_len:]
-                # Prefer model tokenizer for decoding
-                if tokenizer is not None:
-                    decoded = tokenizer.decode(new, skip_special_tokens=True)
-                else:
-                    decoded = self.processor.decode(new, skip_special_tokens=True)
-                batch_texts.append(decoded.strip())
-                gen_token_ids.append(new.tolist())
+            if not is_enc_dec and out_tokens.size(1) >= pre_len:
+                # Decoder-only path: new tokens start right after the (left-padded) input width
+                for b in range(B):
+                    gen_b = out_tokens[b, pre_len:]
+                    gen_token_ids.append(gen_b.tolist())
+            else:
+                # Encoder-decoder or unexpected shapes: treat the whole sequence as generated
+                for b in range(B):
+                    gen_token_ids.append(out_tokens[b].tolist())
 
-            # For debugging show the the decoded generated tokens
+            # Decode per sample
+            batch_texts: List[str] = []
+            for ids in gen_token_ids:
+                if tokenizer is not None:
+                    batch_texts.append(tokenizer.decode(ids, skip_special_tokens=True))
+                else:
+                    batch_texts.append(self.processor.decode(ids, skip_special_tokens=True))
+
             if self.verbose:
                 logging.debug("Generated tokens (debug):")
                 for text in batch_texts:
                     logging.debug(f" - {text}")
-            # Activation sequence across generation steps via utils hook: (B, T, D)
-            act_seq = None
+
+            # Activation sequence via utils hook: hidden_states dict -> per-sample tensors
+            hidden_dict: Dict[str, List[torch.Tensor]] = {}
             if self._hook_return_fn is not None and self._utils is not None:
                 try:
-                    # Provide optional kwargs though not needed for base hook
                     hook_out = self._hook_return_fn(
                         tokenizer=tokenizer,
                         image=img_chunk,
-                        model_output=None,
-                        model_generated_output=out_tokens[0][input_len:].unsqueeze(0),
+                        model_output=out_tokens,  # for completeness
+                        model_generated_output=gen_token_ids,
                     )
                     hidden_dict = hook_out.get("hidden_states", {}) if isinstance(hook_out, dict) else {}
                     if len(hidden_dict) == 0:
                         raise RuntimeError("No hidden_states captured by hooks")
-                    # Pick the first hooked module deterministically
-                    first_key = sorted(hidden_dict.keys())[0]
-                    act_seq = hidden_dict[first_key]  # (B, T, D)
-                    # Ensure activations are on CPU for similarity computation
-                    #act_seq = act_seq.detach().to('cpu', dtype=torch.float32)
                 except Exception as e:
                     raise RuntimeError(f"Failed to retrieve hidden states via hooks: {e}")
-            if act_seq is None:
-                raise RuntimeError("No activation captured for batch; check layer_path and hooks setup")
 
-            # For each sample, compute per-token top-N concepts
-            for j in range(len(act_seq)):
+            # Pick the first hooked module deterministically
+            first_key = sorted(hidden_dict.keys())[0]
+            act_list: List[torch.Tensor] = hidden_dict[first_key]  # list of (T, D) per sample
+
+            # For each sample, compute per-token and pooled top-N concepts
+            for j in range(len(act_list)):
                 new_ids = gen_token_ids[j]
                 T_new = len(new_ids)
-                T_cap = act_seq[j].shape[0]
-                # if T_new > T_cap throug an error in hook, else align to shortest
-                if T_new < T_cap:
+                acts_j_full = act_list[j]
+                T_cap = acts_j_full.shape[0]
+
+                if T_cap < T_new:
                     raise RuntimeError(f"Captured activation length {T_cap} shorter than generated tokens {T_new}; hook error?")
-                t_len = min(T_new, T_cap)
-                # Align to last t_len steps of captures (generation time steps)
-                acts_j = act_seq[j][-t_len:, :]  # (t_len, D)
-                # Use cosine distance per token vs each concept: d = 1 - cos_sim
-                  # (t_len, 1, D)
-                x = torch.nn.functional.normalize(acts_j, dim=0)
-                x = x.unsqueeze(1)
-                y = self.concept_vectors.unsqueeze(0)  # (1, K, D)
-                sims_tok = torch.nn.functional.cosine_similarity(x, y, dim=2)  # (t_len, K)
+                acts_j_full = torch.nn.functional.normalize(acts_j_full, dim=0)  # (T_cap, D)
+                # If hook did not save only generated, align to the last T_new steps
+                if not (self.save_only_generated_tokens or save_only_generated_tokens):
+                    acts_j = acts_j_full[-T_new:, :]
+                else:
+                    acts_j = acts_j_full[:T_new, :]
+                
+                acts_j = torch.nn.functional.normalize(acts_j, dim=0)  # (T_cap, D)
+                # Token-wise cosine similarity to concepts (normalize along feature dim)
+                x = acts_j.unsqueeze(1)  # (T,1,D)
+                y = self.concept_vectors.unsqueeze(0)  # (1, K, D) on CPU
+                sims_tok = torch.nn.functional.cosine_similarity(x, y, dim=2)  # (T, K)
                 dists_tok = 1.0 - sims_tok
 
-                # decode tokens one-by-one (optional)
-                token_texts: List[str] = []
+                # Decode tokens one-by-one
                 tok_decoder = tokenizer or getattr(self.processor, 'tokenizer', None)
-                for tid in new_ids[-t_len:]:
+                token_texts: List[str] = []
+                for tid in new_ids:
                     if tok_decoder is not None:
                         token_texts.append(tok_decoder.decode([tid], skip_special_tokens=True))
                     else:
                         token_texts.append(str(tid))
 
+                # Filter out empty/whitespace-only tokens from per-token output (keep alphanumeric content only)
+                def _is_nonempty_token(s: str) -> bool:
+                    return bool(s) and any(ch.isalnum() for ch in s)
+
+                kept_indices = [i for i, s in enumerate(token_texts) if _is_nonempty_token(s)]
+
                 per_token_concepts: List[Dict[str, Any]] = []
-                for t_idx in range(t_len):
-                    dists =  dists_tok[t_idx]
+                for t_idx in kept_indices:
+                    dists = dists_tok[t_idx]
                     k = min(N, dists.shape[0])
-                    # smallest distances
                     topk = torch.topk(dists, k=k, largest=False)
                     concept_indices = topk.indices.tolist()
                     concept_scores = topk.values.tolist()
@@ -558,10 +578,13 @@ class VLMConceptExplainer:
                         if self.image_grounding_paths and ci < len(self.image_grounding_paths):
                             try:
                                 img_gp = str(self.image_grounding_paths[ci])
-                                
                             except Exception:
                                 img_gp = self.image_grounding_paths[ci]
-                        img_gbbx = str(self.image_grounding_bboxes[ci]) if self.image_grounding_bboxes and ci < len(self.image_grounding_bboxes) else None
+                        if self.image_grounding_bboxes and ci < len(self.image_grounding_bboxes):
+                            try:
+                                img_gbbx = str(self.image_grounding_bboxes[ci])
+                            except Exception:
+                                img_gbbx = self.image_grounding_bboxes[ci]
                         top_concepts_tok.append({
                             'rank': rank,
                             'concept_index': ci,
@@ -574,39 +597,30 @@ class VLMConceptExplainer:
                         })
                     per_token_concepts.append({
                         'token_index': t_idx,
-                        'token_id': new_ids[-t_len + t_idx],
+                        'token_id': new_ids[t_idx],
                         'token_text': token_texts[t_idx],
                         'top_concepts': top_concepts_tok,
                     })
 
-                # Also compute pooled top concepts over the whole sequence (optional aggregate)
-                # Filter tokens before pooling using regex cleanup logic (articles/pronouns and specials)
+                # Pooled over sequence (filter trivial tokens)
                 def _keep_token_text(s: str) -> bool:
                     if not s or not any(ch.isalnum() for ch in s):
                         return False
-                    # Default removal lists
-                    remove_words: List[str] = []
                     articles = r'\b(?:a|an|the)\b'
                     pronouns = r'\b(?:i|object|you|he|she|it|we|they|me|him|her|us|them|my|mine|your|yours|his|hers|its|our|ours|that|their|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|photo|image|im_end|question)\b'
-                    combined_pattern = re.compile(f"{articles}|{pronouns}", flags=re.IGNORECASE)
-                    txt = combined_pattern.sub('', s)
-                    for word in remove_words:
-                        txt = re.sub(rf'\b{re.escape(word)}\b', '', txt, flags=re.IGNORECASE)
+                    combined = re.compile(f"{articles}|{pronouns}", flags=re.IGNORECASE)
+                    txt = combined.sub('', s)
                     txt = re.sub(r'[^a-zA-Z0-9\s]', '', txt)
                     txt = re.sub(r'\s+', ' ', txt).strip()
                     return txt != ''
 
-                mask_keep = [
-                    _keep_token_text(token_texts[t_idx]) if t_idx < len(token_texts) else False
-                    for t_idx in range(t_len)
-                ]
+                mask_keep = [ _keep_token_text(t) for t in token_texts ]
                 if any(mask_keep):
-                    acts_keep = acts_j[torch.tensor(mask_keep, dtype=torch.bool)]  # (m, D)
+                    acts_keep = acts_j[torch.tensor(mask_keep, dtype=torch.bool)]
                 else:
-                    acts_keep = acts_j  # fallback: keep all if none qualify
+                    acts_keep = acts_j
                 pooled = acts_keep.mean(dim=0, keepdim=True)  # (1, D)
-                # Cosine similarity over concepts (higher is better)
-                sims_all = F.cosine_similarity(pooled, self.concept_vectors, dim=-1)
+                sims_all = F.cosine_similarity(pooled.to('cpu', dtype=torch.float32), self.concept_vectors, dim=-1)
                 arr = sims_all.detach().cpu().numpy()
                 k_all = min(N, arr.shape[0])
                 idx_all = np.argsort(arr)[-k_all:][::-1].tolist()
@@ -636,13 +650,12 @@ class VLMConceptExplainer:
                     })
 
                 results.append({
-                    'image_path': abs_image_paths[base_idx + j],
-                    'ground_truth': lab_chunk[j],
+                    'image_path': abs_image_paths[base_idx + j] if (base_idx + j) < len(abs_image_paths) else None,
+                    'ground_truth': lab_chunk[j] if j < len(lab_chunk) else None,
                     'model_output': batch_texts[j],
                     'generated_token_ids': new_ids,
                     'per_token_concepts': per_token_concepts,
                     'top_concepts_over_sequence': top_concepts_all,
-                    #'layer_activation_shape': tuple(len(act_seq.shape)),
                     'hook_layer': self.layer_path,
                     'model_name': self.model_name,
                 })
@@ -672,7 +685,7 @@ if __name__ == "__main__":
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
-    ap.add_argument('--batch_size', type=int, default=5)
+    ap.add_argument('--batch_size', type=int, default=9)
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')
@@ -684,7 +697,7 @@ if __name__ == "__main__":
     # New: JSON output and data root controls
     ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json', help='Path to save JSON results')
     ap.add_argument('--data_root', default=None, help='Root path of dataset. If omitted, inferred from image paths')
-    ap.add_argument('--save_only_generated_tokens', default=True, action='store_true', help='Save only the generated tokens in the output')
+    ap.add_argument('--save_only_generated_tokens', default=False, action='store_true', help='Save only the generated tokens in the output')
     args = ap.parse_args()
 
     # Configure logging for terminal output
@@ -717,8 +730,8 @@ if __name__ == "__main__":
     # Set seeds early for reproducibility
     set_seed_all(args.seed, deterministic=args.deterministic)
     # add a  exception is batch size bigger than 1 the code does not work, the  error due the dataloader operation
-    if args.batch_size > 1:
-        raise ValueError("Batch size greater than 1 is not supported.")
+    #if args.batch_size > 1:
+    #    raise ValueError("Batch size greater than 1 is not supported.")
     # Prepare choices list if provided
     prompt_choices = None
     if getattr(args, 'choice_list', None):
