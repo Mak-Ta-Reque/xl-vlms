@@ -451,7 +451,7 @@ def get_hidden_states(
     for k, v in HIDDEN_STATES.items():
         if isinstance(v, list) and len(v) > 1:
             v = torch.cat(v, dim=1)
-            v = v / v.norm(p=2, dim=1, keepdim=True)
+            #v = v / v.norm(p=2, dim=1, keepdim=True)
             # Extra added for balancing distance avoiding neighbour tokens
         else:
             v = v[0]

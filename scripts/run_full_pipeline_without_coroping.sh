@@ -55,13 +55,13 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Data & outputs
-INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/xl-vlms/data}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20251016_140704}"
+INPUT_DIR="${INPUT_DIR:-/mnt/sda/abka03-data/food-101/images/food-101}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20251016_140704_food}"
 HF_HOME="${HF_HOME:-/mnt/sdz/abka03_data/models}"
 
 # Model/runtime knobs
 VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
-BATCH_SIZE="${BATCH_SIZE:-12}"
+BATCH_SIZE="${BATCH_SIZE:-48}"
 SEED="${SEED:-42}"
 DEVICE_ID="${DEVICE_ID:-1}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
 
@@ -278,7 +278,7 @@ for method in "${DECOMP_ARRAY[@]}"; do
   [[ -n "$EXPL_LABEL" ]] && EXTRA_PROMPT_ARGS+=" --prompt_label \"$EXPL_LABEL\""
   [[ -n "$EXPL_CHOICES" ]] && EXTRA_PROMPT_ARGS+=" --choices \"$EXPL_CHOICES\""
   run_step "Explainer ($method)" \
-    "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/inference/vlm_explainer.py\" \
+    "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/inference/vlm_explainer_multibatch.py\" \
       --model_name \"$VLM_MODEL\" \
       --concept_path \"$concept_path\" \
       --layer_path \"$LAYER_PATH\" \
