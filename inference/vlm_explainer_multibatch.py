@@ -685,7 +685,7 @@ if __name__ == "__main__":
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
-    ap.add_argument('--batch_size', type=int, default=9)
+    ap.add_argument('--batch_size', type=int, default=1)
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')
