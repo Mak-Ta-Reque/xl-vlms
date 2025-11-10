@@ -57,7 +57,7 @@ def eligible_indices_by_threshold(lists):
     """
     if not lists or not lists[0]:
         return []
-    threshold = 30 * len(lists[0]) / 100
+    threshold = 50 * len(lists[0]) / 100
     # Count conditioned items per sublist
     counts = [count_conditioned_items(sub) for sub in lists]
     # Filter indices that satisfy the threshold, keep (index, count)
@@ -97,7 +97,7 @@ def combine_concepts(input_dir):
         
         # If none eligible, fallback to index with minimal conditioned count
         if len(eligible) < 1:
-            continue
+            #continue
             counts = [count_conditioned_items(sub) for sub in image_grounding_path]
             min_idx = int(np.argmin(counts)) if counts else 0
             eligible = [min_idx]
