@@ -57,7 +57,11 @@ def eligible_indices_by_threshold(lists):
     """
     if not lists or not lists[0]:
         return []
+<<<<<<< HEAD
     threshold = 50 * len(lists[0]) / 100
+=======
+    threshold = 10 * len(lists[0]) / 100
+>>>>>>> 57f7bf3e91373af0cdb9b41ac3c100509e4f502c
     # Count conditioned items per sublist
     counts = [count_conditioned_items(sub) for sub in lists]
     # Filter indices that satisfy the threshold, keep (index, count)
@@ -241,7 +245,7 @@ def apply_normalization(concepts, method):
         l1_normalized = normalize(concepts_np, norm='l1')
         return zca_whiten(l1_normalized)
     elif method == 'gl':
-        concepts_np = zca_whiten(concepts_np)
+        #concepts_np = zca_whiten(concepts_np)
         features = laplacian_smoothing(concepts_np)
         return normalize(features, norm='l2')
         
@@ -288,6 +292,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_path", type=str, required=True, help="Base path to save output files")
     parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca', 'l1', 'l1zca', 'gl'], required=True,
                         help="Normalization methods to apply")
-    parser.add_argument("--delete", default=False, action="store_true", help="Delete input .pth files after processing")
+    parser.add_argument("--delete", default=True, action="store_true", help="Delete input .pth files after processing")
     args = parser.parse_args()
     main(args)
