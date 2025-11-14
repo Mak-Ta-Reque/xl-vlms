@@ -57,11 +57,10 @@ def eligible_indices_by_threshold(lists):
     """
     if not lists or not lists[0]:
         return []
-<<<<<<< HEAD
-    threshold = 50 * len(lists[0]) / 100
-=======
+
+    #threshold = 50 * len(lists[0]) / 100
     threshold = 10 * len(lists[0]) / 100
->>>>>>> 57f7bf3e91373af0cdb9b41ac3c100509e4f502c
+
     # Count conditioned items per sublist
     counts = [count_conditioned_items(sub) for sub in lists]
     # Filter indices that satisfy the threshold, keep (index, count)

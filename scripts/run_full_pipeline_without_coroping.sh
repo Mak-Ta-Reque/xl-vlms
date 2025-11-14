@@ -55,8 +55,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Data & outputs
-INPUT_DIR="${INPUT_DIR:-/mnt/sda/abka03-data/food-101/images/food-101}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20251016_140704_food}"
+INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/xl-vlms/data}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/test_kashan}"
 HF_HOME="${HF_HOME:-/mnt/sdz/abka03_data/models}"
 
 # Model/runtime knobs
@@ -66,15 +66,15 @@ SEED="${SEED:-42}"
 DEVICE_ID="${DEVICE_ID:-1}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
 
 # Crops JSON generation
-CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-50}"
+CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-20}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
-MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-20}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-10}"
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-128}"
-PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-24}"
+PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-10}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
 OBJECT_DETECTION="${OBJECT_DETECTION:-1}"      # 1 to enable LangSAM
-DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-8}"
-DETECTION_TOPN="${DETECTION_TOPN:-10}"
+DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-5}"
+DETECTION_TOPN="${DETECTION_TOPN:-5}"
 
 # Inference prompt and image preproc
 PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations.}"
