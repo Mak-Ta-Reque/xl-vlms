@@ -49,15 +49,122 @@ Example demo output files:
      pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
      ```
 
+## ⚙️ Configuration
 
+### Environment Setup with `.env`
 
-### Full pipeline 
-# Our method 
-scripts/run_full_pipeline.sh
-Set up the values of the data path and model names
+The pipeline uses a `.env` file for easy configuration management. This keeps your custom paths separate from the code.
 
+1. **Copy the example configuration**
+   ```bash
+   cp .env.example .env
+   ```
 
-Al result will be found in eval folder of outputs
+2. **Edit `.env` with your paths**
+   ```bash
+   nano .env  # or use your preferred editor
+   ```
+
+3. **Key configuration variables**
+   
+   The `.env` file supports the following variables:
+   
+   ```bash
+   # Data & Output Paths
+   export INPUT_DIR="/path/to/your/dataset"
+   export OUTPUT_DIR="$ROOT_DIR/outputs/your_run_name"
+   export HF_HOME="/path/to/huggingface/models"
+   
+   # Crops Configuration
+   export MIN_IMAGES_PER_TAG=20  # Use 10 for dummy data at xl-vlms/data
+   
+   # Optional: Model Configuration
+   export VLM_MODEL="Qwen/Qwen2.5-VL-3B-Instruct"
+   export BATCH_SIZE=48
+   export DEVICE_ID=0
+   export DECOMP_METHODS="snmf"
+   ```
+
+4. **Using `$ROOT_DIR` variable**
+   
+   The `.env` file has access to `$ROOT_DIR` (the xl-vlms project directory):
+   ```bash
+   # Use $ROOT_DIR for paths inside the project
+   export OUTPUT_DIR="$ROOT_DIR/outputs/my_experiment"
+   export IMAGE_ROOT="$ROOT_DIR/data/grids"
+   
+   # Use absolute paths for external resources
+   export INPUT_DIR="/mnt/sda/datasets/food-101"
+   export HF_HOME="/mnt/sdz/models"
+   ```
+
+5. **Quick configuration switching**
+   
+   For dummy/test data:
+   ```bash
+   export INPUT_DIR="$ROOT_DIR/data"
+   export MIN_IMAGES_PER_TAG=10
+   export OUTPUT_DIR="$ROOT_DIR/outputs/test_run"
+   ```
+   
+   For full datasets:
+   ```bash
+   export INPUT_DIR="/path/to/full/dataset"
+   export MIN_IMAGES_PER_TAG=20
+   export OUTPUT_DIR="$ROOT_DIR/outputs/production_run"
+   ```
+
+**Note:** The `.env` file is ignored by git (in `.gitignore`) to keep your local paths private. Use `.env.example` as a template for sharing configuration structure.
+
+### Full Pipeline (Recommended)
+
+The easiest way to run the complete pipeline:
+
+1. **Configure your environment** (see Configuration section above)
+   ```bash
+   cp .env.example .env
+   nano .env  # Edit with your paths
+   ```
+
+2. **Run the full pipeline**
+   ```bash
+   ./scripts/run_full_pipeline_without_coroping.sh
+   ```
+   
+   The script automatically loads your `.env` configuration and runs:
+   - Dataset inference → concept mapping
+   - Crop generation with concept grounding
+   - Feature extraction
+   - Feature decomposition (SNMF/NMF/PCA)
+   - VLM explanation
+   - Concept deletion/insertion evaluation
+   - Visualization plots
+
+3. **Results location**
+   ```
+   $OUTPUT_DIR/
+   ├── inference/           # Concepts and crops
+   ├── features/            # Extracted features
+   ├── concept/             # Decomposed concepts per method
+   ├── explanations/        # VLM explanations per method
+   ├── eval/                # Evaluation results (CSV files)
+   └── plots/               # Visualizations
+   ```
+
+4. **Command-line overrides** (optional)
+   ```bash
+   # Override specific variables without editing .env
+   MIN_IMAGES_PER_TAG=5 OUTPUT_DIR="./outputs/quick_test" \
+     ./scripts/run_full_pipeline_without_coroping.sh
+   
+   # Or use flags
+   ./scripts/run_full_pipeline_without_coroping.sh \
+     --input-dir /path/to/data \
+     --output-dir ./outputs/experiment_1 \
+     --decomp snmf,nmf,pca
+   ```
+
+All results will be found in the `eval/` folder of your configured output directory.
 
 
 ## Expert usages
