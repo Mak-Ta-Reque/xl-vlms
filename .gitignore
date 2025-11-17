@@ -22,9 +22,18 @@ logs.log
 .vscode
 .pth
 output
-outputs
+outputs/
 token.txt
 .png
 crops
 .notebooks
 *_omba.sh
+
+# Environment and config files (keep .env.example)
+.env
+config.env
+
+# Miniconda installer and related
+Miniconda3*
+miniconda3*
+./Miniconda3*

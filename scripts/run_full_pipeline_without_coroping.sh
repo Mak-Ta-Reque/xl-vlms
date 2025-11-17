@@ -54,21 +54,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
+# Auto-load .env file if it exists
+ENV_FILE="$ROOT_DIR/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  log "Loading configuration from $ENV_FILE"
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+fi
+
 # Data & outputs
-INPUT_DIR="${INPUT_DIR:-/mnt/sda/abka03-data/food-101/images/food-101}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_20251016_140704_food}"
-HF_HOME="${HF_HOME:-/mnt/sdz/abka03_data/models}"
+INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_${TIMESTAMP}}"
+HF_HOME="${HF_HOME:-$ROOT_DIR/models}"
 
 # Model/runtime knobs
 VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
 BATCH_SIZE="${BATCH_SIZE:-48}"
 SEED="${SEED:-42}"
-DEVICE_ID="${DEVICE_ID:-1}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
+DEVICE_ID="${DEVICE_ID:-0}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
 
 # Crops JSON generation
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-50}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
-MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-20}"
+MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-10}"
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-128}"
 PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-24}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
@@ -86,7 +94,7 @@ DECOMP_METHODS="${DECOMP_METHODS:-snmf}"
 
 # Explainer/Eval
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-/mnt/sdz/abka03_data/xl-vlms/data/grids}"
+IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/grids}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-70}"
 EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"
