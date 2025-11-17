@@ -14,7 +14,7 @@ from helpers.utils import (clear_forward_hooks, clear_hooks_variables,
                            update_dict_of_list)
 from models import get_model_class
 from models.image_text_model import ImageTextModel
-
+from helpers.logger import log_num_transformer_layers
 
 @torch.no_grad()
 def inference(
@@ -29,6 +29,8 @@ def inference(
     num_iterations = len(loader)
     hook_data = {}
     model = model_class.get_model()
+    log_num_transformer_layers(model, model_name=args.model_name_or_path)
+
     start_time = time.time()
     for i, item in enumerate(loader):
         # Batchify: gather all texts and images in the batch

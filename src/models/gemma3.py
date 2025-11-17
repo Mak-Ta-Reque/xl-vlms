@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, List
 
 import torch
 from transformers import AutoProcessor, Gemma3nForConditionalGeneration
-
+import os
 from .image_text_model import ImageTextModel
 
 __all__ = ["Gemma3nVL"]
@@ -16,6 +16,7 @@ class Gemma3nVL(ImageTextModel):
             torch_dtype=torch.bfloat16,  # Or float16 depending on your hardware
             low_cpu_mem_usage=True,
             local_files_only=self.local_files_only,
+            token=os.getenv("HF_TOKEN", None),
         ).eval()
 
     def get_language_model(self) -> Callable:
@@ -28,6 +29,7 @@ class Gemma3nVL(ImageTextModel):
         self.processor_ = AutoProcessor.from_pretrained(
             self.processor_name,
             local_files_only=self.local_files_only,
+            token=os.getenv("HF_TOKEN", None),
         )
         self.tokenizer_ = self.processor_.tokenizer
 
