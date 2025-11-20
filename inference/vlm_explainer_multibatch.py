@@ -297,7 +297,7 @@ class VLMConceptExplainer:
                 )
             # Fallback to unsupervised if no choices provided
         # Unsupervised/default prompt
-        return "Classify and name the main object in each grid, separated by spaces, in a single line."
+        return "Name the main object in each grid, without commas and spaces in between, in a single line."
 
     # ---------- Utils ----------
     

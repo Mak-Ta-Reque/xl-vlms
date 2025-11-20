@@ -1,1 +1,18 @@
 Qwen/Qwen2.5-VL-3B-Instruct
+
+
+
+
+
+python src/evaluate.py outputs/qwen2_0_10cls/imnet100/explanations/snmf/vlm_explanations.json \
+  --grounding-root /mnt/abka03/xlvlm_data/imagenet_1000 \
+  --use-relative-input \
+  --out-json eval_out.json
+
+
+python src/evaluate.py \
+  --pred_json outputs/qwen2_0_10cls/imnet100/explanations/snmf/vlm_explanations.json \
+  --pred_key model_output \
+  --ref_key gt_caption \
+  --img_key image_grounding_path \
+  --img_root /mnt/abka03/xlvlm_data/imagenet_1000/train

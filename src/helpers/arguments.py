@@ -190,6 +190,12 @@ def get_arguments():
         help="Max number of iterations for dictionary learning optimization.",
     )
     parser.add_argument(
+        "--dl_alpha",
+        type=int,
+        default=20,
+        help="Max number of iterations for dictionary learning optimization.",
+    )
+    parser.add_argument(
         "--num_grounded_text_tokens",
         type=int,
         default=5,
