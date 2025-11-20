@@ -224,7 +224,7 @@ def decompose_activations(
             n_components=num_concepts,
             positive_code=True,
             fit_algorithm="cd",
-            alpha=20.0,
+            alpha=args.dl_alpha,
             transform_algorithm="lasso_cd",
             max_iter=args.dl_max_iter,
         )

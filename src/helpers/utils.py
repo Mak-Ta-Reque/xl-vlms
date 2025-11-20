@@ -95,26 +95,53 @@ def update_dict_of_list(item: Dict[str, Any], data: Dict[str, Any]) -> Dict[str,
     """Merge a batched item dict into an accumulator of lists.
     - If item[k] is a list/tuple (batched), extend the accumulator list.
     - Otherwise, append the single value.
+    Also ensures that any torch.Tensors are detached and moved to CPU before storing.
     """
+
+    def _to_cpu(x: Any) -> Any:
+        return x.detach().cpu() if torch.is_tensor(x) else x
+
     for k, v in item.items():
+        # Case 1: batched sequences
         if isinstance(v, (list, tuple)):
+            values = [_to_cpu(x) for x in v]
             if k in data:
-                data[k].extend(v)
+                data[k].extend(values)
             else:
-                data[k] = list(v)
+                data[k] = list(values)
+
+        # Case 2: nested mapping (e.g., dict of lists/sequences)
         elif isinstance(v, dict):
             for ek, ev in v.items():
                 if k not in data:
                     data[k] = {}
-                if ek in data[k]:
-                    data[k][ek].extend(list(ev))
+                if isinstance(ev, (list, tuple)):
+                    proc = [_to_cpu(x) for x in ev]
                 else:
-                    data[k][ek] = list(ev)
+                    # Fallback: try to iterate (e.g., 1D tensor) else treat as single
+                    if torch.is_tensor(ev):
+                        try:
+                            proc = [_to_cpu(x) for x in list(ev)]
+                        except TypeError:
+                            proc = [_to_cpu(ev)]
+                    else:
+                        try:
+                            proc = [_to_cpu(x) for x in ev]  # type: ignore
+                        except Exception:
+                            proc = [_to_cpu(ev)]
+
+                if ek in data[k]:
+                    data[k][ek].extend(proc)
+                else:
+                    data[k][ek] = list(proc)
+
+        # Case 3: single value
         else:
+            val = _to_cpu(v)
             if k in data:
-                data[k].append(v)
+                data[k].append(val)
             else:
-                data[k] = [v]
+                data[k] = [val]
     return data
 
 
