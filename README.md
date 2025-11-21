@@ -54,6 +54,14 @@ This type of explanation is crucial for **debugging model behavior**, **understa
 - [grounding_per_token/per_token_viz_1.png](outputs/screen_run/plots/grounding_per_token/per_token_viz_1.png)
 - [grounding_per_token/per_token_viz_3.png](outputs/screen_run/plots/grounding_per_token/per_token_viz_3.png)
 
+#### Additional Example Visualizations:
+
+![Group 11 Example](readme_samples/images/group_11.png)
+
+![Group 16 Example](readme_samples/images/group_16.png)
+
+![Group 17 Example](readme_samples/images/group_17.png)
+
 ## 📦 Installation
 
 1. **Clone the repository**
@@ -265,3 +273,5 @@ See [LICENSE](LICENSE) for details.
 ---
 
 For questions or issues, please refer to the repository or contact the maintainers.
+
+**Contact:** abdul.kadir@dfki.de
