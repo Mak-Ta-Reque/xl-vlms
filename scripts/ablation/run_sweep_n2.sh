@@ -31,7 +31,7 @@ USAGE
   exit 1
 }
 
-PIPELINE="./run_pipeline.sh"
+PIPELINE="scripts/run_full_pipeline_without_coroping_omba_diffrentnumber_opf_crops.sh"
 RESOURCE_DIR=""
 OUT_ROOT=""
 ALPHA_MIN=5
@@ -57,6 +57,7 @@ done
 [[ -z "$RESOURCE_DIR" || -z "$OUT_ROOT" ]] && echo "[ERROR] --resource-dir and --output-dir are required" && usage
 [[ ! -f "$PIPELINE" ]] && echo "[ERROR] Pipeline not found: $PIPELINE" && exit 1
 [[ ! -d "$RESOURCE_DIR/inference" ]] && echo "[ERROR] Resource inference not found: $RESOURCE_DIR/inference" && exit 1
+[[ ! -d "$RESOURCE_DIR/features" ]] && echo "[ERROR] Resource features not found: $RESOURCE_DIR/features" && exit 1
 
 mkdir -p "$OUT_ROOT"
 
@@ -78,42 +79,22 @@ echo "[INFO] n_concepts   = $N_CONCEPTS_FIXED (fixed)"
 echo "[INFO] alpha sweep  = ${ALPHAS[*]}"
 
 # -----------------------------
-# 1) Shared features for n=2
+# 1) Alpha ablation runs (copy per alpha like run_multi)
 # -----------------------------
-SHARED="$OUT_ROOT/shared_n2"
-mkdir -p "$SHARED/inference"
+RESOURCE_INF="$RESOURCE_DIR/inference"
+RESOURCE_FEAT="$RESOURCE_DIR/features"
 
-# copy precomputed inference from resource -> shared
-rsync -a --ignore-existing "$RESOURCE_DIR/inference/" "$SHARED/inference/"
-
-# run pipeline once to generate features (and whatever else; ok)
-if find "$SHARED/features" -type f -name '*.pth' -print -quit | grep -q .; then
-  echo "[INFO] Shared features already exist: $SHARED/features"
-else
-  echo "[INFO] Creating shared features (n_concepts=2) ..."
-  n_concepts="$N_CONCEPTS_FIXED" OUTPUT_DIR="$SHARED" \
-    bash "$PIPELINE" --output-dir "$SHARED"
-fi
-
-# -----------------------------
-# 2) Alpha ablation runs
-# -----------------------------
 for a in "${ALPHAS[@]}"; do
   RUN_DIR="$OUT_ROOT/alpha_${a}"
   mkdir -p "$RUN_DIR/inference"
-
   echo "------------------------------------"
   echo "[RUN] n_concepts=2  DL_ALPHA=$a"
   echo "[DIR] $RUN_DIR"
   echo "------------------------------------"
 
-  # inference from shared
-  rsync -a --ignore-existing "$SHARED/inference/" "$RUN_DIR/inference/"
-
-  # reuse shared features
-  if [[ ! -e "$RUN_DIR/features" ]]; then
-    ln -s "$SHARED/features" "$RUN_DIR/features"
-  fi
+  # copy precomputed inference/features for this alpha run (no overwrite)
+  rsync -a --ignore-existing "$RESOURCE_INF/" "$RUN_DIR/inference/"
+  rsync -a --ignore-existing "$RESOURCE_FEAT/" "$RUN_DIR/features/"
 
   # run pipeline with fixed n=2 and this alpha
   n_concepts="$N_CONCEPTS_FIXED" DL_ALPHA="$a" OUTPUT_DIR="$RUN_DIR" \

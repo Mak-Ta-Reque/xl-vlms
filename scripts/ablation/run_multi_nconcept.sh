@@ -37,9 +37,15 @@ done
 [[ ! -f "$PIPELINE_SCRIPT" ]] && echo "[ERROR] Pipeline script not found: $PIPELINE_SCRIPT" && exit 1
 
 RESOURCE_INF="$RESOURCE_OUT/inference"
+RESOURCE_FEAT="$RESOURCE_OUT/features"
 if [[ ! -d "$RESOURCE_INF" ]]; then
   echo "[ERROR] Resource inference dir not found: $RESOURCE_INF"
   echo "Make sure RESOURCE_OUT has inference/ with objects.csv, concepts_to_images.json, crops.json, etc."
+  exit 1
+fi
+if [[ ! -d "$RESOURCE_FEAT" ]]; then
+  echo "[ERROR] Resource features dir not found: $RESOURCE_FEAT"
+  echo "Make sure RESOURCE_OUT has features/ with precomputed features."
   exit 1
 fi
 
@@ -60,6 +66,7 @@ for n in "${N_ARR[@]}"; do
 
   # Copy precomputed inference from resource -> per-n dir (don’t overwrite existing)
   rsync -a --ignore-existing "$RESOURCE_INF/" "$OUT_DIR/inference/"
+  rsync -a --ignore-existing "$RESOURCE_FEAT/" "$OUT_DIR/features/"
 
   # Run pipeline with overridden OUTPUT_DIR + n_concepts
   n_concepts="$n" OUTPUT_DIR="$OUT_DIR" bash "$PIPELINE_SCRIPT" --output-dir "$OUT_DIR"

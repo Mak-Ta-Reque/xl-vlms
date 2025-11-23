@@ -297,7 +297,7 @@ class VLMConceptExplainer:
                 )
             # Fallback to unsupervised if no choices provided
         # Unsupervised/default prompt
-        return "Name the main object in each grid, without commas and spaces in between, in a single line."
+        return "Name the main object in each grid in a single line, separated by commas. "
 
     # ---------- Utils ----------
     
@@ -320,7 +320,7 @@ class VLMConceptExplainer:
         images: List[Union[str, Path, Image.Image]],
         ground_truth_labels: Optional[List[Optional[str]]] = None,
         top_n: Optional[int] = None,
-        max_new_tokens: int = 20,
+        max_new_tokens: int = 500,
         temperature: float = 0.0,
         batch_size: int = 1,
         save_only_generated_tokens: bool = False,
