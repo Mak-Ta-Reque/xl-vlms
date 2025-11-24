@@ -498,14 +498,20 @@ def main():
     # evaluate only alpha_0 and alpha_10 (default), same Top-K as before
     ks = (1, 2, 3)
 
-    # allow evaluating a single JSON directly via CLI
+    # allow evaluating a single JSON directly via CLI or a root directory with many alpha subfolders
     parser = argparse.ArgumentParser(
         description="Evaluate BERTScore and CLIPScore for explanations JSON(s)."
     )
     parser.add_argument("--json_path", type=str, default=None,
                         help="Path to a single explanations JSON file to evaluate directly")
-    parser.add_argument("--alphas", type=str, default=os.environ.get("ALPHAS", "2,3,4,5,6,7,8,9,10,20"),
-                        help="Comma-separated alphas (only used when --json_path is not provided)")
+    parser.add_argument("--root_dir", type=str, default=None,
+                        help="Root directory containing multiple alpha subfolders to evaluate (overrides env ALPHA_ROOT)")
+    parser.add_argument("--alphas", type=str, default=None,
+                        help="Comma-separated alphas (if omitted, subfolders under --root_dir will be autodetected)")
+    parser.add_argument("--decomp_method", type=str, default=os.environ.get("DECOMP_METHOD", "snmf"),
+                        help="Decomposition method subfolder under explanations (default: snmf)")
+    parser.add_argument("--output_csv", type=str, default=None,
+                        help="Path to save the CSV summary (default: <root_dir>/n_eval_<decomp_method>.csv)")
     args = parser.parse_args()
 
     if args.json_path:
@@ -528,22 +534,40 @@ def main():
 
         return
 
-    # root that contains alpha_0, alpha_1, ...
-    ALPHA_ROOT = Path(os.environ.get(
+    # root that contains alpha folders
+    ALPHA_ROOT = Path(args.root_dir) if args.root_dir else Path(os.environ.get(
         "ALPHA_ROOT",
         "/mnt/abka03/Projects/xl-vlms/outputs/ablation/dictionary_size"
     ))
 
-    # which alphas to evaluate
-    # you can override: export ALPHAS="0,10,20"
-    alphas_env = os.environ.get("ALPHAS", "2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100")
-    alphas = [int(x.strip()) for x in alphas_env.split(",") if x.strip()]
+    if not ALPHA_ROOT.exists():
+        raise FileNotFoundError(f"Missing ALPHA_ROOT at {ALPHA_ROOT}")
 
-    DECOMP_METHOD = os.environ.get("DECOMP_METHOD", "snmf")
+    # determine which alphas to evaluate
+    if args.alphas:
+        alphas = [int(x.strip()) for x in args.alphas.split(",") if x.strip()]
+    else:
+        # autodetect numeric subfolders (supports 'n_<num>' or '<num>')
+        alphas = []
+        for p in sorted(ALPHA_ROOT.iterdir()):
+            if not p.is_dir():
+                continue
+            m = re.search(r"(\d+)", p.name)
+            if m:
+                alphas.append(int(m.group(1)))
+        alphas = sorted(set(alphas))
+
+    DECOMP_METHOD = args.decomp_method
 
     rows = []
     for a in alphas:
-        out_dir = ALPHA_ROOT / f"n_{a}"
+        candidate1 = ALPHA_ROOT / f"n_{a}"
+        candidate2 = ALPHA_ROOT / str(a)
+        out_dir = candidate1 if candidate1.exists() else candidate2
+        if not out_dir.exists():
+            print(f"[WARN] missing folder for alpha {a}: tried {candidate1} and {candidate2} -> skip")
+            continue
+
         explanations_json = out_dir / "explanations" / DECOMP_METHOD / "vlm_explanations.json"
 
         if not explanations_json.exists():
@@ -584,7 +608,7 @@ def main():
         print(" | ".join([str(r["n"])] + bert_cells + clip_cells))
 
     # -------- save CSV --------
-    csv_path = ALPHA_ROOT / f"n_eval_{DECOMP_METHOD}.csv"
+    csv_path = Path(args.output_csv) if args.output_csv else ALPHA_ROOT / f"n_eval_{DECOMP_METHOD}.csv"
     with open(csv_path, "w") as f:
         f.write(",".join(["n"] +
                          [f"bert@{k}_mean" for k in ks] +
@@ -604,36 +628,6 @@ def main():
             f.write(",".join(line) + "\n")
 
     print(f"\nSaved table to: {csv_path}")
-
-if __name__ == "__main__":
-    main()
-"""
-
-def main():
-    ks = (1,2,3)
-
-    ROOT_DIR = Path(os.environ.get("ROOT_DIR", Path.cwd()))
-    DEFAULT_OUTPUT = ROOT_DIR / "outputs/qwen2_5_10cls_sam/imnet200"
-    OUTPUT_DIR_BASE = Path(os.environ.get("OUTPUT_DIR", DEFAULT_OUTPUT))
-    DECOMP_METHOD = os.environ.get("DECOMP_METHOD", "snmf")
-
-    EXPLANATIONS_JSON = OUTPUT_DIR_BASE / "explanations" / DECOMP_METHOD / "vlm_explanations.json"
-    if not EXPLANATIONS_JSON.exists():
-        raise FileNotFoundError(f"Missing explanations at {EXPLANATIONS_JSON}")
-
-    extracted = extract_prediction_and_explantion_data(str(EXPLANATIONS_JSON), ks=ks)
-
-    bert_sum = compute_bertscore_per_sample(extracted, ks=ks)
-    clip_sum = compute_clipscore_per_sample(extracted, ks=ks)
-
-    print("BERTScore between GT tokens and predicted concepts (text):")
-    for k, (mean, std) in bert_sum.items():
-        print(f"  Top-{k}: BERTScore F1 = {mean:.4f} ± {std:.4f}")
-
-    print("\nCLIPScore between GT tokens and predicted concept crops (image):")
-    for k, (mean, std) in clip_sum.items():
-        print(f"  Top-{k}: CLIPScore = {mean:.4f} ± {std:.4f}")
-
 
 if __name__ == "__main__":
     main()

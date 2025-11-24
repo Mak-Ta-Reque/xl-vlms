@@ -11,3 +11,8 @@ chmod +x run_alpha_ablation_n2.sh
   --resource-dir outputs/gemma3n-4B_sam/imnet500 \
   --output-dir outputs/ablation/alpha \
   --alpha-min 5 --alpha-max 50 --alpha-step 5
+
+
+./scripts/ablation/run_layer_sweep.sh \
+  --resource-dir outputs/gemma3n-4B_sam/imnet600 \
+  --output-dir   outputs/ablation/layers
