@@ -494,7 +494,42 @@ def compute_clipscore_per_sample(results, ks=(1,2,3)):
 # 5) Main
 # ============================================================
 
+def load_env_file():
+    """Load .env file if it exists, similar to other scripts in the project."""
+    # Get project root directory
+    script_path = Path(__file__).resolve()
+    root_dir = script_path.parent
+    
+    # Try to find xl-vlms root (go up if we're in a subdirectory)
+    while root_dir.name != 'xl-vlms' and root_dir.parent != root_dir:
+        root_dir = root_dir.parent
+    
+    env_file = root_dir / '.env'
+    if env_file.exists():
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    # Parse export VAR="value" or VAR=value
+                    if line.startswith('export '):
+                        line = line[7:]  # Remove 'export '
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"\'')
+                    
+                    # Expand $ROOT_DIR in values
+                    if '$ROOT_DIR' in value:
+                        value = value.replace('$ROOT_DIR', str(root_dir))
+                    
+                    # Set as environment variable (only if not already set)
+                    if key not in os.environ:
+                        os.environ[key] = value
+
+
 def main():
+    # Load .env file first to get environment variables
+    load_env_file()
+    
     # evaluate only alpha_0 and alpha_10 (default), same Top-K as before
     ks = (1, 2, 3)
 
@@ -503,16 +538,28 @@ def main():
         description="Evaluate BERTScore and CLIPScore for explanations JSON(s)."
     )
     parser.add_argument("--json_path", type=str, default=None,
-                        help="Path to a single explanations JSON file to evaluate directly")
+                        help="Path to a single explanations JSON file to evaluate directly. If not provided and OUTPUT_DIR is set, will auto-detect from OUTPUT_DIR/explanations/{decomp_method}/vlm_explanations.json")
     parser.add_argument("--root_dir", type=str, default=None,
-                        help="Root directory containing multiple alpha subfolders to evaluate (overrides env ALPHA_ROOT)")
+                        help="Root directory containing multiple alpha subfolders to evaluate (defaults to OUTPUT_DIR from .env, or ALPHA_ROOT as fallback)")
     parser.add_argument("--alphas", type=str, default=None,
                         help="Comma-separated alphas (if omitted, subfolders under --root_dir will be autodetected)")
     parser.add_argument("--decomp_method", type=str, default=os.environ.get("DECOMP_METHOD", "snmf"),
-                        help="Decomposition method subfolder under explanations (default: snmf)")
+                        help="Decomposition method subfolder under explanations (default: snmf or from DECOMP_METHOD env var)")
     parser.add_argument("--output_csv", type=str, default=None,
                         help="Path to save the CSV summary (default: <root_dir>/n_eval_<decomp_method>.csv)")
     args = parser.parse_args()
+    
+    # Auto-detect json_path from OUTPUT_DIR if not provided
+    if not args.json_path and not args.root_dir:
+        output_dir = os.environ.get("OUTPUT_DIR")
+        if output_dir:
+            decomp_method = args.decomp_method
+            auto_json_path = Path(output_dir) / "explanations" / decomp_method / "vlm_explanations.json"
+            if auto_json_path.exists():
+                args.json_path = str(auto_json_path)
+                print(f"📂 Auto-detected JSON path from OUTPUT_DIR: {args.json_path}")
+            else:
+                print(f"⚠️  OUTPUT_DIR set to {output_dir}, but explanations JSON not found at: {auto_json_path}")
 
     if args.json_path:
         EXPLANATIONS_JSON = Path(args.json_path)
@@ -535,13 +582,22 @@ def main():
         return
 
     # root that contains alpha folders
-    ALPHA_ROOT = Path(args.root_dir) if args.root_dir else Path(os.environ.get(
-        "ALPHA_ROOT",
-        "/mnt/abka03/Projects/xl-vlms/outputs/ablation/dictionary_size"
-    ))
+    # Priority: --root_dir arg > OUTPUT_DIR from .env > ALPHA_ROOT env > hardcoded default
+    if args.root_dir:
+        ALPHA_ROOT = Path(args.root_dir)
+    else:
+        output_dir = os.environ.get("OUTPUT_DIR")
+        alpha_root_env = os.environ.get("ALPHA_ROOT")
+        if output_dir:
+            ALPHA_ROOT = Path(output_dir)
+        elif alpha_root_env:
+            ALPHA_ROOT = Path(alpha_root_env)
+        else:
+            # Last resort: old hardcoded default
+            ALPHA_ROOT = Path("/mnt/abka03/Projects/xl-vlms/outputs/ablation/dictionary_size")
 
     if not ALPHA_ROOT.exists():
-        raise FileNotFoundError(f"Missing ALPHA_ROOT at {ALPHA_ROOT}")
+        raise FileNotFoundError(f"Missing root directory at {ALPHA_ROOT}. Set OUTPUT_DIR in .env or use --root_dir")
 
     # determine which alphas to evaluate
     if args.alphas:

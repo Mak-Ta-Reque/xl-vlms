@@ -81,8 +81,13 @@ This type of explanation is crucial for **debugging model behavior**, **understa
    - Using pip:
      ```bash
      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-     pip install tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
+     pip install tqdm git+https://github.com/bckim92/language-evaluation.git psutil spacy timm accelerate
      python -m spacy download en_core_web_sm
+     
+     # For BERTScore and CLIPScore evaluation:
+     pip install bert-score
+     pip install git+https://github.com/openai/CLIP.git
+     
      # For Qwen model support:
      pip install qwen-vl-utils
      conda install -c conda-forge inflect
