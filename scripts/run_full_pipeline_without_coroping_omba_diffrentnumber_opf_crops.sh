@@ -55,7 +55,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Data & outputs
-INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/dtd_split}"
+INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_1000}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/dtd_concepts/gemma_imnet_colorful_eval_4_grid}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 #
@@ -89,7 +89,7 @@ DECOMP_METHODS="${DECOMP_METHODS:-snmf}"
 
 # Explainer/Eval
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/colorful/val_grids}"
+IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class/val_grids}"
 TOP_N="${TOP_N:-3}"
 NUM_POINTS="${NUM_POINTS:-70}"
 EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"
