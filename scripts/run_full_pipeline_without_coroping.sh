@@ -77,10 +77,11 @@ DEVICE_ID="${DEVICE_ID:-0}"   # default to GPU 1; override with DEVICE_ID or CUD
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-50}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
 MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-10}"
+DATASET_SIZE="${DATASET_SIZE:-400}"  # Number of samples per concept in dataset
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-128}"
 PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-24}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
-OBJECT_DETECTION="${OBJECT_DETECTION:-1}"      # 1 to enable LangSAM
+OBJECT_DETECTION="${OBJECT_DETECTION:-0}"      # 1 to enable LangSAM
 DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-8}"
 DETECTION_TOPN="${DETECTION_TOPN:-10}"
 
@@ -207,7 +208,7 @@ run_step "Generate Features" \
   "HF_HOME=\"$HF_HOME\" python -u \"$ROOT_DIR/src/save_features.py\" \
     --model_name \"$VLM_MODEL\" \
     --dataset_name json_crop_map \
-    --dataset_size 400 \
+    --dataset_size $DATASET_SIZE \
     --data_dir \"$INPUT_DIR\" \
     --annotation_file \"$CROPS_JSON\" \
     --split train \
@@ -215,7 +216,7 @@ run_step "Generate Features" \
     --modules_to_hook $LAYER_PATH \
     --prompt_template cgdl \
     --save_dir \"$FEATURES_DIR\" \
-    --batch_size 30 \
+    --batch_size $BATCH_SIZE \
     --generation_mode \
     --save_only_generated_tokens \
     --exact_match_modules_to_hook"
