@@ -212,6 +212,36 @@ The easiest way to run the complete pipeline:
 
 All results will be found in the `eval/` folder of your configured output directory.
 
+## Running the Jupyter Notebook
+
+To visualize the results:
+
+1. **Run the notebook:**
+```bash
+   jupyter notebook visualize_explanations.ipynb
+```
+
+2. **Set the path to your explanations JSON file:**
+   
+   In the notebook, locate the main cell and update the `json_path` parameter:
+```python
+   # Set your explanations JSON file path here
+   json_path = "path/to/your/explanations/*.json"
+   
+   # Run visualization
+   visualize_all_per_token(
+       json_path=json_path,
+       save_dir="outputs",
+       max_concepts=3,
+       max_crops=5,
+       concept_size=200
+   )
+```
+
+3. **The notebook will:**
+   - Load all results from your JSON file
+   - Generate visualizations for each token
+   - Save outputs to the specified directory (default: `outputs/`)
 
 ## Expert usages
 
