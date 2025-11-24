@@ -55,8 +55,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Data & outputs
-INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_1000}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/gemma3n_sam_random}"
+INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/dtd_split}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/dtd_concepts/gemma_imnet_colorful_eval_4_grid}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
 #
 #Qwen/Qwen2.5-VL-7B-Instruct
@@ -68,10 +68,10 @@ SEED="${SEED:-42}"
 DEVICE_ID="${DEVICE_ID:-0}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
 
 # Crops JSON generation
-CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-30}"
+CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-40}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
 MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-300}" # This the minimum frequency of objects to be selected for cropping. Bag sisze < image per tag
-MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-300}" #  This the upperlimit of images going to crop for further processing 
+MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-500}" #  This the upperlimit of images going to crop for further processing 
 BAG_SIZE="${BAG_SIZE:-300}" # max number of crop/image chosen for each concept bag,
 PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-40}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
@@ -89,7 +89,7 @@ DECOMP_METHODS="${DECOMP_METHODS:-snmf}"
 
 # Explainer/Eval
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class/val_grids}"
+IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/colorful/val_grids}"
 TOP_N="${TOP_N:-3}"
 NUM_POINTS="${NUM_POINTS:-70}"
 EXPL_PROMPT_MODE="${EXPL_PROMPT_MODE:-unsupervised}"

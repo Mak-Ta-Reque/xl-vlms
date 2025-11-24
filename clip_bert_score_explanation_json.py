@@ -2,6 +2,7 @@
 import os, json, re, ast, warnings
 from pathlib import Path
 from difflib import SequenceMatcher
+import argparse
 
 import numpy as np
 from bert_score import score as bert_score
@@ -497,6 +498,36 @@ def main():
     # evaluate only alpha_0 and alpha_10 (default), same Top-K as before
     ks = (1, 2, 3)
 
+    # allow evaluating a single JSON directly via CLI
+    parser = argparse.ArgumentParser(
+        description="Evaluate BERTScore and CLIPScore for explanations JSON(s)."
+    )
+    parser.add_argument("--json_path", type=str, default=None,
+                        help="Path to a single explanations JSON file to evaluate directly")
+    parser.add_argument("--alphas", type=str, default=os.environ.get("ALPHAS", "2,3,4,5,6,7,8,9,10,20"),
+                        help="Comma-separated alphas (only used when --json_path is not provided)")
+    args = parser.parse_args()
+
+    if args.json_path:
+        EXPLANATIONS_JSON = Path(args.json_path)
+        if not EXPLANATIONS_JSON.exists():
+            raise FileNotFoundError(f"Missing explanations at {EXPLANATIONS_JSON}")
+
+        extracted = extract_prediction_and_explantion_data(str(EXPLANATIONS_JSON), ks=ks)
+
+        bert_sum = compute_bertscore_per_sample(extracted, ks=ks)
+        clip_sum = compute_clipscore_per_sample(extracted, ks=ks)
+
+        print("BERTScore between GT tokens and predicted concepts (text):")
+        for k, (mean, std) in bert_sum.items():
+            print(f"  Top-{k}: BERTScore F1 = {mean:.4f} ± {std:.4f}")
+
+        print("\nCLIPScore between GT tokens and predicted concept crops (image):")
+        for k, (mean, std) in clip_sum.items():
+            print(f"  Top-{k}: CLIPScore = {mean:.4f} ± {std:.4f}")
+
+        return
+
     # root that contains alpha_0, alpha_1, ...
     ALPHA_ROOT = Path(os.environ.get(
         "ALPHA_ROOT",
@@ -505,7 +536,7 @@ def main():
 
     # which alphas to evaluate
     # you can override: export ALPHAS="0,10,20"
-    alphas_env = os.environ.get("ALPHAS", "2,3,4,5,6,7,8,9,10,20")
+    alphas_env = os.environ.get("ALPHAS", "2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100")
     alphas = [int(x.strip()) for x in alphas_env.split(",") if x.strip()]
 
     DECOMP_METHOD = os.environ.get("DECOMP_METHOD", "snmf")
