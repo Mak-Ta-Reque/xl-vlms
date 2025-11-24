@@ -32,7 +32,7 @@ def inference(
     # Disable KV cache globally (may reduce memory, slight slowdown in autoregressive generation)
     try:
         if hasattr(model, "config") and getattr(model.config, "use_cache", True):
-            model.config.use_cache = False
+            model.config.use_cache = True
             if logger:
                 logger.info("Disabled model.config.use_cache")
     except Exception as e:
@@ -155,7 +155,7 @@ def inference(
 
         if args.generation_mode:
             # Explicitly pass use_cache=False for models honoring this kwarg
-            gen_kwargs = dict(max_new_tokens=args.max_new_tokens, do_sample=False, use_cache=False)
+            gen_kwargs = dict(max_new_tokens=args.max_new_tokens, do_sample=False, use_cache=True)
             out = model.generate(
                 **inputs, **gen_kwargs
             )
@@ -214,7 +214,8 @@ def inference(
         except Exception:
             pass
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            pass
+            #torch.cuda.empty_cache()
         if (i + 1) % 100 == 0:
             time_left = compute_time_left(start_time, i, num_iterations)
             logger.info(
