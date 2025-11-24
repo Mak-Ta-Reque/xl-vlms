@@ -49,10 +49,6 @@ This visualization provides **interpretability** for the VLM's decision-making p
 
 This type of explanation is crucial for **debugging model behavior**, **understanding failures**, and **validating that the model is using appropriate visual reasoning** rather than spurious correlations.
 
-#### Example Demo Output Files:
-- [grounding_per_token/per_token_viz_0.png](outputs/screen_run/plots/grounding_per_token/per_token_viz_0.png)
-- [grounding_per_token/per_token_viz_1.png](outputs/screen_run/plots/grounding_per_token/per_token_viz_1.png)
-- [grounding_per_token/per_token_viz_3.png](outputs/screen_run/plots/grounding_per_token/per_token_viz_3.png)
 
 #### Additional Example Visualizations:
 
