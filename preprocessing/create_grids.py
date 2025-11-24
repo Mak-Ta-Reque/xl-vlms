@@ -3,9 +3,9 @@
 Create random image grids by sampling one image from each of N subdirectories.
 
 Example usage:
-    python create_grids.py \
-        --input_dir "/mnt/abka03/xlvlm_data/imagenet10class/val" \
-        --output_dir "/mnt/abka03/xlvlm_data/imagenet10class/val_grids" \
+    python preprocessing/create_grids.py \
+        --input_dir "/mnt/abka03/xlvlm_data/colorful/val" \
+        --output_dir "/mnt/abka03/xlvlm_data/colorful/val_grids" \
         --n 4 \
         --num_grids 50 \
         --image_size 512
