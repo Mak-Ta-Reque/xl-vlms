@@ -212,36 +212,119 @@ The easiest way to run the complete pipeline:
 
 All results will be found in the `eval/` folder of your configured output directory.
 
-## Running the Jupyter Notebook
+## Complete Workflow: Pipeline → Visualization → Evaluation
 
-To visualize the results:
+Follow these steps in order to run the complete analysis pipeline:
+
+### Step 1: Run the Full Pipeline
+
+Run the main pipeline script to generate all intermediate results:
+
+```bash
+./scripts/run_full_pipeline_without_coroping.sh
+```
+
+This generates:
+- Concept mappings and crops
+- Feature extractions
+- Decomposed concepts (per method: snmf, nmf, pca, etc.)
+- VLM explanations (`explanations/{method}/vlm_explanations.json`)
+- Concept deletion/insertion evaluation results
+
+### Step 2: Run Visualization Notebook
+
+Generate per-token concept grounding visualizations:
+
+```bash
+jupyter notebook output_vis.ipynb
+```
+
+**Or run programmatically:**
+```bash
+jupyter nbconvert --to notebook --execute output_vis.ipynb
+```
+
+The notebook automatically:
+- Loads your `.env` configuration to find `OUTPUT_DIR`
+- Reads explanations from `$OUTPUT_DIR/explanations/{method}/vlm_explanations.json`
+- Generates per-token visualizations saved to `$OUTPUT_DIR/plots/grounding_per_token/`
+
+**Manual configuration (if needed):**
+If the notebook doesn't auto-detect your output directory, you can manually set paths in the notebook:
+```python
+EXPLANATIONS_JSON = "/path/to/your/explanations/snmf/vlm_explanations.json"
+VIZ_OUTPUT_DIR = "/path/to/output/plots/grounding_per_token"
+```
+
+### Step 3: Run BERTScore and CLIPScore Evaluation
+
+Evaluate the quality of explanations using BERTScore (text similarity) and CLIPScore (image similarity):
+
+**For a single explanations file:**
+```bash
+python clip_bert_score_explanation.py \
+    --json_path outputs/your_run/explanations/snmf/vlm_explanations.json
+```
+
+**For batch evaluation across multiple methods:**
+```bash
+python clip_bert_score_explanation.py \
+    --root_dir outputs/your_run \
+    --decomp_method snmf \
+    --output_csv outputs/your_run/eval/snmf/bert_clip_scores.csv
+```
+
+**For multiple decomposition methods:**
+```bash
+# Evaluate each method separately
+for method in snmf nmf pca; do
+    python clip_bert_score_explanation.py \
+        --root_dir outputs/your_run \
+        --decomp_method $method \
+        --output_csv outputs/your_run/eval/$method/bert_clip_scores.csv
+done
+```
+
+**Output:**
+- Console output with BERTScore and CLIPScore metrics for Top-1, Top-2, Top-3
+- CSV file (if `--output_csv` specified) with mean and std for each metric
+
+**Requirements for BERT/CLIP evaluation:**
+- CUDA-capable GPU (recommended) or set `BERT_DEVICE=cpu` and `CLIP_DEVICE=cpu`
+- `bert-score` package: `pip install bert-score`
+- `clip` package: `pip install git+https://github.com/openai/CLIP.git`
+
+## Running the Jupyter Notebook (Detailed)
+
+To visualize the results manually:
 
 1. **Run the notebook:**
 ```bash
-   jupyter notebook visualize_explanations.ipynb
+   jupyter notebook output_vis.ipynb
 ```
 
-2. **Set the path to your explanations JSON file:**
+2. **The notebook automatically:**
+   - Loads configuration from `.env` file
+   - Finds explanations JSON from `$OUTPUT_DIR/explanations/{method}/vlm_explanations.json`
+   - Generates visualizations for each token
+   - Saves outputs to `$OUTPUT_DIR/plots/grounding_per_token/`
+
+3. **Manual path configuration (if needed):**
    
-   In the notebook, locate the main cell and update the `json_path` parameter:
+   In the notebook, you can override paths:
 ```python
-   # Set your explanations JSON file path here
-   json_path = "path/to/your/explanations/*.json"
+   # Override auto-detected paths
+   EXPLANATIONS_JSON = "/path/to/your/explanations/snmf/vlm_explanations.json"
+   VIZ_OUTPUT_DIR = "/path/to/output/plots/grounding_per_token"
    
-   # Run visualization
    visualize_all_per_token(
-       json_path=json_path,
-       save_dir="outputs",
+       json_path=EXPLANATIONS_JSON,
+       save_dir=VIZ_OUTPUT_DIR,
        max_concepts=3,
        max_crops=5,
        concept_size=200
    )
 ```
-
-3. **The notebook will:**
-   - Load all results from your JSON file
-   - Generate visualizations for each token
-   - Save outputs to the specified directory (default: `outputs/`)
 
 ## Expert usages
 
@@ -264,26 +347,6 @@ for all the vlm_explainer files  evaluate
 Now with output evaluate the concept Q-del and Q-Insertion
 
 
-
-
-
-
-## 🧠 Demo & Usage
-
-
-1. **Demo notebook**
-   - Open and run [`explaining_binary_task_rsml.ipynb`](explaining_binary_task_rsml.ipynb) for a guided demo.
-
-2. **Feature Generation & Decomposition**
-   - To generate concept features:
-     ```bash
-     bash scripts/run_feature_gen_cgdl.sh
-     ```
-   - To decompose features:
-     ```bash
-     bash scripts/run_feature_decompose_cgdl.sh
-     ```
-   - You can set `MAX_ITERATIONS=10` or higher for more concepts/classes (longer runtime).
 
 ## 📂 Folder Structure
 
