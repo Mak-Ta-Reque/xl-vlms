@@ -3,9 +3,9 @@
 Create random image grids by sampling one image from each of N subdirectories.
 
 Example usage:
-    python create_grids.py \
-        --input_dir "/mnt/abka03/xlvlm_data/imagenet10class/val" \
-        --output_dir "/mnt/abka03/xlvlm_data/imagenet10class/val_grids" \
+    python preprocessing/create_grids.py \
+        --input_dir "/mnt/abka03/xlvlm_data/colorful/val" \
+        --output_dir "/mnt/abka03/xlvlm_data/colorful/val_grids" \
         --n 4 \
         --num_grids 50 \
         --image_size 512
@@ -73,7 +73,7 @@ def main():
     parser.add_argument("--input_dir", required=True, help="Input directory with subdirectories (classes).")
     parser.add_argument("--output_dir", required=True, help="Directory where output grids will be saved.")
     parser.add_argument("--n", type=int, default=4, help="Number of images per grid (must be a perfect square).")
-    parser.add_argument("--num_grids", type=int, default=1, help="How many grids to generate.")
+    parser.add_argument("--num_grids", type=int, default=40, help="How many grids to generate.")
     parser.add_argument("--image_size", type=int, default=256, help="Resize each image to this size (square).")
 
     args = parser.parse_args()
