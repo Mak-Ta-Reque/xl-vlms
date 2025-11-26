@@ -11,7 +11,7 @@ Given a grid of 2x2 images (total 4 different images), the model is tasked to pr
 
 #### Example Visualization
 
-![Token-wise Concept Grounding](readme_samples/per_token_viz_0.png)
+![Token-wise Concept Grounding](readme_samples/images/per_token_viz_0.png)
 
 #### What This Visualization Shows
 
