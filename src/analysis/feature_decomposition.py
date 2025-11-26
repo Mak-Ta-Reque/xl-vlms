@@ -9,6 +9,7 @@ from sklearn.decomposition import PCA, DictionaryLearning
 import copy
 from analysis.multimodal_grounding import get_multimodal_grounding,  get_refined_multimodal_grounding
 
+
 __all__ = [
     "get_feature_matrix",
     "decompose_activations",
@@ -220,11 +221,12 @@ def decompose_activations(
             comp_activ = 1 / (1 + model.fit_transform(mat))
             components = model.cluster_centers_
     elif decomposition_method in ["nndl", "snmf"]:
+        print("Using Semi-NMF / Non-negative dictionary learning with alpha:", args.dl_alpha)
         model = DictionaryLearning(
             n_components=num_concepts,
             positive_code=True,
             fit_algorithm="cd",
-            alpha=20.0,
+            alpha=args.dl_alpha,
             transform_algorithm="lasso_cd",
             max_iter=args.dl_max_iter,
         )

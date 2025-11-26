@@ -29,6 +29,15 @@ def inference(
     num_iterations = len(loader)
     hook_data = {}
     model = model_class.get_model()
+    # Disable KV cache globally (may reduce memory, slight slowdown in autoregressive generation)
+    try:
+        if hasattr(model, "config") and getattr(model.config, "use_cache", True):
+            model.config.use_cache = True
+            if logger:
+                logger.info("Disabled model.config.use_cache")
+    except Exception as e:
+        if logger:
+            logger.warning(f"Could not disable KV cache: {e}")
     log_num_transformer_layers(model, model_name=args.model_name_or_path)
 
     start_time = time.time()
@@ -145,8 +154,10 @@ def inference(
         inputs = _collate_inputs(per_sample_inputs)
 
         if args.generation_mode:
+            # Explicitly pass use_cache=False for models honoring this kwarg
+            gen_kwargs = dict(max_new_tokens=args.max_new_tokens, do_sample=False, use_cache=True)
             out = model.generate(
-                **inputs, max_new_tokens=args.max_new_tokens, do_sample=False
+                **inputs, **gen_kwargs
             )
         else:
             out = model(**inputs).logits
@@ -187,6 +198,24 @@ def inference(
 
         hook_data = update_dict_of_list(item, hook_data)
         clear_hooks_variables()
+        # Iteration-end cleanup to reduce GPU memory usage
+        try:
+            del out  # model outputs
+        except Exception:
+            pass
+        try:
+            del inputs  # batched inputs
+        except Exception:
+            pass
+        # Drop potentially large GPU-backed fields from item now that data is aggregated
+        try:
+            if isinstance(item, dict) and "model_output" in item:
+                item["model_output"] = None
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            pass
+            #torch.cuda.empty_cache()
         if (i + 1) % 100 == 0:
             time_left = compute_time_left(start_time, i, num_iterations)
             logger.info(
@@ -260,6 +289,7 @@ if __name__ == "__main__":
                 for func in hook_postprocessing_functions:
                     if func is not None:
                         func(data=hook_data, args=args, logger=logger)
+
             
     
     else:

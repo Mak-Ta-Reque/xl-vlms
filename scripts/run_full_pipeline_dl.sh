@@ -58,14 +58,14 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/imagenet_5_class_qwen_dl_imagenet_unsupervised_description}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/qwen2_5_10cls_coxlmm/imnet100}"
 DECOMP_METHODS="${DECOMP_METHODS:-snmf,simple,random,kmeans,pca}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
-
+DEFAULT_DATASET_SIZE="${DEFAULT_DATASET_SIZE:-100}"
 # Optional tuning knobs used by underlying scripts (if they read env vars)
 VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}"
-BATCH_SIZE="${BATCH_SIZE:-10}"
-DEVICE="${DEVICE:-cuda}"
+BATCH_SIZE="${BATCH_SIZE:-1}"
+DEVICE="${DEVICE:-cuda:0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
 SEED="${SEED:-42}"
 
@@ -76,7 +76,7 @@ BASE_DATA_DIR="${BASE_DATA_DIR:-/mnt/abka03/xlvlm_data/imagenet_5_class/train}"
 # Explainer/Eval controls
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
 IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet_5_class/val_grids}"
-TOP_N="${TOP_N:-5}"
+TOP_N="${TOP_N:-3}"
 NUM_POINTS="${NUM_POINTS:-70}"
 
 # Explainer prompt configuration
@@ -161,7 +161,7 @@ if find "$SAVE_DIR/features" -type f -name '*.pth' -print -quit | grep -q .; the
   log "Skip Feature Generation (found features under $SAVE_DIR/features)"
 else
   run_step "Generate Concept Features (DL)" \
-    "bash \"$SCRIPTS_DIR/run_feature_gen_dl.sh\" \"$VLM_MODEL\" \"$FEATURES_DIR\" \"${HF_HOME:-}\""
+    "PYTHON_EXEC=\"${PYTHON_EXEC:-python}\" BATCH_SIZE=\"$BATCH_SIZE\" DEFAULT_DATASET_SIZE=\"$DEFAULT_DATASET_SIZE\" DATA_DIR=\"${DATA_DIR:-}\" TOKEN_OF_INTEREST=\"${TOKEN_OF_INTEREST:-}\" SAVE_FILENAME=\"${SAVE_FILENAME:-}\" HOOK_NAME=\"${HOOK_NAME:-}\" MODULES_TO_HOOK=\"${MODULES_TO_HOOK:-}\" PROMPT_TEMPLATE=\"${PROMPT_TEMPLATE:-}\" DEVICE=\"${DEVICE:-}\" bash \"$SCRIPTS_DIR/run_feature_gen_dl.sh\" \"$VLM_MODEL\" \"$FEATURES_DIR\" \"${HF_HOME:-}\""
 fi
 
 # -------------------------------
