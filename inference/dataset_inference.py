@@ -29,16 +29,20 @@ import csv
 import argparse
 import logging
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 import random
+import sys
 from huggingface_hub import login
 import torch
 import torch._dynamo
 from tqdm import tqdm
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModelForCausalLM
+from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModelForCausalLM, LlavaForConditionalGeneration
 from transformers.generation.logits_process import LogitsProcessor
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_PATH = os.path.join(PROJECT_ROOT, "src")
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
 # Configure torch dynamo settings
 torch._dynamo.disable()
 torch._dynamo.config.suppress_errors = True
@@ -212,10 +216,10 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
         logger.info(f"Model not found in cache. Will download from HuggingFace Hub")
     
     # Prepare common loading arguments
-    loading_kwargs = {
-        'cache_dir': hf_cache_dir,
-        'trust_remote_code': trust_remote_code,
-        'local_files_only': use_local_files,
+    loading_kwargs: Dict[str, Any] = {
+        "cache_dir": hf_cache_dir,
+        "trust_remote_code": trust_remote_code,
+        "local_files_only": use_local_files,
     }
     
     # Add token if provided
@@ -254,6 +258,14 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
                     device_map="auto",
                     **loading_kwargs
                 )
+        elif 'chaoyinshe/llava-med-v1.5-mistral-7b-hf' in model_name.lower():
+            model = LlavaForConditionalGeneration.from_pretrained(
+                model_name,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                **loading_kwargs
+            ).eval()
+
         else:
             # Generic approach - try Vision2Seq first, then CausalLM
             try:
@@ -302,6 +314,11 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
     except Exception as e:
         logger.error(f"Failed to load model {model_name}: {e}")
         raise
+
+
+def _format_llava_med_prompt(text: str) -> str:
+    prompt_text = (text or "Describe this image.").strip()
+    return f"[INST] <image>\n{prompt_text} [/INST]"
 
 
 def prepare_input_for_model(image: Image.Image, text: str, processor: object, model_name: str) -> dict:
@@ -366,6 +383,13 @@ def prepare_input_for_model(image: Image.Image, text: str, processor: object, mo
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
+            return_tensors="pt",
+        )
+    elif 'chaoyinshe/llava-med-v1.5-mistral-7b-hf' in model_name.lower():
+        llava_prompt = _format_llava_med_prompt(text)
+        inputs = processor(
+            images=[image],
+            text=llava_prompt,
             return_tensors="pt",
         )
     else:
@@ -449,6 +473,12 @@ def infer_image_description(
         if 'gemma' in model_name.lower():
             # For Gemma models, decode only the new tokens using processor.decode
             generated_text = processor.decode(new_tokens, skip_special_tokens=True).strip()
+        elif 'chaoyinshe/llava-med-v1.5-mistral-7b-hf' in model_name.lower():
+            generated_text = processor.decode(
+                new_tokens,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            ).strip()
         else:
             # For other models, use the tokenizer
             if hasattr(processor, 'tokenizer'):
@@ -621,6 +651,14 @@ def process_dataset(
                     return_dict=True,
                     return_tensors="pt",
                 )
+            elif 'chaoyinshe/llava-med-v1.5-mistral-7b-hf' in model_name.lower():
+                formatted_prompts = [_format_llava_med_prompt(pr) for pr in valid_prompts]
+                inputs = processor(
+                    images=valid_images,
+                    text=formatted_prompts,
+                    return_tensors="pt",
+                    padding=True,
+                )
             else:
                 inputs = processor(
                     text=valid_prompts,
@@ -644,6 +682,25 @@ def process_dataset(
                     )
                     new_tokens = [out[input_len:] for out in outputs]
                     generated_texts = [processor.decode(nt, skip_special_tokens=True).strip() for nt in new_tokens]
+                elif 'chaoyinshe/llava-med-v1.5-mistral-7b-hf' in model_name.lower():
+                    logits_processor = [SafeNanLogitsProcessor()]
+                    safe_temperature = max(1e-4, 0.7)
+                    outputs = model.generate(
+                        **inputs,
+                        max_new_tokens=150,
+                        do_sample=True,
+                        temperature=safe_temperature,
+                        logits_processor=logits_processor,
+                        pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
+                    )
+                    generated_texts = [
+                        processor.decode(
+                            out,
+                            skip_special_tokens=True,
+                            clean_up_tokenization_spaces=True,
+                        ).strip()
+                        for out in outputs
+                    ]
                 else:
                     logits_processor = [SafeNanLogitsProcessor()]
                     safe_temperature = max(1e-4, 0.7)

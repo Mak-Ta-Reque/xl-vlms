@@ -13,6 +13,7 @@ SUPPORTED_MODELS = [
     "HuggingFaceM4/idefics2-8b",
     "allenai/Molmo-7B-D-0924",
     "StanfordAIMI/CheXagent-8b",
+    "chaoyinshe/llava-med-v1.5-mistral-7b-hf"
 ]
 
 
@@ -32,6 +33,17 @@ def get_model_class(
             processor_name=processor_name,
             local_files_only=args.local_files_only,
             cache_dir=args.cache_dir,
+            token=args.hf_token
+        )
+    elif "llava-med" in model_name_or_path:
+        from models.llava_med import LLaVA
+
+        model_class = LLaVA(
+            model_name_or_path=model_name_or_path,
+            processor_name=processor_name,
+            local_files_only=args.local_files_only,
+            cache_dir=args.cache_dir,
+            args=args
         )
     elif "Qwen2.5-VL" in model_name_or_path:
         from models.qwen_2_5 import Qwen2_5VL
