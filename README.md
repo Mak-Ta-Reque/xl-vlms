@@ -116,3 +116,5 @@ See [LICENSE](LICENSE) for details.
 ---
 
 For questions or issues, please refer to the repository or contact the maintainers.
+
+It is an implementation of concept map, similar to grad cam but for concepts in vision language models
