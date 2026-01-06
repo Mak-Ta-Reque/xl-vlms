@@ -467,12 +467,63 @@ def get_arguments():
         default=None,
         help="Concept should be searched in the image.",
     )
+    parser.add_argument(
+        "--concept_vector",
+        type=str,
+        default=None,
+        help="Path to a concept dictionary (.pth) providing a `concepts` tensor.",
+    )
+    parser.add_argument(
+        "--concept_index",
+        type=int,
+        default=0,
+        help="Index of concept vector to use when multiple entries are available in --concept_vector.",
+    )
+    parser.add_argument(
+        "--concept_aggregation",
+        type=str,
+        choices=["index", "mean"],
+        default="index",
+        help="How to select the concept vector from the dictionary: `index` uses --concept_index, `mean` averages all vectors.",
+    )
+    parser.add_argument(
+        "--normalize_concept",
+        dest="normalize_concept",
+        action="store_true",
+        help="Normalize the selected concept vector to unit norm before use.",
+    )
+    parser.add_argument(
+        "--no_normalize_concept",
+        dest="normalize_concept",
+        action="store_false",
+        help="Disable concept vector normalization.",
+    )
+    parser.set_defaults(normalize_concept=True)
     # add a device argument and set cuda:0 as default if available
     parser.add_argument(
         "--device",
         type=str,
         default="cuda:0",
         help="Device to use for computation.",
+    )
+    parser.add_argument(
+        "--ig_steps",
+        type=int,
+        default=32,
+        help="Number of integration steps for Captum Integrated Gradients (per tutorial guidance).",
+    )
+    parser.add_argument(
+        "--ig_internal_batch_size",
+        type=int,
+        default=None,
+        help="Optional internal batch size for Captum Integrated Gradients.",
+    )
+    parser.add_argument(
+        "--ig_baseline",
+        type=str,
+        default="zero",
+        choices=["zero", "mean", "random"],
+        help="Baseline strategy for Captum Integrated Gradients.",
     )
 
     return parser.parse_args()

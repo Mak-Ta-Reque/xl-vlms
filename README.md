@@ -35,7 +35,7 @@ Example demo output files:
    - Using pip:
      ```bash
      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-     pip install tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate
+     pip install tqdm git+https://github.com/bckim92/language-evaluation.git bert-score clip psutil spacy timm accelerate captum
      python -m spacy download en_core_web_sm
      # For Qwen model support:
      pip install qwen-vl-utils
