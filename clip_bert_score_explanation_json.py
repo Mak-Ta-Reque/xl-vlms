@@ -225,7 +225,7 @@ def sample_bertscore_per_k(gt_words, pred_text_list, k):
         if sz == 0:
             max_per_gt.append(0.0)
         else:
-            max_per_gt.append(float(f1_vals[idx:idx+sz].max()))
+            max_per_gt.append(float(f1_vals[idx:idx+sz].mean()))
             idx += sz
 
     return float(np.mean(max_per_gt)) if max_per_gt else 0.0
@@ -462,7 +462,7 @@ def sample_clipscore_per_k(gt_words, pred_img_list, pred_bbox_list, k, device=No
         if sz == 0:
             max_per_gt.append(0.0)
         else:
-            max_per_gt.append(float(per_pair[idx:idx+sz].max()))
+            max_per_gt.append(float(per_pair[idx:idx+sz].mean()))
             idx += sz
 
     return float(np.mean(max_per_gt)) if max_per_gt else 0.0
@@ -561,7 +561,7 @@ def main():
 
     rows = []
     for a in alphas:
-        candidate1 = ALPHA_ROOT / f"n_{a}"
+        candidate1 = ALPHA_ROOT / f"layer_{a}"
         candidate2 = ALPHA_ROOT / str(a)
         out_dir = candidate1 if candidate1.exists() else candidate2
         if not out_dir.exists():
@@ -631,4 +631,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-"""
