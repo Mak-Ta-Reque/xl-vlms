@@ -107,6 +107,7 @@ class VLMConceptExplainer:
     prompt_mode: str = "unsupervised",
     prompt_label: Optional[str] = None,
     prompt_choices: Optional[Union[str, List[str]]] = None,
+    prompt: Optional[str] = None,
     ) -> None:
         self.model_name = model_name
         self.layer_path = layer_path
@@ -127,6 +128,7 @@ class VLMConceptExplainer:
             self.prompt_choices = [c.strip() for c in prompt_choices.split(',') if c.strip()]
         else:
             self.prompt_choices = prompt_choices
+        self.prompt = prompt
 
         # Memory behavior
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -278,6 +280,10 @@ class VLMConceptExplainer:
 
     # ---------- Prompts ----------
     def _build_instruction(self, label: Optional[str]) -> str:
+        # If custom prompt is provided, use it (especially for unsupervised mode)
+        if self.prompt is not None:
+            return self.prompt
+        
         mode = (self.prompt_mode or "unsupervised").lower()
         if mode == "binary":
             lab = self.prompt_label or label
@@ -577,12 +583,22 @@ class VLMConceptExplainer:
                         img_gbbx = None
                         if self.image_grounding_paths and ci < len(self.image_grounding_paths):
                             try:
-                                img_gp = str(self.image_grounding_paths[ci])
+                                # Preserve as list/array if it's a list, otherwise convert single value to string
+                                val = self.image_grounding_paths[ci]
+                                if isinstance(val, (list, tuple)):
+                                    img_gp = list(val) if isinstance(val, tuple) else val
+                                else:
+                                    img_gp = str(val)
                             except Exception:
                                 img_gp = self.image_grounding_paths[ci]
                         if self.image_grounding_bboxes and ci < len(self.image_grounding_bboxes):
                             try:
-                                img_gbbx = str(self.image_grounding_bboxes[ci])
+                                # Preserve as list/array if it's a list, otherwise convert single value to string
+                                val = self.image_grounding_bboxes[ci]
+                                if isinstance(val, (list, tuple)):
+                                    img_gbbx = list(val) if isinstance(val, tuple) else val
+                                else:
+                                    img_gbbx = str(val)
                             except Exception:
                                 img_gbbx = self.image_grounding_bboxes[ci]
                         top_concepts_tok.append({
@@ -595,10 +611,13 @@ class VLMConceptExplainer:
                             'image_grounding_path': img_gp,
                             'image_grounding_bboxes': img_gbbx,
                         })
+                    # Store token embedding temporarily for potential projection later (not returned in response)
+                    token_embedding = acts_j[t_idx].detach().cpu().numpy()  # Keep as numpy for projection
                     per_token_concepts.append({
                         'token_index': t_idx,
                         'token_id': new_ids[t_idx],
                         'token_text': token_texts[t_idx],
+                        '_token_embedding_np': token_embedding,  # Internal use only, will be removed
                         'top_concepts': top_concepts_tok,
                     })
 
@@ -631,12 +650,22 @@ class VLMConceptExplainer:
                     img_gbbx = None
                     if self.image_grounding_paths and ci < len(self.image_grounding_paths):
                         try:
-                            img_gp = str(self.image_grounding_paths[ci])
+                            # Preserve as list/array if it's a list, otherwise convert single value to string
+                            val = self.image_grounding_paths[ci]
+                            if isinstance(val, (list, tuple)):
+                                img_gp = list(val) if isinstance(val, tuple) else val
+                            else:
+                                img_gp = str(val)
                         except Exception:
                             img_gp = self.image_grounding_paths[ci]
                     if self.image_grounding_bboxes and ci < len(self.image_grounding_bboxes):
                         try:
-                            img_gbbx = str(self.image_grounding_bboxes[ci])
+                            # Preserve as list/array if it's a list, otherwise convert single value to string
+                            val = self.image_grounding_bboxes[ci]
+                            if isinstance(val, (list, tuple)):
+                                img_gbbx = list(val) if isinstance(val, tuple) else val
+                            else:
+                                img_gbbx = str(val)
                         except Exception:
                             img_gbbx = self.image_grounding_bboxes[ci]
                     top_concepts_all.append({

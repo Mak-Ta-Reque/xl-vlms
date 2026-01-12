@@ -1,5 +1,7 @@
 bert_score==0.3.13
 clip==0.2.0
+huggingface_hub
+inflect
 language_evaluation==0.1.0
 matplotlib==3.10.5
 nltk==3.9.1
