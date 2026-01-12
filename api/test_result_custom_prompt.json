@@ -1,0 +1,4022 @@
+{
+  "success": true,
+  "message": "VLM explainer completed successfully",
+  "prompt_mode": "unsupervised",
+  "using_prebuilt_concepts": true,
+  "concept_file": "/mnt/sdz/kakh01_data/xl-vlms/outputs/dtd_minimal_test/concept/snmf/combined_concept_snmf_raw.pth",
+  "vlm_explanations_data": {
+    "model_card": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "layer_path": "model.language_model.norm",
+    "results": [
+      {
+        "image_path": "/mnt/sdz/kakh01_data/xl-vlms/api/temp_images/temp_TKG.png",
+        "ground_truth": null,
+        "model_output": "The main objects visible in this image are:\n\n1. James\n2. Marie\n3. France",
+        "generated_token_ids": [
+          785,
+          1887,
+          6171,
+          9434,
+          304,
+          419,
+          2168,
+          525,
+          1447,
+          16,
+          13,
+          7801,
+          198,
+          17,
+          13,
+          32016,
+          198,
+          18,
+          13,
+          9625
+        ],
+        "per_token_concepts": [
+          {
+            "token_index": 0,
+            "token_id": 785,
+            "token_text": "The",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 2957,
+                "distance": 0.6938360929489136,
+                "similarity": 0.3061639070510864,
+                "concept_name": null,
+                "text_grounding": [
+                  "meal",
+                  "food",
+                  "meeting",
+                  "measurement",
+                  "menu"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0105.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0105.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    106,
+                    201,
+                    306,
+                    401
+                  ],
+                  [
+                    106,
+                    201,
+                    306,
+                    401
+                  ],
+                  [
+                    106,
+                    201,
+                    306,
+                    401
+                  ],
+                  [
+                    179,
+                    110,
+                    379,
+                    310
+                  ],
+                  [
+                    179,
+                    110,
+                    379,
+                    310
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 3322,
+                "distance": 0.6943898797035217,
+                "similarity": 0.30561012029647827,
+                "concept_name": null,
+                "text_grounding": [
+                  "county",
+                  "united",
+                  "japan",
+                  "national",
+                  "country"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0064.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    64,
+                    34,
+                    264,
+                    234
+                  ],
+                  [
+                    64,
+                    34,
+                    264,
+                    234
+                  ],
+                  [
+                    64,
+                    34,
+                    264,
+                    234
+                  ],
+                  [
+                    9,
+                    64,
+                    209,
+                    264
+                  ],
+                  [
+                    9,
+                    64,
+                    209,
+                    264
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 2000,
+                "distance": 0.6946673393249512,
+                "similarity": 0.30533266067504883,
+                "concept_name": null,
+                "text_grounding": [
+                  "based",
+                  "nighttime",
+                  "day",
+                  "light"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0131.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0131.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    135,
+                    324,
+                    335,
+                    524
+                  ],
+                  [
+                    135,
+                    324,
+                    335,
+                    524
+                  ],
+                  [
+                    135,
+                    324,
+                    335,
+                    524
+                  ],
+                  [
+                    2,
+                    120,
+                    202,
+                    320
+                  ],
+                  [
+                    2,
+                    120,
+                    202,
+                    320
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 732,
+                "distance": 0.700963020324707,
+                "similarity": 0.29903697967529297,
+                "concept_name": null,
+                "text_grounding": [
+                  "based",
+                  "travel",
+                  "tour",
+                  "train"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0121.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0121.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0121.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0121.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0121.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    21,
+                    48,
+                    221,
+                    248
+                  ],
+                  [
+                    21,
+                    48,
+                    221,
+                    248
+                  ],
+                  [
+                    21,
+                    48,
+                    221,
+                    248
+                  ],
+                  [
+                    28,
+                    116,
+                    228,
+                    316
+                  ],
+                  [
+                    28,
+                    116,
+                    228,
+                    316
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 649,
+                "distance": 0.7009938955307007,
+                "similarity": 0.2990061044692993,
+                "concept_name": null,
+                "text_grounding": [
+                  "ware",
+                  "food",
+                  "cooking"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0182.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0182.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0182.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/sprinkled/sprinkled_0101.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/sprinkled/sprinkled_0101.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    106,
+                    69,
+                    306,
+                    269
+                  ],
+                  [
+                    106,
+                    69,
+                    306,
+                    269
+                  ],
+                  [
+                    106,
+                    69,
+                    306,
+                    269
+                  ],
+                  [
+                    353,
+                    2,
+                    553,
+                    202
+                  ],
+                  [
+                    353,
+                    2,
+                    553,
+                    202
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 2957
+          },
+          {
+            "token_index": 1,
+            "token_id": 1887,
+            "token_text": " main",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 364,
+                "distance": 0.7311961650848389,
+                "similarity": 0.26880383491516113,
+                "concept_name": null,
+                "text_grounding": [
+                  "visible",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    140,
+                    110,
+                    340,
+                    310
+                  ],
+                  [
+                    140,
+                    110,
+                    340,
+                    310
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 2374,
+                "distance": 0.7367543578147888,
+                "similarity": 0.2632456421852112,
+                "concept_name": null,
+                "text_grounding": [
+                  "discern",
+                  "distinctive",
+                  "distinguished",
+                  "distinction",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 2123,
+                "distance": 0.7533538341522217,
+                "similarity": 0.24664616584777832,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "textual",
+                  "classification",
+                  "representation",
+                  "depiction"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    147,
+                    139,
+                    347,
+                    339
+                  ],
+                  [
+                    147,
+                    139,
+                    347,
+                    339
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 989,
+                "distance": 0.7568715810775757,
+                "similarity": 0.24312841892242432,
+                "concept_name": null,
+                "text_grounding": [
+                  "green",
+                  "class"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/honeycombed/honeycombed_0174.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/honeycombed/honeycombed_0174.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/honeycombed/honeycombed_0174.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/honeycombed/honeycombed_0174.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/honeycombed/honeycombed_0174.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    179,
+                    37,
+                    379,
+                    237
+                  ],
+                  [
+                    179,
+                    37,
+                    379,
+                    237
+                  ],
+                  [
+                    179,
+                    37,
+                    379,
+                    237
+                  ],
+                  [
+                    268,
+                    2,
+                    468,
+                    202
+                  ],
+                  [
+                    268,
+                    2,
+                    468,
+                    202
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 478,
+                "distance": 0.7588316798210144,
+                "similarity": 0.2411683201789856,
+                "concept_name": null,
+                "text_grounding": [
+                  "white",
+                  "rectangle",
+                  "grid",
+                  "black",
+                  "block"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0112.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0112.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0112.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0112.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0112.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    207,
+                    143,
+                    407,
+                    343
+                  ],
+                  [
+                    207,
+                    143,
+                    407,
+                    343
+                  ],
+                  [
+                    207,
+                    143,
+                    407,
+                    343
+                  ],
+                  [
+                    296,
+                    74,
+                    496,
+                    274
+                  ],
+                  [
+                    296,
+                    74,
+                    496,
+                    274
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 364
+          },
+          {
+            "token_index": 2,
+            "token_id": 6171,
+            "token_text": " objects",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 364,
+                "distance": 0.7179118394851685,
+                "similarity": 0.28208816051483154,
+                "concept_name": null,
+                "text_grounding": [
+                  "visible",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    140,
+                    110,
+                    340,
+                    310
+                  ],
+                  [
+                    140,
+                    110,
+                    340,
+                    310
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 2374,
+                "distance": 0.7286854982376099,
+                "similarity": 0.27131450176239014,
+                "concept_name": null,
+                "text_grounding": [
+                  "discern",
+                  "distinctive",
+                  "distinguished",
+                  "distinction",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 911,
+                "distance": 0.7816394567489624,
+                "similarity": 0.2183605432510376,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "visually",
+                  "textual",
+                  "element",
+                  "class"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    164,
+                    36,
+                    364,
+                    236
+                  ],
+                  [
+                    164,
+                    36,
+                    364,
+                    236
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 3488,
+                "distance": 0.7838844060897827,
+                "similarity": 0.21611559391021729,
+                "concept_name": null,
+                "text_grounding": [
+                  "pattern",
+                  "art",
+                  "class",
+                  "visual"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    80,
+                    283,
+                    280,
+                    483
+                  ],
+                  [
+                    80,
+                    283,
+                    280,
+                    483
+                  ],
+                  [
+                    80,
+                    283,
+                    280,
+                    483
+                  ],
+                  [
+                    52,
+                    227,
+                    252,
+                    427
+                  ],
+                  [
+                    52,
+                    227,
+                    252,
+                    427
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 2895,
+                "distance": 0.7849656939506531,
+                "similarity": 0.21503430604934692,
+                "concept_name": null,
+                "text_grounding": [
+                  "shape",
+                  "organism",
+                  "organic"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0081.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0081.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0081.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0081.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0081.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    250,
+                    156,
+                    450,
+                    356
+                  ],
+                  [
+                    250,
+                    156,
+                    450,
+                    356
+                  ],
+                  [
+                    250,
+                    156,
+                    450,
+                    356
+                  ],
+                  [
+                    33,
+                    69,
+                    233,
+                    269
+                  ],
+                  [
+                    33,
+                    69,
+                    233,
+                    269
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 364
+          },
+          {
+            "token_index": 3,
+            "token_id": 9434,
+            "token_text": " visible",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 364,
+                "distance": 0.702107310295105,
+                "similarity": 0.297892689704895,
+                "concept_name": null,
+                "text_grounding": [
+                  "visible",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    2,
+                    33,
+                    202,
+                    233
+                  ],
+                  [
+                    140,
+                    110,
+                    340,
+                    310
+                  ],
+                  [
+                    140,
+                    110,
+                    340,
+                    310
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 2374,
+                "distance": 0.7639940977096558,
+                "similarity": 0.23600590229034424,
+                "concept_name": null,
+                "text_grounding": [
+                  "discern",
+                  "distinctive",
+                  "distinguished",
+                  "distinction",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 911,
+                "distance": 0.7801182866096497,
+                "similarity": 0.21988171339035034,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "visually",
+                  "textual",
+                  "element",
+                  "class"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    164,
+                    36,
+                    364,
+                    236
+                  ],
+                  [
+                    164,
+                    36,
+                    364,
+                    236
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 3478,
+                "distance": 0.7822216749191284,
+                "similarity": 0.21777832508087158,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "textual",
+                  "data",
+                  "detailed",
+                  "content"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    386,
+                    258,
+                    586,
+                    458
+                  ],
+                  [
+                    386,
+                    258,
+                    586,
+                    458
+                  ],
+                  [
+                    386,
+                    258,
+                    586,
+                    458
+                  ],
+                  [
+                    108,
+                    365,
+                    308,
+                    565
+                  ],
+                  [
+                    108,
+                    365,
+                    308,
+                    565
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 2123,
+                "distance": 0.7822800874710083,
+                "similarity": 0.2177199125289917,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "textual",
+                  "classification",
+                  "representation",
+                  "depiction"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    147,
+                    139,
+                    347,
+                    339
+                  ],
+                  [
+                    147,
+                    139,
+                    347,
+                    339
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 364
+          },
+          {
+            "token_index": 4,
+            "token_id": 304,
+            "token_text": " in",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 883,
+                "distance": 0.7597491145133972,
+                "similarity": 0.24025088548660278,
+                "concept_name": null,
+                "text_grounding": [
+                  "red",
+                  "class",
+                  "text"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    252,
+                    70,
+                    452,
+                    270
+                  ],
+                  [
+                    252,
+                    70,
+                    452,
+                    270
+                  ],
+                  [
+                    252,
+                    70,
+                    452,
+                    270
+                  ],
+                  [
+                    211,
+                    124,
+                    411,
+                    324
+                  ],
+                  [
+                    211,
+                    124,
+                    411,
+                    324
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 2374,
+                "distance": 0.767267107963562,
+                "similarity": 0.232732892036438,
+                "concept_name": null,
+                "text_grounding": [
+                  "discern",
+                  "distinctive",
+                  "distinguished",
+                  "distinction",
+                  "object"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    12,
+                    14,
+                    212,
+                    214
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ],
+                  [
+                    250,
+                    383,
+                    450,
+                    583
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 1716,
+                "distance": 0.7681128978729248,
+                "similarity": 0.2318871021270752,
+                "concept_name": null,
+                "text_grounding": [
+                  "shadow",
+                  "area",
+                  "shaded",
+                  "edge"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/wrinkled/wrinkled_0045.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/wrinkled/wrinkled_0045.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/wrinkled/wrinkled_0045.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/wrinkled/wrinkled_0045.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/wrinkled/wrinkled_0045.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    315,
+                    4,
+                    515,
+                    204
+                  ],
+                  [
+                    315,
+                    4,
+                    515,
+                    204
+                  ],
+                  [
+                    321,
+                    109,
+                    521,
+                    309
+                  ],
+                  [
+                    321,
+                    109,
+                    521,
+                    309
+                  ],
+                  [
+                    321,
+                    109,
+                    521,
+                    309
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 2857,
+                "distance": 0.768325686454773,
+                "similarity": 0.23167431354522705,
+                "concept_name": null,
+                "text_grounding": [
+                  "negativity",
+                  "positive",
+                  "space",
+                  "ground",
+                  "negative"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    113,
+                    105,
+                    313,
+                    305
+                  ],
+                  [
+                    113,
+                    105,
+                    313,
+                    305
+                  ],
+                  [
+                    113,
+                    105,
+                    313,
+                    305
+                  ],
+                  [
+                    165,
+                    224,
+                    365,
+                    424
+                  ],
+                  [
+                    165,
+                    224,
+                    365,
+                    424
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 1141,
+                "distance": 0.7686394453048706,
+                "similarity": 0.2313605546951294,
+                "concept_name": null,
+                "text_grounding": [
+                  "intersection",
+                  "ting"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0052.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0052.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    78,
+                    1,
+                    278,
+                    201
+                  ],
+                  [
+                    78,
+                    1,
+                    278,
+                    201
+                  ],
+                  [
+                    78,
+                    1,
+                    278,
+                    201
+                  ],
+                  [
+                    97,
+                    84,
+                    297,
+                    284
+                  ],
+                  [
+                    97,
+                    84,
+                    297,
+                    284
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 883
+          },
+          {
+            "token_index": 5,
+            "token_id": 419,
+            "token_text": " this",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 3274,
+                "distance": 0.754624605178833,
+                "similarity": 0.245375394821167,
+                "concept_name": null,
+                "text_grounding": [
+                  "head",
+                  "man",
+                  "facial",
+                  "person",
+                  "faced"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    41,
+                    326,
+                    241,
+                    526
+                  ],
+                  [
+                    41,
+                    326,
+                    241,
+                    526
+                  ],
+                  [
+                    41,
+                    326,
+                    241,
+                    526
+                  ],
+                  [
+                    15,
+                    258,
+                    215,
+                    458
+                  ],
+                  [
+                    15,
+                    258,
+                    215,
+                    458
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 883,
+                "distance": 0.7606469392776489,
+                "similarity": 0.23935306072235107,
+                "concept_name": null,
+                "text_grounding": [
+                  "red",
+                  "class",
+                  "text"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/zigzagged/zigzagged_0083.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    252,
+                    70,
+                    452,
+                    270
+                  ],
+                  [
+                    252,
+                    70,
+                    452,
+                    270
+                  ],
+                  [
+                    252,
+                    70,
+                    452,
+                    270
+                  ],
+                  [
+                    211,
+                    124,
+                    411,
+                    324
+                  ],
+                  [
+                    211,
+                    124,
+                    411,
+                    324
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 483,
+                "distance": 0.7628610134124756,
+                "similarity": 0.23713898658752441,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "visually",
+                  "design",
+                  "graphic",
+                  "text"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stratified/stratified_0100.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    399,
+                    200,
+                    599,
+                    400
+                  ],
+                  [
+                    399,
+                    200,
+                    599,
+                    400
+                  ],
+                  [
+                    399,
+                    200,
+                    599,
+                    400
+                  ],
+                  [
+                    305,
+                    377,
+                    505,
+                    577
+                  ],
+                  [
+                    305,
+                    377,
+                    505,
+                    577
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 3201,
+                "distance": 0.7629312872886658,
+                "similarity": 0.23706871271133423,
+                "concept_name": null,
+                "text_grounding": [
+                  "based"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0139.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0139.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    174,
+                    10,
+                    374,
+                    210
+                  ],
+                  [
+                    174,
+                    10,
+                    374,
+                    210
+                  ],
+                  [
+                    174,
+                    10,
+                    374,
+                    210
+                  ],
+                  [
+                    307,
+                    108,
+                    507,
+                    308
+                  ],
+                  [
+                    307,
+                    108,
+                    507,
+                    308
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 2051,
+                "distance": 0.7632865309715271,
+                "similarity": 0.2367134690284729,
+                "concept_name": null,
+                "text_grounding": [
+                  "text",
+                  "black",
+                  "white"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0085.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0085.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0085.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0053.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/grid/grid_0053.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    63,
+                    43,
+                    263,
+                    243
+                  ],
+                  [
+                    63,
+                    43,
+                    263,
+                    243
+                  ],
+                  [
+                    63,
+                    43,
+                    263,
+                    243
+                  ],
+                  [
+                    226,
+                    303,
+                    426,
+                    503
+                  ],
+                  [
+                    226,
+                    303,
+                    426,
+                    503
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 3274
+          },
+          {
+            "token_index": 6,
+            "token_id": 2168,
+            "token_text": " image",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 2123,
+                "distance": 0.7939642071723938,
+                "similarity": 0.2060357928276062,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "textual",
+                  "classification",
+                  "representation",
+                  "depiction"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/stained/stained_0091.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    396,
+                    142,
+                    596,
+                    342
+                  ],
+                  [
+                    147,
+                    139,
+                    347,
+                    339
+                  ],
+                  [
+                    147,
+                    139,
+                    347,
+                    339
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 911,
+                "distance": 0.8021469116210938,
+                "similarity": 0.19785308837890625,
+                "concept_name": null,
+                "text_grounding": [
+                  "visualization",
+                  "visually",
+                  "textual",
+                  "element",
+                  "class"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/banded/banded_0097.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    144,
+                    141,
+                    344,
+                    341
+                  ],
+                  [
+                    164,
+                    36,
+                    364,
+                    236
+                  ],
+                  [
+                    164,
+                    36,
+                    364,
+                    236
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 510,
+                "distance": 0.8093205094337463,
+                "similarity": 0.19067949056625366,
+                "concept_name": null,
+                "text_grounding": [
+                  "irregular",
+                  "uneven",
+                  "pattern"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0049.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0049.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0049.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0049.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0049.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    347,
+                    208,
+                    547,
+                    408
+                  ],
+                  [
+                    347,
+                    208,
+                    547,
+                    408
+                  ],
+                  [
+                    347,
+                    208,
+                    547,
+                    408
+                  ],
+                  [
+                    113,
+                    137,
+                    313,
+                    337
+                  ],
+                  [
+                    113,
+                    137,
+                    313,
+                    337
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 3488,
+                "distance": 0.8115962147712708,
+                "similarity": 0.18840378522872925,
+                "concept_name": null,
+                "text_grounding": [
+                  "pattern",
+                  "art",
+                  "class",
+                  "visual"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0038.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    80,
+                    283,
+                    280,
+                    483
+                  ],
+                  [
+                    80,
+                    283,
+                    280,
+                    483
+                  ],
+                  [
+                    80,
+                    283,
+                    280,
+                    483
+                  ],
+                  [
+                    52,
+                    227,
+                    252,
+                    427
+                  ],
+                  [
+                    52,
+                    227,
+                    252,
+                    427
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 1528,
+                "distance": 0.813145637512207,
+                "similarity": 0.18685436248779297,
+                "concept_name": null,
+                "text_grounding": [
+                  "blurry",
+                  "blended",
+                  "background",
+                  "foreground",
+                  "blurred"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0100.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0100.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    235,
+                    164,
+                    435,
+                    364
+                  ],
+                  [
+                    235,
+                    164,
+                    435,
+                    364
+                  ],
+                  [
+                    235,
+                    164,
+                    435,
+                    364
+                  ],
+                  [
+                    177,
+                    149,
+                    377,
+                    349
+                  ],
+                  [
+                    177,
+                    149,
+                    377,
+                    349
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 2123
+          },
+          {
+            "token_index": 7,
+            "token_id": 525,
+            "token_text": " are",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 2638,
+                "distance": 0.7929468750953674,
+                "similarity": 0.20705312490463257,
+                "concept_name": null,
+                "text_grounding": [
+                  "usage",
+                  "industrial",
+                  "industry"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0115.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0115.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    102,
+                    71,
+                    302,
+                    271
+                  ],
+                  [
+                    102,
+                    71,
+                    302,
+                    271
+                  ],
+                  [
+                    102,
+                    71,
+                    302,
+                    271
+                  ],
+                  [
+                    110,
+                    4,
+                    310,
+                    204
+                  ],
+                  [
+                    110,
+                    4,
+                    310,
+                    204
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 1739,
+                "distance": 0.794455885887146,
+                "similarity": 0.205544114112854,
+                "concept_name": null,
+                "text_grounding": [
+                  "material",
+                  "canvas"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    311,
+                    284,
+                    511,
+                    484
+                  ],
+                  [
+                    311,
+                    284,
+                    511,
+                    484
+                  ],
+                  [
+                    311,
+                    284,
+                    511,
+                    484
+                  ],
+                  [
+                    372,
+                    118,
+                    572,
+                    318
+                  ],
+                  [
+                    372,
+                    118,
+                    572,
+                    318
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 3212,
+                "distance": 0.7954373955726624,
+                "similarity": 0.20456260442733765,
+                "concept_name": null,
+                "text_grounding": [
+                  "project",
+                  "construction"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0119.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0119.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0119.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0119.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/blotchy/blotchy_0119.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    32,
+                    183,
+                    232,
+                    383
+                  ],
+                  [
+                    32,
+                    183,
+                    232,
+                    383
+                  ],
+                  [
+                    32,
+                    183,
+                    232,
+                    383
+                  ],
+                  [
+                    38,
+                    81,
+                    238,
+                    281
+                  ],
+                  [
+                    38,
+                    81,
+                    238,
+                    281
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 2857,
+                "distance": 0.7979740500450134,
+                "similarity": 0.20202594995498657,
+                "concept_name": null,
+                "text_grounding": [
+                  "negativity",
+                  "positive",
+                  "space",
+                  "ground",
+                  "negative"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    113,
+                    105,
+                    313,
+                    305
+                  ],
+                  [
+                    113,
+                    105,
+                    313,
+                    305
+                  ],
+                  [
+                    113,
+                    105,
+                    313,
+                    305
+                  ],
+                  [
+                    165,
+                    224,
+                    365,
+                    424
+                  ],
+                  [
+                    165,
+                    224,
+                    365,
+                    424
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 2306,
+                "distance": 0.797977864742279,
+                "similarity": 0.20202213525772095,
+                "concept_name": null,
+                "text_grounding": [
+                  "designed",
+                  "pattern"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0139.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0139.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0139.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/bumpy/bumpy_0141.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/bumpy/bumpy_0141.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    407,
+                    149,
+                    607,
+                    349
+                  ],
+                  [
+                    407,
+                    149,
+                    607,
+                    349
+                  ],
+                  [
+                    407,
+                    149,
+                    607,
+                    349
+                  ],
+                  [
+                    52,
+                    122,
+                    252,
+                    322
+                  ],
+                  [
+                    52,
+                    122,
+                    252,
+                    322
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 2638
+          },
+          {
+            "token_index": 9,
+            "token_id": 16,
+            "token_text": "1",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 404,
+                "distance": 0.733305811882019,
+                "similarity": 0.26669418811798096,
+                "concept_name": null,
+                "text_grounding": [
+                  "property",
+                  "category",
+                  "texture",
+                  "class",
+                  "material"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    407,
+                    352,
+                    607,
+                    552
+                  ],
+                  [
+                    407,
+                    352,
+                    607,
+                    552
+                  ],
+                  [
+                    407,
+                    352,
+                    607,
+                    552
+                  ],
+                  [
+                    30,
+                    391,
+                    230,
+                    591
+                  ],
+                  [
+                    30,
+                    391,
+                    230,
+                    591
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 1368,
+                "distance": 0.7374928593635559,
+                "similarity": 0.2625071406364441,
+                "concept_name": null,
+                "text_grounding": [
+                  "event"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/dotted/dotted_0056.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/dotted/dotted_0056.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/dotted/dotted_0056.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/dotted/dotted_0056.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/dotted/dotted_0056.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    63,
+                    55,
+                    263,
+                    255
+                  ],
+                  [
+                    63,
+                    55,
+                    263,
+                    255
+                  ],
+                  [
+                    63,
+                    55,
+                    263,
+                    255
+                  ],
+                  [
+                    205,
+                    57,
+                    405,
+                    257
+                  ],
+                  [
+                    205,
+                    57,
+                    405,
+                    257
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 847,
+                "distance": 0.7409476041793823,
+                "similarity": 0.2590523958206177,
+                "concept_name": null,
+                "text_grounding": [
+                  "men",
+                  "person",
+                  "woman",
+                  "mankind",
+                  "manus"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    197,
+                    287,
+                    397,
+                    487
+                  ],
+                  [
+                    197,
+                    287,
+                    397,
+                    487
+                  ],
+                  [
+                    197,
+                    287,
+                    397,
+                    487
+                  ],
+                  [
+                    126,
+                    135,
+                    326,
+                    335
+                  ],
+                  [
+                    126,
+                    135,
+                    326,
+                    335
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 296,
+                "distance": 0.7430732250213623,
+                "similarity": 0.2569267749786377,
+                "concept_name": null,
+                "text_grounding": [
+                  "ing",
+                  "expressive",
+                  "expression"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0028.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0028.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0028.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0028.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0028.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    364,
+                    6,
+                    564,
+                    206
+                  ],
+                  [
+                    364,
+                    6,
+                    564,
+                    206
+                  ],
+                  [
+                    364,
+                    6,
+                    564,
+                    206
+                  ],
+                  [
+                    320,
+                    207,
+                    520,
+                    407
+                  ],
+                  [
+                    320,
+                    207,
+                    520,
+                    407
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 1073,
+                "distance": 0.7439107894897461,
+                "similarity": 0.2560892105102539,
+                "concept_name": null,
+                "text_grounding": [
+                  "ism",
+                  "minimal",
+                  "ist"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    252,
+                    299,
+                    452,
+                    499
+                  ],
+                  [
+                    252,
+                    299,
+                    452,
+                    499
+                  ],
+                  [
+                    252,
+                    299,
+                    452,
+                    499
+                  ],
+                  [
+                    369,
+                    336,
+                    569,
+                    536
+                  ],
+                  [
+                    369,
+                    336,
+                    569,
+                    536
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 404
+          },
+          {
+            "token_index": 11,
+            "token_id": 7801,
+            "token_text": " James",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 1889,
+                "distance": 0.875094473361969,
+                "similarity": 0.124905526638031,
+                "concept_name": null,
+                "text_grounding": [
+                  "varied",
+                  "colored",
+                  "colors",
+                  "assorted",
+                  "ary"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0064.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0064.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    2,
+                    182,
+                    202,
+                    382
+                  ],
+                  [
+                    2,
+                    182,
+                    202,
+                    382
+                  ],
+                  [
+                    2,
+                    182,
+                    202,
+                    382
+                  ],
+                  [
+                    261,
+                    145,
+                    461,
+                    345
+                  ],
+                  [
+                    261,
+                    145,
+                    461,
+                    345
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 548,
+                "distance": 0.885124683380127,
+                "similarity": 0.11487531661987305,
+                "concept_name": null,
+                "text_grounding": [
+                  "based",
+                  "letter"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    280,
+                    32,
+                    480,
+                    232
+                  ],
+                  [
+                    280,
+                    32,
+                    480,
+                    232
+                  ],
+                  [
+                    280,
+                    32,
+                    480,
+                    232
+                  ],
+                  [
+                    312,
+                    122,
+                    512,
+                    322
+                  ],
+                  [
+                    312,
+                    122,
+                    512,
+                    322
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 3201,
+                "distance": 0.887397050857544,
+                "similarity": 0.11260294914245605,
+                "concept_name": null,
+                "text_grounding": [
+                  "based"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0139.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/scaly/scaly_0139.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    174,
+                    10,
+                    374,
+                    210
+                  ],
+                  [
+                    174,
+                    10,
+                    374,
+                    210
+                  ],
+                  [
+                    174,
+                    10,
+                    374,
+                    210
+                  ],
+                  [
+                    307,
+                    108,
+                    507,
+                    308
+                  ],
+                  [
+                    307,
+                    108,
+                    507,
+                    308
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 451,
+                "distance": 0.8928408622741699,
+                "similarity": 0.10715913772583008,
+                "concept_name": null,
+                "text_grounding": [
+                  "brown",
+                  "color",
+                  "dark"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0187.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0187.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0187.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0187.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/braided/braided_0187.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    14,
+                    51,
+                    214,
+                    251
+                  ],
+                  [
+                    14,
+                    51,
+                    214,
+                    251
+                  ],
+                  [
+                    14,
+                    51,
+                    214,
+                    251
+                  ],
+                  [
+                    267,
+                    37,
+                    467,
+                    237
+                  ],
+                  [
+                    267,
+                    37,
+                    467,
+                    237
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 1064,
+                "distance": 0.8935970664024353,
+                "similarity": 0.1064029335975647,
+                "concept_name": null,
+                "text_grounding": [
+                  "checker",
+                  "black",
+                  "square",
+                  "white"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/chequered/chequered_0209.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/chequered/chequered_0209.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/chequered/chequered_0209.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/chequered/chequered_0209.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/chequered/chequered_0209.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    82,
+                    181,
+                    282,
+                    381
+                  ],
+                  [
+                    82,
+                    181,
+                    282,
+                    381
+                  ],
+                  [
+                    82,
+                    181,
+                    282,
+                    381
+                  ],
+                  [
+                    214,
+                    79,
+                    414,
+                    279
+                  ],
+                  [
+                    214,
+                    79,
+                    414,
+                    279
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 1889
+          },
+          {
+            "token_index": 13,
+            "token_id": 17,
+            "token_text": "2",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 847,
+                "distance": 0.8024486899375916,
+                "similarity": 0.19755131006240845,
+                "concept_name": null,
+                "text_grounding": [
+                  "men",
+                  "person",
+                  "woman",
+                  "mankind",
+                  "manus"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0055.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    197,
+                    287,
+                    397,
+                    487
+                  ],
+                  [
+                    197,
+                    287,
+                    397,
+                    487
+                  ],
+                  [
+                    197,
+                    287,
+                    397,
+                    487
+                  ],
+                  [
+                    126,
+                    135,
+                    326,
+                    335
+                  ],
+                  [
+                    126,
+                    135,
+                    326,
+                    335
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 217,
+                "distance": 0.8078864812850952,
+                "similarity": 0.19211351871490479,
+                "concept_name": null,
+                "text_grounding": [
+                  "basic",
+                  "fundamentally",
+                  "foundational",
+                  "groundwork"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    33,
+                    2,
+                    233,
+                    202
+                  ],
+                  [
+                    33,
+                    2,
+                    233,
+                    202
+                  ],
+                  [
+                    33,
+                    2,
+                    233,
+                    202
+                  ],
+                  [
+                    14,
+                    415,
+                    214,
+                    615
+                  ],
+                  [
+                    14,
+                    415,
+                    214,
+                    615
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 1924,
+                "distance": 0.8088691234588623,
+                "similarity": 0.1911308765411377,
+                "concept_name": null,
+                "text_grounding": [
+                  "1",
+                  "net",
+                  "2",
+                  "class",
+                  "mesh"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0178.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0178.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0178.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0178.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0178.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    241,
+                    94,
+                    441,
+                    294
+                  ],
+                  [
+                    241,
+                    94,
+                    441,
+                    294
+                  ],
+                  [
+                    241,
+                    94,
+                    441,
+                    294
+                  ],
+                  [
+                    210,
+                    13,
+                    410,
+                    213
+                  ],
+                  [
+                    210,
+                    13,
+                    410,
+                    213
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 1073,
+                "distance": 0.8095299005508423,
+                "similarity": 0.19047009944915771,
+                "concept_name": null,
+                "text_grounding": [
+                  "ism",
+                  "minimal",
+                  "ist"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/spiralled/spiralled_0025.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    252,
+                    299,
+                    452,
+                    499
+                  ],
+                  [
+                    252,
+                    299,
+                    452,
+                    499
+                  ],
+                  [
+                    252,
+                    299,
+                    452,
+                    499
+                  ],
+                  [
+                    369,
+                    336,
+                    569,
+                    536
+                  ],
+                  [
+                    369,
+                    336,
+                    569,
+                    536
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 1934,
+                "distance": 0.812285840511322,
+                "similarity": 0.18771415948867798,
+                "concept_name": null,
+                "text_grounding": [
+                  "dimensional"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    275,
+                    406,
+                    475,
+                    606
+                  ],
+                  [
+                    275,
+                    406,
+                    475,
+                    606
+                  ],
+                  [
+                    275,
+                    406,
+                    475,
+                    606
+                  ],
+                  [
+                    187,
+                    428,
+                    387,
+                    628
+                  ],
+                  [
+                    187,
+                    428,
+                    387,
+                    628
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 847
+          },
+          {
+            "token_index": 15,
+            "token_id": 32016,
+            "token_text": " Marie",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 2760,
+                "distance": 0.8579131960868835,
+                "similarity": 0.14208680391311646,
+                "concept_name": null,
+                "text_grounding": [
+                  "day",
+                  "1",
+                  "valentine"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0155.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0155.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0155.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0155.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/swirly/swirly_0155.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    422,
+                    344,
+                    622,
+                    544
+                  ],
+                  [
+                    422,
+                    344,
+                    622,
+                    544
+                  ],
+                  [
+                    422,
+                    344,
+                    622,
+                    544
+                  ],
+                  [
+                    323,
+                    230,
+                    523,
+                    430
+                  ],
+                  [
+                    323,
+                    230,
+                    523,
+                    430
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 1662,
+                "distance": 0.8662188053131104,
+                "similarity": 0.13378119468688965,
+                "concept_name": null,
+                "text_grounding": [
+                  "steel",
+                  "stainless",
+                  "1",
+                  "wire"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0116.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0116.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0116.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0077.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/perforated/perforated_0077.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    216,
+                    168,
+                    416,
+                    368
+                  ],
+                  [
+                    216,
+                    168,
+                    416,
+                    368
+                  ],
+                  [
+                    216,
+                    168,
+                    416,
+                    368
+                  ],
+                  [
+                    136,
+                    96,
+                    336,
+                    296
+                  ],
+                  [
+                    136,
+                    96,
+                    336,
+                    296
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 2367,
+                "distance": 0.8695286512374878,
+                "similarity": 0.1304713487625122,
+                "concept_name": null,
+                "text_grounding": [
+                  "fabric",
+                  "blue",
+                  "navy"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0131.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0131.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0131.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0131.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0131.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    150,
+                    3,
+                    350,
+                    203
+                  ],
+                  [
+                    150,
+                    3,
+                    350,
+                    203
+                  ],
+                  [
+                    150,
+                    3,
+                    350,
+                    203
+                  ],
+                  [
+                    291,
+                    0,
+                    491,
+                    200
+                  ],
+                  [
+                    291,
+                    0,
+                    491,
+                    200
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 1619,
+                "distance": 0.8718353509902954,
+                "similarity": 0.1281646490097046,
+                "concept_name": null,
+                "text_grounding": [
+                  "fabric",
+                  "pattern",
+                  "lace"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/lacelike/lacelike_0003.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/lacelike/lacelike_0003.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/lacelike/lacelike_0003.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/lacelike/lacelike_0009.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/lacelike/lacelike_0009.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    390,
+                    13,
+                    590,
+                    213
+                  ],
+                  [
+                    390,
+                    13,
+                    590,
+                    213
+                  ],
+                  [
+                    390,
+                    13,
+                    590,
+                    213
+                  ],
+                  [
+                    212,
+                    4,
+                    412,
+                    204
+                  ],
+                  [
+                    212,
+                    4,
+                    412,
+                    204
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 548,
+                "distance": 0.8737335205078125,
+                "similarity": 0.1262664794921875,
+                "concept_name": null,
+                "text_grounding": [
+                  "based",
+                  "letter"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    280,
+                    32,
+                    480,
+                    232
+                  ],
+                  [
+                    280,
+                    32,
+                    480,
+                    232
+                  ],
+                  [
+                    280,
+                    32,
+                    480,
+                    232
+                  ],
+                  [
+                    312,
+                    122,
+                    512,
+                    322
+                  ],
+                  [
+                    312,
+                    122,
+                    512,
+                    322
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 2760
+          },
+          {
+            "token_index": 17,
+            "token_id": 18,
+            "token_text": "3",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 2535,
+                "distance": 0.7763805389404297,
+                "similarity": 0.2236194610595703,
+                "concept_name": null,
+                "text_grounding": [
+                  "base",
+                  "basic"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0006.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    79,
+                    266,
+                    279,
+                    466
+                  ],
+                  [
+                    79,
+                    266,
+                    279,
+                    466
+                  ],
+                  [
+                    79,
+                    266,
+                    279,
+                    466
+                  ],
+                  [
+                    57,
+                    340,
+                    257,
+                    540
+                  ],
+                  [
+                    57,
+                    340,
+                    257,
+                    540
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 404,
+                "distance": 0.7768463492393494,
+                "similarity": 0.22315365076065063,
+                "concept_name": null,
+                "text_grounding": [
+                  "property",
+                  "category",
+                  "texture",
+                  "class",
+                  "material"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/crosshatched/crosshatched_0142.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    407,
+                    352,
+                    607,
+                    552
+                  ],
+                  [
+                    407,
+                    352,
+                    607,
+                    552
+                  ],
+                  [
+                    407,
+                    352,
+                    607,
+                    552
+                  ],
+                  [
+                    30,
+                    391,
+                    230,
+                    591
+                  ],
+                  [
+                    30,
+                    391,
+                    230,
+                    591
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 2574,
+                "distance": 0.7772776484489441,
+                "similarity": 0.2227223515510559,
+                "concept_name": null,
+                "text_grounding": [
+                  "sustained",
+                  "sustainable"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0202.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0202.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0202.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0202.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0202.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    207,
+                    13,
+                    407,
+                    213
+                  ],
+                  [
+                    207,
+                    13,
+                    407,
+                    213
+                  ],
+                  [
+                    207,
+                    13,
+                    407,
+                    213
+                  ],
+                  [
+                    141,
+                    5,
+                    341,
+                    205
+                  ],
+                  [
+                    141,
+                    5,
+                    341,
+                    205
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 1067,
+                "distance": 0.7774628400802612,
+                "similarity": 0.22253715991973877,
+                "concept_name": null,
+                "text_grounding": [
+                  "scene",
+                  "indoor",
+                  "outdoors"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0041.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0041.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0041.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0170.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/meshed/meshed_0170.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    196,
+                    139,
+                    396,
+                    339
+                  ],
+                  [
+                    196,
+                    139,
+                    396,
+                    339
+                  ],
+                  [
+                    196,
+                    139,
+                    396,
+                    339
+                  ],
+                  [
+                    167,
+                    200,
+                    367,
+                    400
+                  ],
+                  [
+                    167,
+                    200,
+                    367,
+                    400
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 408,
+                "distance": 0.7781797051429749,
+                "similarity": 0.22182029485702515,
+                "concept_name": null,
+                "text_grounding": [
+                  "setting",
+                  "outdoors"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0093.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0093.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0093.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0093.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/cobwebbed/cobwebbed_0093.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    37,
+                    65,
+                    237,
+                    265
+                  ],
+                  [
+                    37,
+                    65,
+                    237,
+                    265
+                  ],
+                  [
+                    37,
+                    65,
+                    237,
+                    265
+                  ],
+                  [
+                    8,
+                    137,
+                    208,
+                    337
+                  ],
+                  [
+                    8,
+                    137,
+                    208,
+                    337
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 2535
+          },
+          {
+            "token_index": 19,
+            "token_id": 9625,
+            "token_text": " France",
+            "top_concepts": [
+              {
+                "rank": 1,
+                "concept_index": 378,
+                "distance": 0.8413815498352051,
+                "similarity": 0.15861845016479492,
+                "concept_name": null,
+                "text_grounding": [
+                  "meal",
+                  "fruit",
+                  "breakfast",
+                  "food"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    246,
+                    139,
+                    446,
+                    339
+                  ],
+                  [
+                    246,
+                    139,
+                    446,
+                    339
+                  ],
+                  [
+                    246,
+                    139,
+                    446,
+                    339
+                  ],
+                  [
+                    68,
+                    212,
+                    268,
+                    412
+                  ],
+                  [
+                    68,
+                    212,
+                    268,
+                    412
+                  ]
+                ]
+              },
+              {
+                "rank": 2,
+                "concept_index": 1406,
+                "distance": 0.8438117504119873,
+                "similarity": 0.1561882495880127,
+                "concept_name": null,
+                "text_grounding": [
+                  "prepared",
+                  "preparation",
+                  "food"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/fibrous/fibrous_0132.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    250,
+                    120,
+                    450,
+                    320
+                  ],
+                  [
+                    250,
+                    120,
+                    450,
+                    320
+                  ],
+                  [
+                    250,
+                    120,
+                    450,
+                    320
+                  ],
+                  [
+                    76,
+                    282,
+                    276,
+                    482
+                  ],
+                  [
+                    76,
+                    282,
+                    276,
+                    482
+                  ]
+                ]
+              },
+              {
+                "rank": 3,
+                "concept_index": 164,
+                "distance": 0.846625804901123,
+                "similarity": 0.15337419509887695,
+                "concept_name": null,
+                "text_grounding": [
+                  "2",
+                  "1",
+                  "texture"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0060.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    21,
+                    198,
+                    221,
+                    398
+                  ],
+                  [
+                    21,
+                    198,
+                    221,
+                    398
+                  ],
+                  [
+                    21,
+                    198,
+                    221,
+                    398
+                  ],
+                  [
+                    16,
+                    84,
+                    216,
+                    284
+                  ],
+                  [
+                    16,
+                    84,
+                    216,
+                    284
+                  ]
+                ]
+              },
+              {
+                "rank": 4,
+                "concept_index": 528,
+                "distance": 0.8467508554458618,
+                "similarity": 0.15324914455413818,
+                "concept_name": null,
+                "text_grounding": [
+                  "based",
+                  "background",
+                  "food"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/waffled/waffled_0142.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    211,
+                    97,
+                    411,
+                    297
+                  ],
+                  [
+                    211,
+                    97,
+                    411,
+                    297
+                  ],
+                  [
+                    211,
+                    97,
+                    411,
+                    297
+                  ],
+                  [
+                    381,
+                    163,
+                    581,
+                    363
+                  ],
+                  [
+                    381,
+                    163,
+                    581,
+                    363
+                  ]
+                ]
+              },
+              {
+                "rank": 5,
+                "concept_index": 662,
+                "distance": 0.848175048828125,
+                "similarity": 0.151824951171875,
+                "concept_name": null,
+                "text_grounding": [
+                  "clothing",
+                  "pattern",
+                  "garment",
+                  "fashionable",
+                  "apparel"
+                ],
+                "image_grounding_path": [
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/striped/striped_0067.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/striped/striped_0067.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/striped/striped_0067.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/striped/striped_0067.jpg",
+                  "/mnt/sdz/kakh01_data/xl-vlms/data/train/striped/striped_0067.jpg"
+                ],
+                "image_grounding_bboxes": [
+                  [
+                    185,
+                    229,
+                    385,
+                    429
+                  ],
+                  [
+                    185,
+                    229,
+                    385,
+                    429
+                  ],
+                  [
+                    185,
+                    229,
+                    385,
+                    429
+                  ],
+                  [
+                    173,
+                    52,
+                    373,
+                    252
+                  ],
+                  [
+                    173,
+                    52,
+                    373,
+                    252
+                  ]
+                ]
+              }
+            ],
+            "concept_index": 378
+          }
+        ],
+        "top_concepts_over_sequence": [
+          {
+            "rank": 1,
+            "concept_index": 364,
+            "similarity": 0.333981990814209,
+            "concept_name": null,
+            "text_grounding": [
+              "visible",
+              "object"
+            ],
+            "image_grounding_path": [
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/porous/porous_0115.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/pitted/pitted_0105.jpg"
+            ],
+            "image_grounding_bboxes": [
+              [
+                2,
+                33,
+                202,
+                233
+              ],
+              [
+                2,
+                33,
+                202,
+                233
+              ],
+              [
+                2,
+                33,
+                202,
+                233
+              ],
+              [
+                140,
+                110,
+                340,
+                310
+              ],
+              [
+                140,
+                110,
+                340,
+                310
+              ]
+            ]
+          },
+          {
+            "rank": 2,
+            "concept_index": 3274,
+            "similarity": 0.3275066316127777,
+            "concept_name": null,
+            "text_grounding": [
+              "head",
+              "man",
+              "facial",
+              "person",
+              "faced"
+            ],
+            "image_grounding_path": [
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/cracked/cracked_0163.jpg"
+            ],
+            "image_grounding_bboxes": [
+              [
+                41,
+                326,
+                241,
+                526
+              ],
+              [
+                41,
+                326,
+                241,
+                526
+              ],
+              [
+                41,
+                326,
+                241,
+                526
+              ],
+              [
+                15,
+                258,
+                215,
+                458
+              ],
+              [
+                15,
+                258,
+                215,
+                458
+              ]
+            ]
+          },
+          {
+            "rank": 3,
+            "concept_index": 2857,
+            "similarity": 0.32690128684043884,
+            "concept_name": null,
+            "text_grounding": [
+              "negativity",
+              "positive",
+              "space",
+              "ground",
+              "negative"
+            ],
+            "image_grounding_path": [
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/smeared/smeared_0138.jpg"
+            ],
+            "image_grounding_bboxes": [
+              [
+                113,
+                105,
+                313,
+                305
+              ],
+              [
+                113,
+                105,
+                313,
+                305
+              ],
+              [
+                113,
+                105,
+                313,
+                305
+              ],
+              [
+                165,
+                224,
+                365,
+                424
+              ],
+              [
+                165,
+                224,
+                365,
+                424
+              ]
+            ]
+          },
+          {
+            "rank": 4,
+            "concept_index": 2374,
+            "similarity": 0.3256494998931885,
+            "concept_name": null,
+            "text_grounding": [
+              "discern",
+              "distinctive",
+              "distinguished",
+              "distinction",
+              "object"
+            ],
+            "image_grounding_path": [
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/flecked/flecked_0052.jpg"
+            ],
+            "image_grounding_bboxes": [
+              [
+                12,
+                14,
+                212,
+                214
+              ],
+              [
+                12,
+                14,
+                212,
+                214
+              ],
+              [
+                12,
+                14,
+                212,
+                214
+              ],
+              [
+                250,
+                383,
+                450,
+                583
+              ],
+              [
+                250,
+                383,
+                450,
+                583
+              ]
+            ]
+          },
+          {
+            "rank": 5,
+            "concept_index": 548,
+            "similarity": 0.3215775191783905,
+            "concept_name": null,
+            "text_grounding": [
+              "based",
+              "letter"
+            ],
+            "image_grounding_path": [
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg",
+              "/mnt/sdz/kakh01_data/xl-vlms/data/train/interlaced/interlaced_0140.jpg"
+            ],
+            "image_grounding_bboxes": [
+              [
+                280,
+                32,
+                480,
+                232
+              ],
+              [
+                280,
+                32,
+                480,
+                232
+              ],
+              [
+                280,
+                32,
+                480,
+                232
+              ],
+              [
+                312,
+                122,
+                512,
+                322
+              ],
+              [
+                312,
+                122,
+                512,
+                322
+              ]
+            ]
+          }
+        ],
+        "hook_layer": "model.language_model.norm",
+        "model_name": "Qwen/Qwen2.5-VL-3B-Instruct"
+      }
+    ]
+  }
+}

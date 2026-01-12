@@ -38,3 +38,5 @@ Miniconda3*
 miniconda3*
 ./Miniconda3*
 data/train
+dtd
+models/
