@@ -876,8 +876,8 @@ async def run_fast_explainer(
                     token_counter += 1
                 
                 top_concepts = token.get("top_concepts", [])
-                    # Ensure image_grounding_path and image_grounding_bboxes are arrays, not strings
-                    for concept in top_concepts:
+                # Ensure image_grounding_path and image_grounding_bboxes are arrays, not strings
+                for concept in top_concepts:
                         if "image_grounding_path" in concept:
                             val = concept["image_grounding_path"]
                             if isinstance(val, str) and val.startswith("[") and val.endswith("]"):

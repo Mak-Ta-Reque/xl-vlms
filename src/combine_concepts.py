@@ -265,23 +265,35 @@ def delete_original_files(paths):
 
 
 def main(args):
-    pth_files = [ os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if f.endswith('.pth')] #original path files
+    """
+    Main entry point for combining and normalizing concept .pth files.
+    
+    Args:
+        args: Namespace object with input_dir, output_path, normalization, and delete attributes
+    """
+    pth_files = [
+        os.path.join(args.input_dir, f) 
+        for f in os.listdir(args.input_dir) 
+        if f.endswith('.pth')
+    ]
+    
     combined_data = combine_concepts(args.input_dir)
-
     base_output = args.output_path.rsplit('.', 1)[0]
 
     # Save raw combined concepts
     save_combined_data(combined_data, f"{base_output}_raw.pth")
 
     # Apply normalizations
-    for method in ['l2', 'zca', 'l2zca', 'l1', 'l1zca' , 'gl']:
+    normalization_methods = ['l2', 'zca', 'l2zca', 'l1', 'l1zca', 'gl']
+    for method in normalization_methods:
         if method in args.normalization:
             normalized_concepts = apply_normalization(combined_data['concepts'], method)
             data_copy = combined_data.copy()
             data_copy['concepts'] = torch.tensor(normalized_concepts, dtype=torch.float32)
             save_combined_data(data_copy, f"{base_output}_{method}.pth")
     
-    if args.delete:
+    # Delete original files if requested (default: False)
+    if getattr(args, 'delete', False):
         delete_original_files(pth_files)
 
 

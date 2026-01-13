@@ -704,7 +704,8 @@ class VLMConceptExplainer:
 __all__ = ["VLMConceptExplainer"]
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for vlm_explainer_multibatch script."""
     import argparse
     ap = argparse.ArgumentParser(description="Quick test for VLMConceptExplainer")
     ap.add_argument('--model_name', default='google/gemma-3n-E4B-it')
@@ -816,11 +817,42 @@ if __name__ == "__main__":
     except Exception:
         data_root = None
 
+    # Helper to convert numpy/torch types for JSON serialization
+    def _make_json_serializable(obj):
+        """Recursively convert numpy/torch objects to JSON-serializable types."""
+        if isinstance(obj, dict):
+            return {k: _make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [_make_json_serializable(v) for v in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        elif isinstance(obj, torch.Tensor):
+            return obj.detach().cpu().numpy().tolist()
+        elif hasattr(obj, 'tolist'):  # Generic fallback for array-like objects
+            return obj.tolist()
+        else:
+            return obj
+
+    # Clean results: remove internal numpy embeddings and convert remaining arrays
+    cleaned_results = []
+    for r in res:
+        r_clean = r.copy()
+        # Remove internal numpy embeddings from per_token_concepts
+        if 'per_token_concepts' in r_clean:
+            cleaned_tokens = []
+            for tok in r_clean['per_token_concepts']:
+                tok_clean = {k: v for k, v in tok.items() if not k.startswith('_')}
+                cleaned_tokens.append(tok_clean)
+            r_clean['per_token_concepts'] = cleaned_tokens
+        cleaned_results.append(r_clean)
+
     out_payload: Dict[str, Any] = {
         'model_card': args.model_name,
         'layer_path': args.layer_path,
         'data_root': data_root,
-        'results': res,
+        'results': _make_json_serializable(cleaned_results),
     }
     try:
         out_path = args.out_json
@@ -832,3 +864,7 @@ if __name__ == "__main__":
         logging.error(f"Failed to save JSON: {e}")
 
     explainer.close()
+
+
+if __name__ == "__main__":
+    main()

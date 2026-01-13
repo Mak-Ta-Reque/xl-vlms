@@ -8,7 +8,7 @@ from helpers.arguments import get_arguments
 from helpers.logger import log_args, setup_logger
 from models import get_model_class
 
-def concept_decompostion(args, model_subset, logger):
+def concept_decompostion(args, model_subset, logger, device):
    
     analyse_features(
         analysis_name=args.analysis_name,
@@ -19,8 +19,8 @@ def concept_decompostion(args, model_subset, logger):
     )
 
 
-if __name__ == "__main__":
-
+def main():
+    """Main entry point for analyse_features script."""
     args = get_arguments()
 
     logger = setup_logger(log_file=os.path.join(args.save_dir, f"logs.log"))
@@ -65,13 +65,13 @@ if __name__ == "__main__":
             all_args.append(arg)
 
         for arg in all_args:
-            concept_decompostion(arg, model_subset, logger)
+            concept_decompostion(arg, model_subset, logger, device)
 
         #args.features_path = os.path.join(feature_source, feature_file)
         #concept_decompostion(args, logger, device)
     else:
-        concept_decompostion(args, model_subset, logger)
+        concept_decompostion(args, model_subset, logger, device)
 
 
-    
-
+if __name__ == "__main__":
+    main()

@@ -57,13 +57,13 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 # Data & outputs
 INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/xl-vlms/data}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/test_kashan}"
-HF_HOME="${HF_HOME:-/mnt/sdz/abka03_data/models}"
+#HF_HOME="${HF_HOME:-/mnt/sdz/abka03_data/models}"
 
 # Model/runtime knobs
 VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
 BATCH_SIZE="${BATCH_SIZE:-48}"
 SEED="${SEED:-42}"
-DEVICE_ID="${DEVICE_ID:-1}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
+DEVICE_ID="${DEVICE_ID:-0}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
 
 # Crops JSON generation
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-20}"
@@ -72,7 +72,7 @@ MIN_IMAGES_PER_TAG="${MIN_IMAGES_PER_TAG:-10}"
 MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-128}"
 PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-10}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
-OBJECT_DETECTION="${OBJECT_DETECTION:-1}"      # 1 to enable LangSAM
+OBJECT_DETECTION="${OBJECT_DETECTION:-0}"      # 1 to enable LangSAM
 DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-5}"
 DETECTION_TOPN="${DETECTION_TOPN:-5}"
 

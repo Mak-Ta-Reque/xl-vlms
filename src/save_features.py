@@ -1,7 +1,7 @@
 import argparse
 import os
 import time
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 from PIL import Image
@@ -20,7 +20,7 @@ from helpers.logger import log_num_transformer_layers
 def inference(
     loader: Callable,
     model_class: ImageTextModel,
-    hook_return_functions: List[Callable] | None,
+    hook_return_functions: Optional[List[Callable]],
     device: torch.device,
     logger: Callable = None,
     args: argparse.Namespace = None,
@@ -224,8 +224,8 @@ def inference(
     return hook_data
 
 
-if __name__ == "__main__":
-
+def main():
+    """Main entry point for save_features script."""
     args = get_arguments()
 
     logger = setup_logger(log_file=os.path.join(args.save_dir, f"logs.log"))
@@ -308,3 +308,7 @@ if __name__ == "__main__":
             for func in hook_postprocessing_functions:
                 if func is not None:
                     func(data=hook_data, args=args, logger=logger)
+
+
+if __name__ == "__main__":
+    main()
