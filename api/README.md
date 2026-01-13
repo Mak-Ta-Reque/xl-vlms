@@ -38,12 +38,11 @@ FastAPI application for Vision-Language Model (VLM) concept explanation and grou
 # Activate conda environment
 conda activate your_env_name
 
-# Install dependencies
-pip install -r api/requirements.txt
+# Install all project dependencies (core + API)
+pip install -r requirements.txt
 
-# Run API
-cd api
-python main.py
+# Run API from project root
+python -m api.main
 ```
 
 The API will start at `http://localhost:8000` (or `http://0.0.0.0:8000` for external access).
