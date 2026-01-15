@@ -37,6 +37,7 @@ import re
 import json
 import math
 import argparse
+import gc
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -602,36 +603,8 @@ class ConceptDeletionEvaluator:
         plt.close()
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Concept deletion/insertion evaluation (c-deletion / c-insertion)")
-    ap.add_argument("--results_json", required=True, help="JSON file produced by vlm_explainer.py")
-    ap.add_argument("--concept_path", required=True, help="Concept matrix file (.pth/.pt/.json/.npz)")
-    ap.add_argument("--model_name", default="google/gemma-3n-E4B-it")
-    ap.add_argument("--layer_path", required=False, help="Hooked layer path; if omitted, read from results JSON")
-    ap.add_argument("--mode", choices=["sequence", "token"], default="sequence")
-    ap.add_argument("--insertion", action="store_true", help="Use c-insertion instead of c-deletion")
-    ap.add_argument("--rank", type=int, default=1, help="Concept rank to evaluate (1 = top)")
-    # Interpret --num_points as percentage of the gradient vector length to traverse (0-100)
-    ap.add_argument("--num_points", type=float, default=100.0, help="Percentage of coordinates to traverse (0-100). 100 = full vector")
-    # New: curve resolution along that percentage range
-    ap.add_argument("--curve_points", type=int, default=64, help="Number of evaluation samples along the selected percentage range")
-    ap.add_argument("--device", default=None, help="cuda, cpu, or cuda:N")
-    ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--deterministic", action="store_true")
-    ap.add_argument("--out_dir", default="/mnt/abka03/Projects/xl-vlms/outputs")
-    # New: smoothing fraction for zeroing top-|grad| before ranking
-    ap.add_argument("--grad_top_zero_frac", type=float, default=0.0, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
-    # New: whether to multiply gradient with concept vector prior to op
-    try:
-        from argparse import BooleanOptionalAction  # py3.9+
-        ap.add_argument("--concept_multiply", action=BooleanOptionalAction, default=True,
-                        help="If true (default), multiply gradient with the concept vector before deletion/insertion")
-    except Exception:
-        # Fallback: presence of flag sets True; no negation flag
-        ap.add_argument("--concept_multiply", action="store_true", default=True,
-                        help="If true, multiply gradient with the concept vector when ordering (default: False)")
-    args = ap.parse_args()
-
+def run_with_args(args: argparse.Namespace) -> None:
+    """Run concept deletion/insertion evaluation using a parsed Namespace."""
     _seed_everything(args.seed, deterministic=args.deterministic)
 
     # Resolve layer_path from file if not provided
@@ -652,7 +625,7 @@ def main() -> None:
         results_json=args.results_json,
         device=args.device,
         grad_top_zero_frac=args.grad_top_zero_frac,
-    concept_mutiply=getattr(args, "concept_mutiply", True),
+        concept_mutiply=getattr(args, "concept_mutiply", True),
     )
 
     xlabel = None
@@ -714,6 +687,48 @@ def main() -> None:
             }, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+    # pro-actively release model weights and CUDA caches to avoid accumulation across runs
+    evaluator = None
+    gc.collect()
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Concept deletion/insertion evaluation (c-deletion / c-insertion)")
+    ap.add_argument("--results_json", required=True, help="JSON file produced by vlm_explainer.py")
+    ap.add_argument("--concept_path", required=True, help="Concept matrix file (.pth/.pt/.json/.npz)")
+    ap.add_argument("--model_name", default="google/gemma-3n-E4B-it")
+    ap.add_argument("--layer_path", required=False, help="Hooked layer path; if omitted, read from results JSON")
+    ap.add_argument("--mode", choices=["sequence", "token"], default="sequence")
+    ap.add_argument("--insertion", action="store_true", help="Use c-insertion instead of c-deletion")
+    ap.add_argument("--rank", type=int, default=1, help="Concept rank to evaluate (1 = top)")
+    # Interpret --num_points as percentage of the gradient vector length to traverse (0-100)
+    ap.add_argument("--num_points", type=float, default=100.0, help="Percentage of coordinates to traverse (0-100). 100 = full vector")
+    # New: curve resolution along that percentage range
+    ap.add_argument("--curve_points", type=int, default=64, help="Number of evaluation samples along the selected percentage range")
+    ap.add_argument("--device", default=None, help="cuda, cpu, or cuda:N")
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--deterministic", action="store_true")
+    ap.add_argument("--out_dir", default="/mnt/abka03/Projects/xl-vlms/outputs")
+    # New: smoothing fraction for zeroing top-|grad| before ranking
+    ap.add_argument("--grad_top_zero_frac", type=float, default=0.0, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
+    # New: whether to multiply gradient with concept vector prior to op
+    try:
+        from argparse import BooleanOptionalAction  # py3.9+
+        ap.add_argument("--concept_multiply", action=BooleanOptionalAction, default=True,
+                        help="If true (default), multiply gradient with the concept vector before deletion/insertion")
+    except Exception:
+        # Fallback: presence of flag sets True; no negation flag
+        ap.add_argument("--concept_multiply", action="store_true", default=True,
+                        help="If true, multiply gradient with the concept vector when ordering (default: False)")
+    args = ap.parse_args()
+
+    run_with_args(args)
 
 
 if __name__ == "__main__":

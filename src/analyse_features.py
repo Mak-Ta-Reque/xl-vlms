@@ -1,4 +1,5 @@
 import copy
+import gc
 import os
 
 import torch
@@ -7,6 +8,15 @@ from analysis import analyse_features
 from helpers.arguments import get_arguments
 from helpers.logger import log_args, setup_logger
 from models import get_model_class
+
+
+def cleanup_gpu_memory():
+    """Clean up GPU memory by running garbage collection and clearing CUDA cache."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
 
 def concept_decompostion(args, model_subset, logger, device):
    
@@ -35,13 +45,32 @@ def main():
         logger=logger,
         args=args,
     )
-    lm_head = model_class.get_lm_head().float()
-    lm_head = lm_head.to(device)
+    
+    # Extract only the components we need (lm_head and tokenizer)
+    # Clone the lm_head weights to detach from the original model graph
+    lm_head_weights = model_class.get_lm_head().weight.data.clone().float()
+    lm_head_bias = None
+    if model_class.get_lm_head().bias is not None:
+        lm_head_bias = model_class.get_lm_head().bias.data.clone().float()
+    
+    # Create a standalone lm_head module
+    lm_head = torch.nn.Linear(
+        lm_head_weights.shape[1], 
+        lm_head_weights.shape[0], 
+        bias=(lm_head_bias is not None),
+        device=device
+    )
+    lm_head.weight.data = lm_head_weights.to(device)
+    if lm_head_bias is not None:
+        lm_head.bias.data = lm_head_bias.to(device)
+    
     tokenizer = model_class.get_tokenizer()
-    # move to the device
-    #tokenizer = tokenizer.to(device)
-    # create a subset of the model class
+    
+    # Delete the full model and clean GPU memory
     del model_class
+    cleanup_gpu_memory()
+    
+    # Create a subset with only the required components
     model_subset = {
         "lm_head": lm_head,
         "tokenizer": tokenizer,
@@ -71,6 +100,11 @@ def main():
         #concept_decompostion(args, logger, device)
     else:
         concept_decompostion(args, model_subset, logger, device)
+
+    # Final cleanup before exiting
+    del model_subset
+    cleanup_gpu_memory()
+    logger.info("GPU memory cleaned up before exit.")
 
 
 if __name__ == "__main__":

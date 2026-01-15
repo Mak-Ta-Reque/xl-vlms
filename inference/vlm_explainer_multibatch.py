@@ -16,6 +16,7 @@ Memory-aware:
 from __future__ import annotations
 
 import os
+import gc
 # Suppress noisy third-party logs early
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # hide TF INFO/WARNING/ERROR
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
@@ -864,6 +865,18 @@ def main():
         logging.error(f"Failed to save JSON: {e}")
 
     explainer.close()
+
+    # Proactively release GPU allocations after run
+    try:
+        del res
+    except NameError:
+        pass
+    del explainer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        if hasattr(torch.cuda, "ipc_collect"):
+            torch.cuda.ipc_collect()
 
 
 if __name__ == "__main__":
