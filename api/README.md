@@ -650,6 +650,32 @@ curl -X POST "http://iml-cube.sb.dfki.de:8000/concept-projection/run" \
 - **Output**: Saved to `outputs/api_runs/` (for `/run-full`)
 - **Concepts**: Loaded from `outputs/screen_run/concept/snmf/combined_concept_snmf_raw.pth`
 
+### Concepts Directory Requirements
+
+- Expected location:
+  - `outputs/screen_run/concept/snmf/`
+- Required file:
+  - `combined_concept_snmf_raw.pth`
+- Optional file for projection config:
+  - `combined_concept_snmf_gl.pth`
+- Projection outputs:
+  - `outputs/screen_run/concept/snmf/projections/`
+
+- Code references:
+  - Concept paths are defined in [main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L71-L77)
+  - Startup will fail if `combined_concept_snmf_raw.pth` is missing (see [get_or_create_explainer](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L202-L218))
+
+- How to satisfy this:
+  - Preferred: run the pipeline with `OUTPUT_DIR="$ROOT_DIR/outputs/screen_run"` so concepts are created in the expected folder.
+  - If concepts already exist in another run directory, copy or symlink them:
+    - `cp /path/to/your_run/concept/snmf/combined_concept_snmf_raw.pth /mnt/sdz/kakh01_data/xl-vlms/outputs/screen_run/concept/snmf/`
+    - Optional: copy `combined_concept_snmf_gl.pth` similarly if using the projection config endpoint.
+  - Alternative: change `CONCEPT_PTH` and `SCREEN_RUN_GL_PTH` in [api/main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L71-L77) to point to your run directory and restart the server.
+
+- Notes:
+  - The expected method subfolder is `snmf`. If you use a different method (e.g., `pca`), adjust the API code accordingly.
+  - Ensure `torch` and `numpy` are available in the API environment for loading PTH files (see [main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L229-L236)).
+
 ### Unique Concept IDs
 
 - Each token in `/run` response has a **unique `concept_index`** (based on `token_index`)
