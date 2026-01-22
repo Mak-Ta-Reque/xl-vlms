@@ -26,3 +26,7 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 aiofiles==23.2.1
 umap-learn==0.5.5
+# Required for API image processing and data manipulation
+Pillow>=11.3.0
+numpy>=1.20.0
+scikit-learn>=1.0.0
