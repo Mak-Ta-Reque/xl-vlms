@@ -34,18 +34,43 @@ FastAPI application for Vision-Language Model (VLM) concept explanation and grou
 
 ### Installation
 
-```bash
-# Activate conda environment
-conda activate your_env_name
+1. **Activate your conda environment:**
+   ```bash
+   conda activate your_env_name
+   ```
 
-# Install all project dependencies (core + API)
-pip install -r requirements.txt
+2. **Navigate to the project root directory:**
+   ```bash
+   cd /mnt/sdz/kakh01_data/xl-vlms
+   # Or wherever your project root is located
+   ```
 
-# Run API from project root
-python -m api.main
-```
+3. **Install all project dependencies (core + API):**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-The API will start at `http://localhost:8000` (or `http://0.0.0.0:8000` for external access).
+4. **Run the API from the project root:**
+   ```bash
+   # IMPORTANT: Run from project root, not from api/ directory
+   python -m api.main
+   ```
+
+   **Alternative using uvicorn directly:**
+   ```bash
+   uvicorn api.main:app --host 0.0.0.0 --port 8000
+   ```
+
+   **Or using the provided script:**
+   ```bash
+   bash api/run_api.sh
+   ```
+
+### Important Notes
+
+- ✅ **Run from project root**: The command `python -m api.main` must be executed from the project root directory (`/mnt/sdz/kakh01_data/xl-vlms`), not from inside the `api/` folder.
+- ✅ **Working directory**: The API expects to be run from the project root so it can find relative paths like `data/`, `outputs/`, `inference/`, etc.
+- ✅ **Server address**: The API will start at `http://localhost:8000` (or `http://0.0.0.0:8000` for external access).
 
 ---
 
@@ -625,7 +650,14 @@ curl -X POST "http://iml-cube.sb.dfki.de:8000/concept-projection/run" \
 
 ## Testing
 
-Run the test suite:
+Run the test suite from the project root:
+
+```bash
+# From project root directory
+python -m api.test_api
+```
+
+Or if you prefer to run it directly:
 
 ```bash
 cd api
