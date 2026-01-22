@@ -28,7 +28,7 @@ FastAPI application for Vision-Language Model (VLM) concept explanation and grou
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10
 - Conda environment (recommended)
 - CUDA-capable GPU (for model inference)
 
@@ -45,10 +45,20 @@ FastAPI application for Vision-Language Model (VLM) concept explanation and grou
    # Or wherever your project root is located
    ```
 
-3. **Install all project dependencies (core + API):**
+3. **Install dependencies:**
+   
+   **Important:** The `requirements.txt` file in the project root contains **only API dependencies** (FastAPI, uvicorn, etc.).
+   
+   **For API dependencies only:**
    ```bash
    pip install -r requirements.txt
    ```
+   
+   **For the full project dependencies** (core project + models, transformers, etc.), please follow the installation instructions in the main [`README.md`](../README.md) file. The main README includes:
+   - PyTorch with CUDA support
+   - Transformers, Qwen models, and other core dependencies
+   - Additional packages installed via conda (inflect, scikit-learn, etc.)
+   - spaCy models and COCO evaluation data
 
 4. **Run the API from the project root:**
    ```bash
