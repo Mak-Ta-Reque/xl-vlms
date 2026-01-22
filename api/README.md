@@ -676,6 +676,19 @@ curl -X POST "http://iml-cube.sb.dfki.de:8000/concept-projection/run" \
   - The expected method subfolder is `snmf`. If you use a different method (e.g., `pca`), adjust the API code accordingly.
   - Ensure `torch` and `numpy` are available in the API environment for loading PTH files (see [main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L229-L236)).
 
+### Hugging Face Authentication
+
+- Set cache path:
+  - `HF_HOME` controls where models are cached. Configure in your shell or in `.env` (used by the pipeline script).
+  - Example default in `.env`: `export HF_HOME="$ROOT_DIR/models"`
+- Authenticate for private models:
+  - Set `HF_TOKEN` in the environment or in `.env` (blank by default).
+  - The dataset inference step reads `HF_TOKEN` and uses it to authenticate and download models when not cached:
+    - See [dataset_inference.py](file:///mnt/sdz/kakh01_data/xl-vlms/inference/dataset_inference.py#L182-L226) for token usage (`login(token=...)` and `from_pretrained(..., token=...)`).
+- Usage with the pipeline:
+  - The full pipeline script loads `.env` automatically; add `export HF_TOKEN="your_token"` to `.env` if you need private model access.
+  - Models already cached in `HF_HOME` work offline; `HF_TOKEN` is only needed to fetch missing private weights.
+
 ### Unique Concept IDs
 
 - Each token in `/run` response has a **unique `concept_index`** (based on `token_index`)
