@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from sklearn.decomposition import PCA
 
-from pth_to_json_converter import tensor_to_list
+from api.pth_to_json_converter import tensor_to_list
 
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
