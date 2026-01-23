@@ -570,7 +570,7 @@ async def run_concept_projection(config: ProjectionRequest):
             
             # Ensure links have colored rgba format (in case cache was created before colored links)
             if "links" in cached and cached["links"]:
-                from save_data import get_coloured_links
+                from api.save_data import get_coloured_links
                 # Check if links already have color field with rgba format
                 needs_coloring = False
                 for link in cached["links"]:
@@ -1233,6 +1233,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "api.main:app",
         host="0.0.0.0",
-        port=8001,
+        port=8000,
         reload=True
     )
