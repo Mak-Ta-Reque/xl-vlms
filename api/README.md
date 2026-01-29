@@ -28,25 +28,59 @@ FastAPI application for Vision-Language Model (VLM) concept explanation and grou
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10
 - Conda environment (recommended)
 - CUDA-capable GPU (for model inference)
 
 ### Installation
 
-```bash
-# Activate conda environment
-conda activate your_env_name
+1. **Activate your conda environment:**
+   ```bash
+   conda activate your_env_name
+   ```
 
-# Install dependencies
-pip install -r api/requirements.txt
+2. **Navigate to the project root directory:**
+   ```bash
+   cd /mnt/sdz/kakh01_data/xl-vlms
+   # Or wherever your project root is located
+   ```
 
-# Run API
-cd api
-python main.py
-```
+3. **Install dependencies:**
+   
+   **Important:** The `requirements.txt` file in the project root contains **only API dependencies** (FastAPI, uvicorn, etc.).
+   
+   **For API dependencies only:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
+   **For the full project dependencies** (core project + models, transformers, etc.), please follow the installation instructions in the main [`README.md`](../README.md) file. The main README includes:
+   - PyTorch with CUDA support
+   - Transformers, Qwen models, and other core dependencies
+   - Additional packages installed via conda (inflect, scikit-learn, etc.)
+   - spaCy models and COCO evaluation data
 
-The API will start at `http://localhost:8000` (or `http://0.0.0.0:8000` for external access).
+4. **Run the API from the project root:**
+   ```bash
+   # IMPORTANT: Run from project root, not from api/ directory
+   python -m api.main
+   ```
+
+   **Alternative using uvicorn directly:**
+   ```bash
+   uvicorn api.main:app --host 0.0.0.0 --port 8000
+   ```
+
+   **Or using the provided script:**
+   ```bash
+   bash api/run_api.sh
+   ```
+
+### Important Notes
+
+- ✅ **Run from project root**: The command `python -m api.main` must be executed from the project root directory (`/mnt/sdz/kakh01_data/xl-vlms`), not from inside the `api/` folder.
+- ✅ **Working directory**: The API expects to be run from the project root so it can find relative paths like `data/`, `outputs/`, `inference/`, etc.
+- ✅ **Server address**: The API will start at `http://localhost:8000` (or `http://0.0.0.0:8000` for external access).
 
 ---
 
@@ -616,6 +650,45 @@ curl -X POST "http://iml-cube.sb.dfki.de:8000/concept-projection/run" \
 - **Output**: Saved to `outputs/api_runs/` (for `/run-full`)
 - **Concepts**: Loaded from `outputs/screen_run/concept/snmf/combined_concept_snmf_raw.pth`
 
+### Concepts Directory Requirements
+
+- Expected location:
+  - `outputs/screen_run/concept/snmf/`
+- Required file:
+  - `combined_concept_snmf_raw.pth`
+- Optional file for projection config:
+  - `combined_concept_snmf_gl.pth`
+- Projection outputs:
+  - `outputs/screen_run/concept/snmf/projections/`
+
+- Code references:
+  - Concept paths are defined in [main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L71-L77)
+  - Startup will fail if `combined_concept_snmf_raw.pth` is missing (see [get_or_create_explainer](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L202-L218))
+
+- How to satisfy this:
+  - Preferred: run the pipeline with `OUTPUT_DIR="$ROOT_DIR/outputs/screen_run"` so concepts are created in the expected folder.
+  - If concepts already exist in another run directory, copy or symlink them:
+    - `cp /path/to/your_run/concept/snmf/combined_concept_snmf_raw.pth /mnt/sdz/kakh01_data/xl-vlms/outputs/screen_run/concept/snmf/`
+    - Optional: copy `combined_concept_snmf_gl.pth` similarly if using the projection config endpoint.
+  - Alternative: change `CONCEPT_PTH` and `SCREEN_RUN_GL_PTH` in [api/main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L71-L77) to point to your run directory and restart the server.
+
+- Notes:
+  - The expected method subfolder is `snmf`. If you use a different method (e.g., `pca`), adjust the API code accordingly.
+  - Ensure `torch` and `numpy` are available in the API environment for loading PTH files (see [main.py](file:///mnt/sdz/kakh01_data/xl-vlms/api/main.py#L229-L236)).
+
+### Hugging Face Authentication
+
+- Set cache path:
+  - `HF_HOME` controls where models are cached. Configure in your shell or in `.env` (used by the pipeline script).
+  - Example default in `.env`: `export HF_HOME="$ROOT_DIR/models"`
+- Authenticate for private models:
+  - Set `HF_TOKEN` in the environment or in `.env` (blank by default).
+  - The dataset inference step reads `HF_TOKEN` and uses it to authenticate and download models when not cached:
+    - See [dataset_inference.py](file:///mnt/sdz/kakh01_data/xl-vlms/inference/dataset_inference.py#L182-L226) for token usage (`login(token=...)` and `from_pretrained(..., token=...)`).
+- Usage with the pipeline:
+  - The full pipeline script loads `.env` automatically; add `export HF_TOKEN="your_token"` to `.env` if you need private model access.
+  - Models already cached in `HF_HOME` work offline; `HF_TOKEN` is only needed to fetch missing private weights.
+
 ### Unique Concept IDs
 
 - Each token in `/run` response has a **unique `concept_index`** (based on `token_index`)
@@ -626,7 +699,14 @@ curl -X POST "http://iml-cube.sb.dfki.de:8000/concept-projection/run" \
 
 ## Testing
 
-Run the test suite:
+Run the test suite from the project root:
+
+```bash
+# From project root directory
+python -m api.test_api
+```
+
+Or if you prefer to run it directly:
 
 ```bash
 cd api

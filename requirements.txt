@@ -1,21 +1,32 @@
-bert_score==0.3.13
-clip==0.2.0
-huggingface_hub
-inflect
-language_evaluation==0.1.0
-matplotlib==3.10.5
-nltk==3.9.1
-numpy==2.3.2
-packaging==25.0
-Pillow==11.3.0
-psutil==7.0.0
-pydicom==3.0.1
-qwen_vl_utils==0.0.11
-Requests==2.32.5
-scikit_learn==1.7.1
-scipy==1.16.1
-spacy==3.8.7
-torch==2.8.0+cu126
-torchvision==0.23.0+cu126
-tqdm==4.67.1
-transformers==4.55.3
+# bert_score==0.3.13
+# clip==0.2.0
+# huggingface_hub
+# inflect
+# git+https://github.com/bckim92/language-evaluation.git
+# matplotlib==3.10.5
+# nltk==3.9.1
+# numpy==2.3.2
+# packaging==25.0
+# Pillow==11.3.0
+# psutil==7.0.0
+# pydicom==3.0.1
+# qwen_vl_utils==0.0.11
+# Requests==2.32.5
+# scikit_learn==1.7.1
+# scipy==1.16.1
+# spacy==3.8.7
+# torch==2.8.0+cu126
+# torchvision==0.23.0+cu126
+# tqdm==4.67.1
+# transformers==4.55.3
+
+# API / FastAPI server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+umap-learn==0.5.5
+# Required for API image processing and data manipulation
+Pillow>=11.3.0
+numpy>=1.20.0
+scikit-learn>=1.0.0

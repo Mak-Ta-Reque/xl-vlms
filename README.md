@@ -98,6 +98,8 @@ This type of explanation is crucial for **debugging model behavior**, **understa
      python -c "import language_evaluation; language_evaluation.download('coco')"
 
      pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
+
+     pip install matplotlib
      ```
 
 ## ⚙️ Configuration

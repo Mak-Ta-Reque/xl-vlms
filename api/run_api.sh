@@ -41,7 +41,7 @@ echo ""
 echo "Checking dependencies..."
 if ! python -c "import fastapi" 2>/dev/null; then
     echo "FastAPI not found. Installing API dependencies..."
-    pip install -r "$SCRIPT_DIR/requirements.txt"
+    pip install -r "$ROOT_DIR/requirements.txt"
 else
     echo "Dependencies OK"
 fi
@@ -70,12 +70,9 @@ echo "Press Ctrl+C to stop the server"
 echo "=================================================="
 echo ""
 
-# Change to API directory and run server
-cd "$SCRIPT_DIR"
-
-# Run with uvicorn (without --reload for production stability)
-python -m uvicorn main:app \
+# Run with uvicorn from project root
+cd "$ROOT_DIR"
+python -m uvicorn api.main:app \
     --host 0.0.0.0 \
     --port 8000 \
     --log-level info
-

@@ -25,8 +25,8 @@ import uvicorn
 from PIL import Image
 
 # Import PTH to JSON converter
-from pth_to_json_converter import process_pipeline_output, process_vlm_explanations, tensor_to_list
-from save_data import process_raw_data, process_interactive_graph_data
+from api.pth_to_json_converter import process_pipeline_output, process_vlm_explanations, tensor_to_list
+from api.save_data import process_raw_data, process_interactive_graph_data
 
 # Optional imports for dimensionality reduction
 try:
@@ -570,7 +570,7 @@ async def run_concept_projection(config: ProjectionRequest):
             
             # Ensure links have colored rgba format (in case cache was created before colored links)
             if "links" in cached and cached["links"]:
-                from save_data import get_coloured_links
+                from api.save_data import get_coloured_links
                 # Check if links already have color field with rgba format
                 needs_coloring = False
                 for link in cached["links"]:
@@ -1231,7 +1231,7 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        "api.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True
