@@ -41,6 +41,12 @@ try:
 except ImportError:  # pragma: no cover - handled gracefully at runtime
     umap = None
 
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load .env from parent directory
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+
 # Add inference directory to path for vlm_explainer_multibatch
 ROOT_DIR = Path(__file__).parent.parent.absolute()
 sys.path.insert(0, str(ROOT_DIR / "inference"))
@@ -62,14 +68,16 @@ app.add_middleware(
 )
 
 # Configuration (note: ROOT_DIR already defined above)
-TRAIN_DIR = ROOT_DIR / "data" / "train"
-TRAIN1_DIR = ROOT_DIR / "data" / "train-og"
+TRAIN_DIR = Path(os.path.join(os.environ.get("INPUT_DIR", ROOT_DIR / "data"), "train"))
+
+TRAIN1_DIR = Path(os.path.join(os.environ.get("INPUT_DIR", ROOT_DIR / "data"), "train-og"))
+
 PIPELINE_SCRIPT = ROOT_DIR / "scripts" / "run_full_pipeline_without_coroping.sh"
 OUTPUTS_BASE = ROOT_DIR / "outputs"
 TEMP_IMAGES_DIR = ROOT_DIR / "api" / "temp_images"
 
 # Pre-built concept file (use the larger one with more concepts)
-CONCEPT_PTH = ROOT_DIR / "outputs" / "screen_run" / "concept" / "snmf" / "combined_concept_snmf_raw.pth"
+CONCEPT_PTH = ROOT_DIR / "outputs" / "screen_run" / "concept" / "snmf" / "redefine_activations_text_grounding_snmf_combined_concept_snmf_gl_regrounded.pth"
 CONCEPT_PROJECTION_DIR = CONCEPT_PTH.parent / "projections"
 
 # Screen run concept files for dimensionality reduction config endpoint
@@ -379,10 +387,10 @@ async def crop_train1_image(req: CropRequest):
             ),
         )
 
-    img_path = (TRAIN1_DIR / rel_path).resolve()
+    img_path = (TRAIN_DIR / rel_path).resolve()
     # Prevent path traversal outside TRAIN1_DIR
     try:
-        img_path.relative_to(TRAIN1_DIR.resolve())
+        img_path.relative_to(TRAIN_DIR.resolve())
     except Exception:
         raise HTTPException(
             status_code=400,
