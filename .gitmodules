@@ -1,0 +1,3 @@
+[submodule "model-kg-visualization"]
+	path = model-kg-visualization
+	url = git@github.com:hafizaqibahmed98/model-kg-visualization.git
