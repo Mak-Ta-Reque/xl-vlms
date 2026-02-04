@@ -1,0 +1,94 @@
+{
+  "apple": {
+    "104568.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "107167.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "147618.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "168488.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "269477.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "272899.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "29342.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "295049.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "307734.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    },
+    "315411.jpg": {
+      "detections_xyxy": [],
+      "random_crops": [],
+      "meta": {
+        "detector": "sam3",
+        "tag": "apple",
+        "num_detections": 0
+      }
+    }
+  }
+}

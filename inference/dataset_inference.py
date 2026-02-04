@@ -181,6 +181,26 @@ def resize_image(image: Image.Image, target_size: Optional[Tuple[int, int]] = No
     return final_image
 
 
+def resize_image_by_width(image: Image.Image, target_width: Optional[int] = None) -> Image.Image:
+    """Resize image to a reference width and compute height from aspect ratio.
+
+    This performs a direct resize to (target_width, target_height) with no padding.
+    """
+    if target_width is None:
+        return image
+    tw = int(target_width)
+    if tw <= 0:
+        return image
+    original_width, original_height = image.size
+    if original_width <= 0 or original_height <= 0:
+        return image
+    scale = tw / float(original_width)
+    th = max(1, int(round(original_height * scale)))
+    if (original_width, original_height) == (tw, th):
+        return image
+    return image.resize((tw, th), Image.Resampling.LANCZOS)
+
+
 def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_token: str = None) -> Tuple[object, object]:
     """
     Load Hugging Face vision language model and processor.
@@ -386,6 +406,7 @@ def infer_image_description(
     image_path: str, 
     prompt: str = "Describe this image.",
     image_size: Optional[Tuple[int, int]] = None,
+    image_size_width: Optional[int] = None,
     model_name: str = ""
 ) -> str:
     """
@@ -396,7 +417,8 @@ def infer_image_description(
         processor: Model processor
         image_path: Path to the image file
         prompt: Text prompt for the model
-        image_size: Optional image resize dimensions (width, height)
+        image_size: Optional image resize dimensions (width, height) (letterboxed)
+        image_size_width: Optional reference width; height is computed from aspect ratio
         model_name: Name of the model for format-specific handling
         
     Returns:
@@ -407,7 +429,9 @@ def infer_image_description(
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if specified
-        if image_size:
+        if image_size_width:
+            image = resize_image_by_width(image, image_size_width)
+        elif image_size:
             image = resize_image(image, image_size)
         
         # Prepare inputs
@@ -481,6 +505,7 @@ def process_dataset(
     output_csv: str,
     prompt: str = "Describe this image.",
     image_size: Optional[Tuple[int, int]] = None,
+    image_size_width: Optional[int] = None,
     trust_remote_code: bool = True,
     resume: bool = False,
     hf_token: str = None,
@@ -496,7 +521,8 @@ def process_dataset(
         model_name: Hugging Face model name or path
         output_csv: Path to output CSV file
         prompt: Text prompt for the model
-        image_size: Optional image resize dimensions (width, height)
+        image_size: Optional image resize dimensions (width, height) (letterboxed)
+        image_size_width: Optional reference width; height is computed from aspect ratio
         trust_remote_code: Whether to trust remote code
         resume: Whether to resume from existing CSV file
         hf_token: Hugging Face authentication token for private models
@@ -561,7 +587,9 @@ def process_dataset(
                 image_path = os.path.join(root_path, image_relpath)
                 try:
                     image = Image.open(image_path).convert('RGB')
-                    if image_size:
+                    if image_size_width:
+                        image = resize_image_by_width(image, image_size_width)
+                    elif image_size:
                         image = resize_image(image, image_size)
                 except Exception as e:
                     logger.error(f"Error loading image {image_path}: {e}")
@@ -692,6 +720,10 @@ Examples:
   python dataset_inference.py --dataset_path /path/to/dataset --model_name Qwen/Qwen2-VL-7B-Instruct \\
     --prompt "What objects are in this image?" --image_size 512 512
 
+    # Resize by reference width (height auto from aspect ratio)
+    python dataset_inference.py --dataset_path /path/to/dataset --model_name Qwen/Qwen2-VL-7B-Instruct \\
+        --prompt "What objects are in this image?" --image_size_width 512
+
   # Resume interrupted processing
   python dataset_inference.py --dataset_path /path/to/dataset --model_name google/gemma-3n-E4B-it --resume
 
@@ -741,6 +773,14 @@ Popular models:
         nargs=2,
         metavar=('WIDTH', 'HEIGHT'),
         help='Resize images to specified dimensions (width height), e.g., --image_size 512 512'
+    )
+
+    parser.add_argument(
+        '--image_size_width',
+        type=int,
+        default=None,
+        metavar='WIDTH',
+        help='Resize images to WIDTH and compute HEIGHT from aspect ratio (no padding)'
     )
     
     parser.add_argument(
@@ -825,9 +865,13 @@ Popular models:
         model_name = POPULAR_MODELS[model_name]
         print(f"Using model: {model_name}")
     
+    image_size_width = int(args.image_size_width) if args.image_size_width else None
+
     # Convert image_size to tuple if provided
     image_size = tuple(args.image_size) if args.image_size else None
-    if image_size:
+    if image_size_width:
+        print(f"Images will be resized by width={image_size_width} (height auto from aspect ratio)")
+    elif image_size:
         print(f"Images will be resized to: {image_size[0]}x{image_size[1]}")
     
     # Run the processing
@@ -838,7 +882,8 @@ Popular models:
             output_csv=args.output_csv,
             prompt=args.prompt,
             image_size=image_size,
-               batch_size=args.batch_size,
+            image_size_width=image_size_width,
+            batch_size=args.batch_size,
             trust_remote_code=trust_remote_code,
             resume=args.resume,
             hf_token=hf_token,

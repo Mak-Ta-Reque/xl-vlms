@@ -60,9 +60,11 @@ class PipelineConfig:
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Data & outputs
+        # input_dir: Contains training images for object detection (step 2) and feature generation (step 3)
         self.input_dir = self._get_path("INPUT_DIR", ROOT_DIR / "data")
         self.output_dir = self._get_path("OUTPUT_DIR", ROOT_DIR / f"outputs/run_{self.timestamp}")
         self.hf_home = self._get_path("HF_HOME", Path.home() / ".cache/huggingface")
+        # image_root: Contains validation images for VLM explainer (step 5) - separate from input_dir
         self.image_root = self._get_path("IMAGE_ROOT", self.input_dir / "grids")
         
         # Model/runtime
@@ -78,7 +80,7 @@ class PipelineConfig:
         self.max_images_per_tag = self._get_int("MAX_IMAGES_PER_TAG", 128)
         self.patches_per_image = self._get_int("PATCHES_PER_IMAGE", 10)
         self.concept_mode = self._get_int("CONCEPT_MODE", 1)
-        self.object_detection = self._get_int("OBJECT_DETECTION", 0)
+        self.object_detector = self._get_str("OBJECT_DETECTOR", "none")  # 'none', 'langsam', 'sam3'
         self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 5)
         self.detection_topn = self._get_int("DETECTION_TOPN", 5)
         
@@ -87,16 +89,18 @@ class PipelineConfig:
             "PROMPT",
             "Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations."
         )
-        self.image_size = (
-            self._get_int("IMAGE_SIZE_WIDTH", 512),
-            self._get_int("IMAGE_SIZE_HEIGHT", 512)
-        )
-        self.image_budget = self._get_int("IMAGE_BUDGET", 200)
+        # Use IMAGE_SIZE_WIDTH as the reference; height is derived per-image via aspect ratio.
+        self.image_size_width = self._get_int("IMAGE_SIZE_WIDTH", 512)
+        # Keep for backward compatibility / debugging; not used as a fixed resize target.
+        self.image_size_height = self._get_int("IMAGE_SIZE_HEIGHT", 512)
+        self.image_size = (self.image_size_width, self.image_size_height)
+        self.image_budget = self._get_int("IMAGE_BUDGET", 2000)# reduce for test , use 200 -> for a better run
+        self.box_threshold = self._get_float("BOX_THRESHOLD", 0.5)
         
         # Decomposition methods
         self.decomp_methods = self._get_str("DECOMP_METHODS", "snmf").split(",")
         self.num_concepts = self._get_int("NUM_CONCEPTS", 2)
-        self.dataset_size = self._get_int("DATASET_SIZE", 400)
+        self.dataset_size = self._get_int("BAG_SIZE", 100)
         self.delete_intermediate_files = self._get_int("DELETE_INTERMEDIATE_FILES", 0) == 1
         
         # Explainer/Eval
@@ -235,12 +239,12 @@ def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
     
     # Prepare arguments as if from command line
     inference_args = [
-        "--dataset_path", str(config.input_dir / "train"),
+        "--dataset_path", str(config.input_dir),
         "--model_name", config.vlm_model,
         "--output_csv", str(config.objects_csv),
         "--prompt", config.prompt,
         "--batch_size", str(config.batch_size),
-        "--image_size", str(config.image_size[0]), str(config.image_size[1]),
+        "--image_size_width", str(config.image_size_width),
         "--image_budget", str(config.image_budget),
         "--trust_remote_code",
     ]
@@ -298,6 +302,7 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         "--max_images_per_tag", str(config.max_images_per_tag),
         "--seed", str(config.seed),
         "--device", f"cuda:{config.device_id}",
+        "--image_size_width", str(config.image_size_width),
     ]
     
     if config.concept_mode == 1:
@@ -306,9 +311,10 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
             "--concept_crops_per_image", str(config.concept_crops_per_image),
         ])
     
-    if config.object_detection == 1:
+    # Object detector: 'none' = random only, 'langsam'/'sam3' = detector + random
+    if config.object_detector in ("langsam", "sam3"):
         crops_args.extend([
-            "--object_detection",
+            "--object_detector", config.object_detector,
             "--batch_size", str(config.detection_batch_size),
             "--topn", str(config.detection_topn),
         ])
@@ -347,7 +353,7 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--modules_to_hook", config.layer_path,
         "--prompt_template", "cgdl",
         "--save_dir", str(config.features_dir),
-        "--batch_size", "30",
+        "--batch_size", str(config.batch_size),
         "--generation_mode",
         "--save_only_generated_tokens",
         "--exact_match_modules_to_hook",
@@ -725,6 +731,7 @@ def main():
     logger.info(f"Model:      {config.vlm_model} | Batch: {config.batch_size} | Seed: {config.seed} | Device: cuda:{config.device_id}")
     logger.info(f"Decompose:  {', '.join(config.decomp_methods)}")
     logger.info(f"Crops: input={config.input_dir} k={config.concept_crops_per_image} patch={config.patch_size} min={config.min_images_per_tag} max={config.max_images_per_tag}")
+    logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
     logger.info(f"Plots Y:    [{config.plot_ymin}, {config.plot_ymax}]")
     logger.info("=" * 60)

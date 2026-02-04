@@ -3,6 +3,7 @@ import sys
 import json
 import random
 import argparse
+import gc
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 import multiprocessing as mp
@@ -62,6 +63,17 @@ def _already_done(result: Dict[str, dict], tag: str, rel_path: str) -> bool:
     return rel_path in tag_bucket
 
 
+def _cleanup_gpu_memory():
+    """Release GPU memory after detection batches to prevent leakage."""
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
 # No resizing is performed in this script.
 
 
@@ -82,15 +94,31 @@ def _load_langsam_model(device: Optional[str] = None):
     return _LANGSAM_MODEL
 
 
+_SAM3_MODEL = None
+
+
+def _load_sam3_model(device: Optional[str] = None, confidence_threshold: float = 0.5):
+    global _SAM3_MODEL
+    if _SAM3_MODEL is not None:
+        return _SAM3_MODEL
+    _ensure_repo_root_on_sys_path()
+    try:
+        from src.sam3_utils import load_sam3
+    except Exception as e:
+        raise RuntimeError(f"Could not import src.sam3_utils.load_sam3: {e}")
+    _SAM3_MODEL = load_sam3(device=device, confidence_threshold=confidence_threshold)
+    return _SAM3_MODEL
+
+
 def run_langsam_batched(
-    image_paths: List[str],
+    images: List[Any],
     tag: str,
     batch_size: int = 8,
     model: Optional[Any] = None,
     topn: int = 10,
 ) -> List[List[Tuple[int, int, int, int]]]:
     """Run LangSAM batched detection for a text tag.
-    Returns a list parallel to image_paths where each element is a list of up to topn (x,y,w,h) boxes.
+    Returns a list parallel to images where each element is a list of up to topn (x,y,w,h) boxes.
     """
     # Load model only if not provided; callers can pass a preloaded instance to avoid reloads.
     if model is None:
@@ -99,13 +127,66 @@ def run_langsam_batched(
         from src.langsam_utils import predict_bboxes_for_tag_batched
     except Exception as e:
         raise RuntimeError(f"Could not import src.langsam_utils.predict_bboxes_for_tag_batched: {e}")
-    # Run predictions
-    boxes_per_image = predict_bboxes_for_tag_batched(model, image_paths, tag=tag, batch_size=batch_size, topn=topn)
+    # Run predictions (accepts paths or PIL images)
+    boxes_per_image = predict_bboxes_for_tag_batched(model, images, tag=tag, batch_size=batch_size, topn=topn)
     # Limit to topn per image (defensive: handle bad topn gracefully)
     n = max(0, int(topn))
     if n == 0:
-        return [[] for _ in image_paths]
+        return [[] for _ in images]
     return [b[:n] if isinstance(b, list) else [] for b in boxes_per_image]
+
+
+def run_sam3_batched(
+    images: List[Any],
+    tag: str,
+    batch_size: int = 8,
+    model: Optional[Any] = None,
+    topn: int = 10,
+) -> List[List[Tuple[int, int, int, int]]]:
+    """Run SAM3 batched detection for a text tag.
+    Returns a list parallel to images where each element is a list of up to topn (x,y,w,h) boxes.
+    """
+    if model is None:
+        model = _load_sam3_model()
+    try:
+        from src.sam3_utils import predict_bboxes_for_tag_sam3_batched
+    except Exception as e:
+        raise RuntimeError(f"Could not import src.sam3_utils.predict_bboxes_for_tag_sam3_batched: {e}")
+    # Run predictions (accepts paths or PIL images)
+    boxes_per_image = predict_bboxes_for_tag_sam3_batched(model, images, tag=tag, batch_size=batch_size, topn=topn)
+    n = max(0, int(topn))
+    if n == 0:
+        return [[] for _ in images]
+    return [b[:n] if isinstance(b, list) else [] for b in boxes_per_image]
+
+
+def run_detector_batched(
+    images: List[Any],
+    tag: str,
+    detector: str,
+    batch_size: int = 8,
+    model: Optional[Any] = None,
+    topn: int = 10,
+) -> List[List[Tuple[int, int, int, int]]]:
+    """Run object detection for a text tag using the specified detector.
+    
+    Args:
+        images: List of image file paths OR PIL Images.
+        tag: Text prompt for the object to detect.
+        detector: One of 'langsam' or 'sam3'.
+        batch_size: Batch size for detection.
+        model: Preloaded model instance (optional).
+        topn: Maximum number of boxes per image.
+    
+    Returns:
+        List parallel to images, each element is a list of (x,y,w,h) boxes.
+    """
+    if detector == "langsam":
+        return run_langsam_batched(images, tag, batch_size=batch_size, model=model, topn=topn)
+    elif detector == "sam3":
+        return run_sam3_batched(images, tag, batch_size=batch_size, model=model, topn=topn)
+    else:
+        raise ValueError(f"Unknown detector: {detector}. Use 'langsam' or 'sam3'.")
 
 
 def load_mapping(json_file: str) -> Dict[str, List[str]]:
@@ -118,7 +199,53 @@ def _xywh_to_x1y1x2y2(boxes: List[Tuple[float, float, float, float]]):
     return [(x, y, x + w, y + h) for (x, y, w, h) in boxes]
 
 
-# No scaling helper required (no resizing performed)
+def _compute_virtual_resize(
+    orig_w: int, orig_h: int, image_size_width: Optional[int]
+) -> Tuple[int, int, float]:
+    """Compute a resized size using reference width and aspect ratio.
+
+    Returns:
+        (new_w, new_h, scale)
+    """
+    if image_size_width is None:
+        return orig_w, orig_h, 1.0
+    target_w = int(image_size_width)
+    if target_w <= 0 or orig_w <= 0 or orig_h <= 0:
+        return orig_w, orig_h, 1.0
+    scale = target_w / float(orig_w)
+    new_h = max(1, int(round(orig_h * scale)))
+    return target_w, new_h, float(scale)
+
+
+def _load_and_resize_image(
+    abs_image_path: str,
+    image_size_width: Optional[int],
+) -> Tuple[Any, Tuple[int, int], float]:
+    """Load an image and optionally resize it in memory.
+
+    Returns:
+        (PIL_image_or_path, (w, h), scale)
+        If resize not needed, returns the path string and original size.
+    """
+    try:
+        from PIL import Image  # type: ignore
+    except Exception:
+        # No Pillow, return path and let detector handle it
+        return abs_image_path, (0, 0), 1.0
+
+    try:
+        img = Image.open(abs_image_path).convert("RGB")
+        orig_w, orig_h = img.size
+    except Exception:
+        return abs_image_path, (0, 0), 1.0
+
+    new_w, new_h, scale = _compute_virtual_resize(orig_w, orig_h, image_size_width)
+    if image_size_width is None or (new_w, new_h) == (orig_w, orig_h):
+        return img, (orig_w, orig_h), 1.0
+
+    resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+    img_resized = img.resize((new_w, new_h), resample=resample)
+    return img_resized, (new_w, new_h), scale
 
 
 def _clip_boxes_x1y1x2y2(
@@ -312,9 +439,11 @@ def process_folder_structure_to_json(
     max_overlap: float = 0.25,
     grid: bool = False,
     object_detection: bool = False,
+    detector: str = "langsam",
     batch_size: int = 8,
     topn: int = 10,
     device: Optional[str] = None,
+    image_size_width: Optional[int] = None,
     result: Optional[Dict[str, dict]] = None,
     output_json: Optional[str] = None,
     verbose: bool = False,
@@ -328,19 +457,35 @@ def process_folder_structure_to_json(
                 tag = Path(subdir).name
                 tag_to_paths.setdefault(tag, []).append(p)
 
-    # Run LangSAM per tag group
+    # Run object detection per tag group (optionally on resized images in memory)
     boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
     if object_detection:
         # Load model once and reuse across all tags
-        model = _load_langsam_model(device=device)
+        if detector == "langsam":
+            model = _load_langsam_model(device=device)
+        elif detector == "sam3":
+            model = _load_sam3_model(device=device)
+        else:
+            model = None
         for tag, paths in tag_to_paths.items():
             if not paths:
                 continue
             try:
-                boxes_list = run_langsam_batched(paths, tag=tag, batch_size=batch_size, model=model, topn=topn)
-                boxes_map.update({p: b for p, b in zip(paths, boxes_list)})
+                # Load and resize images in memory for detection
+                det_images: List[Any] = []
+                orig_paths: List[str] = []
+                for p in paths:
+                    img_or_path, _, _ = _load_and_resize_image(p, image_size_width)
+                    det_images.append(img_or_path)
+                    orig_paths.append(p)
+
+                boxes_list = run_detector_batched(det_images, tag=tag, detector=detector, batch_size=batch_size, model=model, topn=topn)
+                boxes_map.update({op: b for op, b in zip(orig_paths, boxes_list)})
+                # Free PIL images and GPU cache after each tag
+                del det_images
+                _cleanup_gpu_memory()
             except Exception as e:
-                print(f"Warning: detection failed for tag '{tag}' with batch_size={batch_size}: {e}")
+                print(f"Warning: detection failed for tag '{tag}' with detector={detector}, batch_size={batch_size}: {e}")
                 # Fallback: no detections for these paths
                 for p in paths:
                     boxes_map[p] = []
@@ -365,8 +510,10 @@ def process_folder_structure_to_json(
                 size_fail += 1
                 continue
             orig_w, orig_h = size
-            # Fast mode: do not resize; operate on original size
-            w, h = orig_w, orig_h
+
+            # Operate in resized coordinate system (record-only).
+            # If detection is enabled, detection ran on a resized copy, so boxes are already in resized coords.
+            w, h, scale = _compute_virtual_resize(orig_w, orig_h, image_size_width)
 
             detections_xywh = boxes_map.get(image_path, []) if object_detection else []
             det_boxes_xyxy = _prepare_detection_boxes_for_image(detections_xywh, w, h)
@@ -418,9 +565,11 @@ def process_json_mapping_to_json(
     min_images_per_tag: int = 30,
     max_images_per_tag: int = 0,
     object_detection: bool = False,
+    detector: str = "langsam",
     batch_size: int = 8,
     topn: int = 10,
     device: Optional[str] = None,
+    image_size_width: Optional[int] = None,
     result: Optional[Dict[str, dict]] = None,
     output_json: Optional[str] = None,
     verbose: bool = False,
@@ -430,7 +579,12 @@ def process_json_mapping_to_json(
     result = result or {}
 
     # Preload detection model once if needed
-    detection_model: Optional[Any] = _load_langsam_model(device=device) if object_detection else None
+    detection_model: Optional[Any] = None
+    if object_detection:
+        if detector == "langsam":
+            detection_model = _load_langsam_model(device=device)
+        elif detector == "sam3":
+            detection_model = _load_sam3_model(device=device)
 
     for tag, rels in mapping.items():
         if not isinstance(rels, list):
@@ -451,10 +605,20 @@ def process_json_mapping_to_json(
         boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
         if object_detection and abs_paths:
             try:
-                boxes_list = run_langsam_batched(abs_paths, tag=tag, batch_size=batch_size, model=detection_model, topn=topn)
-                boxes_map = {p: b for p, b in zip(abs_paths, boxes_list)}
+                # Load and resize images in memory for detection
+                det_images: List[Any] = []
+                orig_paths: List[str] = []
+                for p in abs_paths:
+                    img_or_path, _, _ = _load_and_resize_image(p, image_size_width)
+                    det_images.append(img_or_path)
+                    orig_paths.append(p)
+                boxes_list = run_detector_batched(det_images, tag=tag, detector=detector, batch_size=batch_size, model=detection_model, topn=topn)
+                boxes_map = {op: b for op, b in zip(orig_paths, boxes_list)}
+                # Free PIL images and GPU cache after each tag
+                del det_images
+                _cleanup_gpu_memory()
             except Exception as e:
-                print(f"Warning: detection failed for tag '{tag}' with batch_size={batch_size}: {e}")
+                print(f"Warning: detection failed for tag '{tag}' with detector={detector}, batch_size={batch_size}: {e}")
                 boxes_map = {p: [] for p in abs_paths}
 
         tag_bucket: Dict[str, dict] = result.setdefault(tag, {})
@@ -474,8 +638,9 @@ def process_json_mapping_to_json(
                 size_fail += 1
                 continue
             orig_w, orig_h = size
-            # Fast mode: no resize
-            w, h = orig_w, orig_h
+
+            # Operate in resized coordinate system (record-only)
+            w, h, scale = _compute_virtual_resize(orig_w, orig_h, image_size_width)
 
             detections_xywh = boxes_map.get(img_path, []) if object_detection else []
             det_boxes_xyxy = _prepare_detection_boxes_for_image(detections_xywh, w, h)
@@ -524,9 +689,11 @@ def concept_process_json_mapping_to_json(
     min_images_per_tag: int = 30,
     max_images_per_tag: int = 0,
     object_detection: bool = False,
+    detector: str = "langsam",
     batch_size: int = 8,
     topn: int = 10,
     device: Optional[str] = None,
+    image_size_width: Optional[int] = None,
     result: Optional[Dict[str, dict]] = None,
     output_json: Optional[str] = None,
     max_overlap: float = 0.30,
@@ -537,7 +704,12 @@ def concept_process_json_mapping_to_json(
     result = result or {}
 
     # Preload detection model once if needed
-    detection_model: Optional[Any] = _load_langsam_model(device=device) if object_detection else None
+    detection_model: Optional[Any] = None
+    if object_detection:
+        if detector == "langsam":
+            detection_model = _load_langsam_model(device=device)
+        elif detector == "sam3":
+            detection_model = _load_sam3_model(device=device)
 
     for tag, rel_paths in mapping.items():
         if not isinstance(rel_paths, list):
@@ -546,7 +718,7 @@ def concept_process_json_mapping_to_json(
             continue
         if max_images_per_tag > 0 and len(rel_paths) > max_images_per_tag:
             rel_paths = rng.sample(rel_paths, max_images_per_tag)
-
+        
         # Prepare detection per-tag
         boxes_map: Dict[str, List[Tuple[int, int, int, int]]] = {}
         abs_paths: List[str] = []
@@ -557,9 +729,20 @@ def concept_process_json_mapping_to_json(
                     abs_paths.append(abs_p)
             if abs_paths:
                 try:
-                    boxes_list = run_langsam_batched(abs_paths, tag=tag, batch_size=batch_size, model=detection_model, topn=topn)
-                    boxes_map = {p: b for p, b in zip(abs_paths, boxes_list)}
-                except Exception:
+                    # Load and resize images in memory for detection
+                    det_images: List[Any] = []
+                    orig_paths: List[str] = []
+                    for p in abs_paths:
+                        img_or_path, _, _ = _load_and_resize_image(p, image_size_width)
+                        det_images.append(img_or_path)
+                        orig_paths.append(p)
+                    boxes_list = run_detector_batched(det_images, tag=tag, detector=detector, batch_size=batch_size, model=detection_model, topn=topn)
+                    boxes_map = {op: b for op, b in zip(orig_paths, boxes_list)}
+                    # Free PIL images and GPU cache after each tag
+                    del det_images
+                    _cleanup_gpu_memory()
+                except Exception as e:
+                    print(f"Warning: detection failed for tag '{tag}' with detector={detector}: {e}")
                     boxes_map = {}
 
         tag_bucket: Dict[str, dict] = result.setdefault(tag, {})
@@ -580,8 +763,8 @@ def concept_process_json_mapping_to_json(
                 continue
             orig_w, orig_h = size
 
-            # Fast mode: do not resize
-            w, h = orig_w, orig_h
+            # Operate in resized coordinate system (record-only)
+            w, h, scale = _compute_virtual_resize(orig_w, orig_h, image_size_width)
 
             detections_xywh = boxes_map.get(img_path, []) if object_detection else []
             det_boxes_xyxy = _prepare_detection_boxes_for_image(detections_xywh, w, h)
@@ -641,6 +824,18 @@ def main():
     parser.add_argument("--json_mapping", type=str, default=None, help="Tag -> [relative paths] JSON")
     parser.add_argument("--seed", type=int, default=None)
 
+    parser.add_argument(
+        "--image_size_width",
+        type=int,
+        default=None,
+        help=(
+            "Reference width for resizing (record-only). For each image, compute resized size "
+            "(image_size_width, round(orig_h * image_size_width / orig_w)). Random crops are generated in this resized "
+            "coordinate system and saved under meta.image_size. If an object detector is enabled, detection runs on a "
+            "cached resized copy so detector boxes are produced directly in resized coordinates (no scaling)."
+        ),
+    )
+
     # Concept-focused parameters
     parser.add_argument("--concept_mode", action="store_true", help="Enable concept-focused cropping logic")
     parser.add_argument("--concept_crops_per_image", type=int, default=3, help="Crops per image in concept mode")
@@ -649,10 +844,12 @@ def main():
     parser.add_argument("--topn", type=int, default=10, help="Limit detector to top-N boxes per image (default 10)")
 
     # Optional object detection
-    parser.add_argument("--object_detection", action="store_true", help="Enable LangSAM object detection")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for LangSAM detection")
+    parser.add_argument("--object_detector", type=str, default="none", choices=["none", "langsam", "sam3"],
+                        help="Object detector: 'none' (random crops only), 'langsam', or 'sam3' (detector + random)")
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for object detection")
     parser.add_argument("--verbose", action="store_true", help="Print per-tag diagnostics and hints")
     parser.add_argument("--device", type=str, default=None, help="Device for detection: cpu, cuda or cuda:N")
+    parser.add_argument("--confidence_threshold", type=float, default=0.5, help="Confidence threshold for SAM3 detection")
 
     args = parser.parse_args()
     # Check Pillow early to provide actionable feedback
@@ -661,6 +858,10 @@ def main():
 
     if args.seed is not None:
         random.seed(args.seed)
+
+    # Resolve detector choice
+    detector = args.object_detector
+    object_detection_enabled = detector != "none"
 
     # Incremental/resumable: load existing JSON if present
     result: Dict[str, dict] = {}
@@ -684,7 +885,8 @@ def main():
             patch_size=args.patch_size,
             min_images_per_tag=args.min_images_per_tag,
             max_images_per_tag=args.max_images_per_tag,
-            object_detection=args.object_detection,
+            object_detection=object_detection_enabled,
+            detector=detector,
             batch_size=args.batch_size,
             topn=args.topn,
             device=args.device,
@@ -692,6 +894,7 @@ def main():
             output_json=args.output_json,
             max_overlap=args.max_overlap,
             verbose=args.verbose,
+            image_size_width=args.image_size_width,
         )
         # Merge and write once (concept path currently gathers then writes)
         for tag, bucket in concept_result.items():
@@ -709,13 +912,15 @@ def main():
                 grid=args.grid,
                 min_images_per_tag=args.min_images_per_tag,
                 max_images_per_tag=args.max_images_per_tag,
-                object_detection=args.object_detection,
+                object_detection=object_detection_enabled,
+                detector=detector,
                 batch_size=args.batch_size,
                 topn=args.topn,
                 device=args.device,
                 result=result,
                 output_json=args.output_json,
                 verbose=args.verbose,
+                image_size_width=args.image_size_width,
             )
             _atomic_write_json(args.output_json, result)
         else:
@@ -726,13 +931,15 @@ def main():
                 P=args.patches_per_image,
                 max_overlap=args.max_overlap,
                 grid=args.grid,
-                object_detection=args.object_detection,
+                object_detection=object_detection_enabled,
+                detector=detector,
                 batch_size=args.batch_size,
                 topn=args.topn,
                 device=args.device,
                 result=result,
                 output_json=args.output_json,
                 verbose=args.verbose,
+                image_size_width=args.image_size_width,
             )
             # Ensure final write
             _atomic_write_json(args.output_json, result)

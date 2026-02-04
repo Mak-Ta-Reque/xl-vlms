@@ -172,7 +172,7 @@ def _bboxes_from_masks(
 
 
 def _bboxes_from_xywh_boxes(boxes: Union[np.ndarray, Sequence], image_size: tuple) -> List[List[int]]:
-    """Normalize incoming boxes to integer [x,y,w,h] clamped to image bounds."""
+    """Normalize incoming xywh boxes to integer [x,y,w,h] clamped to image bounds."""
     W, H = image_size
     arr = _to_numpy(boxes)
     arr = np.asarray(arr).reshape(-1, 4)
@@ -182,25 +182,42 @@ def _bboxes_from_xywh_boxes(boxes: Union[np.ndarray, Sequence], image_size: tupl
     return out
 
 
+def _bboxes_from_xyxy_boxes(boxes: Union[np.ndarray, Sequence], image_size: tuple) -> List[List[int]]:
+    """Normalize incoming xyxy boxes to integer [x,y,w,h] clamped to image bounds."""
+    W, H = image_size
+    arr = _to_numpy(boxes)
+    arr = np.asarray(arr).reshape(-1, 4)
+    out: List[List[int]] = []
+    for x1, y1, x2, y2 in arr:
+        x = float(x1)
+        y = float(y1)
+        w = float(x2 - x1)
+        h = float(y2 - y1)
+        out.append(_clamp_bbox_xywh(x, y, w, h, W, H))
+    return out
+
+
 def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: bool = False) -> List[List[int]]:
     boxes = result.get("boxes")
     masks = result.get("masks")
     scores = result.get("scores")
 
+    # Convert to numpy arrays to ensure consistent handling
+    if boxes is not None:
+        boxes = _to_numpy(boxes)
+    if masks is not None:
+        masks = _to_numpy(masks)
     if scores is not None:
-        #scores = _to_numpy(scores).reshape(-1)  # ensure 1D
+        scores = _to_numpy(scores).reshape(-1)  # ensure 1D
+
+    if scores is not None and len(scores) > 0:
         idx = np.argsort(-scores, kind="stable")
 
-        if boxes is not None:
-            #boxes_np = _to_numpy(boxes)
-            if boxes.shape[0] == scores.shape[0]:
-                boxes = boxes[idx]
+        if boxes is not None and len(boxes) == len(scores):
+            boxes = boxes[idx]
 
-        if masks is not None:
-            #masks_np = _to_numpy(masks)
-            # Expect masks with shape (N, H, W) or (N, ...)
-            if masks.shape[0] == scores.shape[0]:
-                masks = masks[idx]
+        if masks is not None and len(masks) == len(scores):
+            masks = masks[idx]
 
     if prefer_masks and masks is not None:
         bbs = _bboxes_from_masks(masks, image_size)
@@ -208,7 +225,8 @@ def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: b
             return bbs
 
     if boxes is not None:
-        return _bboxes_from_xywh_boxes(boxes, image_size)
+        # LangSAM returns boxes in xyxy format (x1, y1, x2, y2)
+        return _bboxes_from_xyxy_boxes(boxes, image_size)
 
     return []
 

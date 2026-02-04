@@ -52,6 +52,7 @@ def inference(
         item["text"] = texts
         image_paths = item["image"] if isinstance(item["image"], list) else [item["image"]]
         crop_locations = item.get("bbox", None)
+        image_sizes = item.get("image_size", None)
 
         # Build per-sample inputs. If bboxes provided, crop and pass PIL Image; else pass paths.
         per_sample_inputs: List[Dict[str, Any]] = []
@@ -70,8 +71,19 @@ def inference(
                 return list(crops)
             # Fallback: broadcast None
             return [None] * n_imgs
+
+        def _ensure_per_image_size_list(sizes, n_imgs):
+            # Accept: None, single [w,h], list of [w,h] per image
+            if sizes is None:
+                return [None] * n_imgs
+            if isinstance(sizes, (list, tuple)) and len(sizes) == 2 and all(isinstance(v, (int, float)) for v in sizes):
+                return [list(sizes)] * n_imgs
+            if isinstance(sizes, (list, tuple)) and len(sizes) == n_imgs:
+                return list(sizes)
+            return [None] * n_imgs
         
         per_image_bboxes = _ensure_per_image_bbox_list(crop_locations, len(image_paths))
+        per_image_sizes = _ensure_per_image_size_list(image_sizes, len(image_paths))
 
         for idx in range(len(image_paths)):
             img_ref = image_paths[idx]
@@ -79,6 +91,19 @@ def inference(
             if bbox is not None:
                 # open, crop (xyxy), clip to bounds
                 img = Image.open(img_ref).convert("RGB") if not isinstance(img_ref, Image.Image) else img_ref
+
+                # If provided, resize image to virtual size before cropping
+                target_size = per_image_sizes[idx]
+                if isinstance(target_size, (list, tuple)) and len(target_size) >= 2:
+                    try:
+                        tw = int(target_size[0])
+                        th = int(target_size[1])
+                        if tw > 0 and th > 0 and img.size != (tw, th):
+                            resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+                            img = img.resize((tw, th), resample=resample)
+                    except Exception:
+                        pass
+
                 W, H = img.size
                 x1, y1, x2, y2 = bbox
                 x1 = int(_clip(x1, 0, W - 1))

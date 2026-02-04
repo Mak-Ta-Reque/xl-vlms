@@ -101,7 +101,7 @@ def process_csv_file(csv_file_path, output_file_path=None):
                 rel = f"{subfolder}/{image_name}"
             else:
                 rel = image_name
-            image_id = f"{Path(root_path).name}/{rel}"
+            image_id = rel
 
             # Split predicted_text by comma and process each concept
             concepts = predicted_text.split(',')
