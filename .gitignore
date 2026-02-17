@@ -41,3 +41,4 @@ miniconda3*
 data/train
 dtd
 models/
+yolo11x-seg.pt
