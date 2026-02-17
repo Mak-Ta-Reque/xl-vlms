@@ -150,6 +150,7 @@ class VLMConceptExplainer:
         self.text_grounding = self.concept_data.get("text_grounding")
         self.image_grounding_paths = self.concept_data.get("image_grounding_paths")
         self.image_grounding_bboxes = self.concept_data.get("image_grounding_bboxes")
+        self.image_grounding_masks = self.concept_data.get("image_grounding_masks")
 
         # Hook setup via project utils
         self._hook_return_fn = None
@@ -290,8 +291,8 @@ class VLMConceptExplainer:
             lab = self.prompt_label or label
             if lab:
                 return (
-                    f"Binary classification: Say {lab} if the image contains '{lab}', say 'Something else' if it does not. "
-                    f"Respond with only {lab} or 'Something else'."
+                    f"Binary classification: Say  '{lab}' if the image contains '{lab}', say 'no {lab}' if it does not. "
+                    f"Respond with only \"{lab}\" or \"no {lab}\"."
                 )
             # Fallback to unsupervised if no label provided
         if mode == "mcq":
@@ -602,6 +603,16 @@ class VLMConceptExplainer:
                                     img_gbbx = str(val)
                             except Exception:
                                 img_gbbx = self.image_grounding_bboxes[ci]
+                        img_gmasks = None
+                        if self.image_grounding_masks and ci < len(self.image_grounding_masks):
+                            try:
+                                val = self.image_grounding_masks[ci]
+                                if isinstance(val, (list, tuple)):
+                                    img_gmasks = list(val) if isinstance(val, tuple) else val
+                                else:
+                                    img_gmasks = val
+                            except Exception:
+                                img_gmasks = self.image_grounding_masks[ci]
                         top_concepts_tok.append({
                             'rank': rank,
                             'concept_index': ci,
@@ -611,6 +622,7 @@ class VLMConceptExplainer:
                             'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                             'image_grounding_path': img_gp,
                             'image_grounding_bboxes': img_gbbx,
+                            'image_grounding_masks': img_gmasks,
                         })
                     # Store token embedding temporarily for potential projection later (not returned in response)
                     token_embedding = acts_j[t_idx].detach().cpu().numpy()  # Keep as numpy for projection
@@ -669,6 +681,16 @@ class VLMConceptExplainer:
                                 img_gbbx = str(val)
                         except Exception:
                             img_gbbx = self.image_grounding_bboxes[ci]
+                    img_gmasks = None
+                    if self.image_grounding_masks and ci < len(self.image_grounding_masks):
+                        try:
+                            val = self.image_grounding_masks[ci]
+                            if isinstance(val, (list, tuple)):
+                                img_gmasks = list(val) if isinstance(val, tuple) else val
+                            else:
+                                img_gmasks = val
+                        except Exception:
+                            img_gmasks = self.image_grounding_masks[ci]
                     top_concepts_all.append({
                         'rank': rank,
                         'concept_index': ci,
@@ -677,6 +699,7 @@ class VLMConceptExplainer:
                         'text_grounding': self.text_grounding[ci] if self.text_grounding and ci < len(self.text_grounding) else None,
                         'image_grounding_path': img_gp,
                         'image_grounding_bboxes': img_gbbx,
+                        'image_grounding_masks': img_gmasks,
                     })
 
                 results.append({

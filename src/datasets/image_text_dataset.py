@@ -286,43 +286,45 @@ class JSONDataset(ImageTextDataset):
 
                         # Derive img_id
                         if isinstance(meta, dict):
-                            for key, value in meta.items():
-                                image_size = meta.get("meta", {}).get("image_size", None)
-                                patch_size = meta.get("meta", {}).get("patch_size", None)
-                                if isinstance(image_size, (list, tuple)) and len(image_size) >= 2:
-                                    try:
-                                        w = int(image_size[0])
-                                        h = int(image_size[1])
-                                        image_size = [w, h]
-                                    except Exception:
-                                        image_size = [0, 0]
+                            image_size = meta.get("meta", {}).get("image_size", None)
+                            patch_size = meta.get("meta", {}).get("patch_size", None)
+                            if isinstance(image_size, (list, tuple)) and len(image_size) >= 2:
+                                try:
+                                    w = int(image_size[0])
+                                    h = int(image_size[1])
+                                    image_size = [w, h]
+                                except Exception:
+                                    image_size = [0, 0]
 
-                                locations = ["detections_xyxy", "random_crops"]
+                            instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
+                                "ShortCaptioning", "An image of "
+                            )
+                            response = ""
 
-                                for loc in locations:
-                                    if loc in meta:
-                                        bboxes = meta[loc]
-                                        if isinstance(bboxes, list) and len(bboxes) > 0 and isinstance(bboxes[0], list):
-                                            for i, bbox in enumerate(bboxes):
-                                                img_id = f"{os.path.splitext(os.path.basename(rel_path))[0]}_{loc}_{i}"
-                                                instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
-                                                    "ShortCaptioning", "An image of "
-                                                )
-                                                response = ""  # Assuming response generation is handled elsewhere
-
-                                                item = {
-                                                    "img_id": img_id,
-                                                    "instruction": instruction,
-                                                    "response": response,
-                                                    "image": image_path,
-                                                    "targets": "",  # No targets since no JSON file
-                                                    "bbox": bbox,
-                                                    "image_size": image_size,
-                                                    "patch_size": patch_size,
-                                                    "concept": top_key,  # keep track of which bucket the sample came from
-                                                }
-                                                concept_data.append(item)
-                    if self.dataset_size > 0:
+                            # --- Mask-centric path (only RLE masks) ---
+                            masks_rle_list = meta.get("masks_rle", None)
+                            if masks_rle_list and isinstance(masks_rle_list, list) and len(masks_rle_list) > 0:
+                                # Use masks_rle as the primary data source
+                                for i, mask_entry in enumerate(masks_rle_list):
+                                    rle = mask_entry.get("rle", None) if isinstance(mask_entry, dict) else None
+                                    is_concept = mask_entry.get("is_concept", False) if isinstance(mask_entry, dict) else False
+                                    if rle is None:
+                                        continue  # skip entries with no mask
+                                    img_id = f"{os.path.splitext(os.path.basename(rel_path))[0]}_mask_{i}"
+                                    item = {
+                                        "img_id": img_id,
+                                        "instruction": instruction,
+                                        "response": response,
+                                        "image": image_path,
+                                        "targets": "",
+                                        "image_size": image_size,
+                                        "patch_size": patch_size,
+                                        "concept": top_key,
+                                        "seg_mask_rle": rle,
+                                        "is_concept": is_concept,
+                                    }
+                                    concept_data.append(item)
+                    if self.dataset_size > 0 and len(concept_data) > self.dataset_size:
                         random.shuffle(concept_data)
                         concept_data = self.rng.choice(concept_data, size=self.dataset_size, replace=False)
                         # Ensure list type if numpy array is returned

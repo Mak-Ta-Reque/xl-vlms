@@ -101,6 +101,11 @@ def load_concept(
     for analysis_key in analysis_keys:
         assert analysis_key in data, f"{analysis_key} not found, got {data.keys()}."
         analysis_data_[analysis_key] = data[analysis_key]
+    # Propagate optional keys that may exist in the .pth file (e.g. masks, bboxes, predictions)
+    optional_keys = ["image_grounding_bboxes", "image_grounding_masks", "image_grounding_predictions"]
+    for opt_key in optional_keys:
+        if opt_key in data and opt_key not in analysis_data_:
+            analysis_data_[opt_key] = data[opt_key]
     if logger is not None:
         logger.info(
             f"Loading data from {analysis_path}.\n Data size: {len(analysis_data_['concepts'])}, keys: {analysis_data_.keys()}"

@@ -183,7 +183,7 @@ else
       --json_mapping \"$CONCEPT_MAP_JSON\" \
       --output_json \"$CROPS_JSON\" \
       --patch_size \"$PATCH_SIZE\" \
-      --patches_per_image \"$PATCHES_PER_IMAGE\" \
+
       --min_images_per_tag \"$MIN_IMAGES_PER_TAG\" \
       --max_images_per_tag \"$MAX_IMAGES_PER_TAG\" \
       --seed \"$SEED\" \

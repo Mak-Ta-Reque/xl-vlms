@@ -94,6 +94,19 @@ def main():
             all_args.append(arg)
 
         for arg in all_args:
+            # Skip empty feature files (e.g. abstract concepts with 0 detections)
+            try:
+                check = torch.load(arg.features_path[0], map_location="cpu")
+                if not check or len(check) == 0:
+                    logger.warning(
+                        f"Skipping empty feature file: {arg.features_path[0]} "
+                        f"(concept '{arg.save_filename}' had no detections)"
+                    )
+                    continue
+                del check
+            except Exception as e:
+                logger.warning(f"Skipping unreadable feature file {arg.features_path[0]}: {e}")
+                continue
             concept_decompostion(arg, model_subset, logger, device)
 
         #args.features_path = os.path.join(feature_source, feature_file)

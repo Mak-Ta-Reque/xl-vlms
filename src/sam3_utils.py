@@ -130,8 +130,8 @@ def load_sam3(
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    # Build model
-    model = build_sam3_image_model(bpe_path=bpe_path)
+    # Build model (enable SAM1-style point prompt for auto mask generation)
+    model = build_sam3_image_model(bpe_path=bpe_path, enable_inst_interactivity=True)
 
     # Check if batch processing APIs are available
     batch_supported = _check_sam3_batch_available()
@@ -285,53 +285,67 @@ def _bboxes_from_masks(
     return bboxes
 
 
-def _extract_bboxes_from_inference_state(
+def _extract_bboxes_and_masks_from_inference_state(
     inference_state: dict,
     image_size: Tuple[int, int],
-) -> List[List[int]]:
+) -> List[tuple]:
     """
-    Extract bounding boxes from SAM3 inference_state.
-
-    Args:
-        inference_state: The state dict returned by Sam3Processor after text prompt.
-        image_size: (width, height) of the image.
+    Extract (bbox_xywh, binary_mask) tuples from SAM3 inference_state.
 
     Returns:
-        List of [x, y, w, h] integer boxes sorted by score (highest first).
+        List of (bbox_xywh: List[int], mask: np.ndarray|None) tuples,
+        sorted by score (highest first).
     """
     W, H = image_size
-    
-    # SAM3 provides boxes directly in xyxy format
+
     boxes = inference_state.get("boxes")
+    masks = inference_state.get("masks")
     scores = inference_state.get("scores")
-    
+
     if boxes is None:
         return []
-    
-    # Convert to numpy
+
     boxes_np = _to_numpy(boxes)
-    
-    # Sort by scores (descending) if available
+
+    masks_np: Optional[np.ndarray] = None
+    if masks is not None:
+        masks_np = _to_numpy(masks)
+        if masks_np.ndim == 4:  # (N, 1, H, W)
+            masks_np = masks_np.squeeze(1)
+
     if scores is not None:
         scores_np = _to_numpy(scores).flatten()
         if len(scores_np) == len(boxes_np):
             idx = np.argsort(-scores_np, kind="stable")
             boxes_np = boxes_np[idx]
-    
-    # Convert xyxy to xywh and clamp to image bounds
-    bboxes: List[List[int]] = []
-    for box in boxes_np:
+            if masks_np is not None and len(masks_np) == len(scores_np):
+                masks_np = masks_np[idx]
+
+    pairs: List[tuple] = []
+    for i, box in enumerate(boxes_np):
         x1, y1, x2, y2 = box
         x = max(0, min(int(round(x1)), W - 1))
         y = max(0, min(int(round(y1)), H - 1))
-        x2_clamped = max(0, min(int(round(x2)), W))
-        y2_clamped = max(0, min(int(round(y2)), H))
-        w = x2_clamped - x
-        h = y2_clamped - y
+        x2c = max(0, min(int(round(x2)), W))
+        y2c = max(0, min(int(round(y2)), H))
+        w = x2c - x
+        h = y2c - y
         if w > 0 and h > 0:
-            bboxes.append([x, y, w, h])
-    
-    return bboxes
+            m = None
+            if masks_np is not None and i < len(masks_np):
+                m = _binarize_mask(masks_np[i])
+            pairs.append(([x, y, w, h], m))
+
+    return pairs
+
+
+def _extract_bboxes_from_inference_state(
+    inference_state: dict,
+    image_size: Tuple[int, int],
+) -> List[List[int]]:
+    """Legacy wrapper: returns only bboxes."""
+    pairs = _extract_bboxes_and_masks_from_inference_state(inference_state, image_size)
+    return [bb for bb, _m in pairs]
 
 
 def _compute_mask_areas(masks: np.ndarray) -> np.ndarray:
@@ -384,56 +398,104 @@ def _create_datapoint_with_text_prompt(pil_image: Image.Image, text_query: str, 
     return datapoint
 
 
-def _extract_bboxes_from_postprocessed_result(
+def _extract_bboxes_and_masks_from_postprocessed_result(
     result: Dict[str, Any],
     image_size: Tuple[int, int],
     topn: int = 10,
-) -> List[List[int]]:
+) -> List[tuple]:
     """
-    Extract bounding boxes from postprocessed SAM3 result.
-    
-    Args:
-        result: Dict with 'boxes', 'scores', optionally 'masks'.
-        image_size: (width, height) of the image.
-        topn: Maximum number of boxes to return.
-    
+    Extract (bbox_xywh, binary_mask) tuples from postprocessed SAM3 result.
+
     Returns:
-        List of [x, y, w, h] integer boxes.
+        List of (bbox_xywh: List[int], mask: np.ndarray|None) tuples.
     """
     W, H = image_size
-    
+
     boxes = result.get("boxes")
+    masks = result.get("masks")
     scores = result.get("scores")
-    
+
     if boxes is None or len(boxes) == 0:
         return []
-    
-    # Convert to numpy
+
     boxes_np = _to_numpy(boxes)
     if boxes_np.ndim == 1:
         boxes_np = boxes_np.reshape(-1, 4)
-    
-    # Sort by scores (descending) if available
+
+    masks_np: Optional[np.ndarray] = None
+    if masks is not None:
+        masks_np = _to_numpy(masks)
+        if masks_np.ndim == 4:  # (N, 1, H, W)
+            masks_np = masks_np.squeeze(1)
+
     if scores is not None:
         scores_np = _to_numpy(scores).flatten()
         if len(scores_np) == len(boxes_np):
             idx = np.argsort(-scores_np, kind="stable")
             boxes_np = boxes_np[idx]
-    
-    # Convert xyxy to xywh and clamp to image bounds
-    bboxes: List[List[int]] = []
-    for box in boxes_np[:topn]:
+            if masks_np is not None and len(masks_np) == len(scores_np):
+                masks_np = masks_np[idx]
+
+    pairs: List[tuple] = []
+    for i, box in enumerate(boxes_np[:topn]):
         x1, y1, x2, y2 = box
         x = max(0, min(int(round(x1)), W - 1))
         y = max(0, min(int(round(y1)), H - 1))
-        x2_clamped = max(0, min(int(round(x2)), W))
-        y2_clamped = max(0, min(int(round(y2)), H))
-        w = x2_clamped - x
-        h = y2_clamped - y
+        x2c = max(0, min(int(round(x2)), W))
+        y2c = max(0, min(int(round(y2)), H))
+        w = x2c - x
+        h = y2c - y
         if w > 0 and h > 0:
-            bboxes.append([x, y, w, h])
-    
-    return bboxes
+            m = None
+            if masks_np is not None and i < len(masks_np):
+                m = _binarize_mask(masks_np[i])
+            pairs.append(([x, y, w, h], m))
+
+    return pairs
+
+
+def _extract_bboxes_from_postprocessed_result(
+    result: Dict[str, Any],
+    image_size: Tuple[int, int],
+    topn: int = 10,
+) -> List[List[int]]:
+    """Legacy wrapper: returns only bboxes."""
+    pairs = _extract_bboxes_and_masks_from_postprocessed_result(result, image_size, topn)
+    return [bb for bb, _m in pairs]
+
+
+def predict_bboxes_and_masks_for_tag_sam3(
+    model_dict: Dict[str, Any],
+    images: Union[str, Image.Image, np.ndarray, Sequence[Union[str, Image.Image, np.ndarray]]],
+    tag: str,
+    topn: int = 10,
+) -> List[List[tuple]]:
+    """
+    Predict (bbox, mask) pairs for a tag over a list of images using SAM3.
+
+    Returns:
+        List of length len(images). Each element is a list of
+        (bbox_xywh: List[int], mask: np.ndarray|None) tuples.
+    """
+    if isinstance(model_dict, tuple):
+        model, Sam3Processor, confidence_threshold = model_dict
+        model_dict = {
+            "model": model,
+            "confidence_threshold": confidence_threshold,
+            "batch_supported": False,
+        }
+
+    if isinstance(images, (str, Image.Image, np.ndarray)):
+        images = [images]
+
+    images_pil = [_to_pil(im) for im in images]
+
+    if not model_dict.get("batch_supported", False):
+        return _predict_bboxes_and_masks_per_image(model_dict, images_pil, tag, topn)
+
+    return _predict_bboxes_and_masks_batched_internal(
+        model_dict, images_pil, tag, topn, batch_size=len(images_pil)
+    )
 
 
 def predict_bboxes_for_tag_sam3(
@@ -442,41 +504,59 @@ def predict_bboxes_for_tag_sam3(
     tag: str,
     topn: int = 10,
 ) -> List[List[List[int]]]:
-    """
-    Predict bounding boxes for a tag over a list of images using SAM3.
-    Falls back to per-image processing if batch APIs unavailable.
+    """Legacy wrapper: returns only bboxes."""
+    all_pairs = predict_bboxes_and_masks_for_tag_sam3(model_dict, images, tag, topn)
+    return [[bb for bb, _m in pairs] for pairs in all_pairs]
 
-    Args:
-        model_dict: Dict from load_sam3() containing model and processing utilities.
-        images: Single image or sequence of image paths, PIL Images, or numpy arrays.
-        tag: Text prompt for the object name (e.g., "apple").
-        topn: Maximum number of boxes to return per image.
 
-    Returns:
-        A list of length len(images). Each element is a list of [x, y, w, h] integer bboxes
-        for the corresponding image; can be empty if nothing is detected.
-    """
-    # Handle legacy tuple format for backward compatibility
-    if isinstance(model_dict, tuple):
-        model, Sam3Processor, confidence_threshold = model_dict
-        model_dict = {
-            "model": model,
-            "confidence_threshold": confidence_threshold,
-            "batch_supported": False,
-        }
-    
-    # Handle single image input
-    if isinstance(images, (str, Image.Image, np.ndarray)):
-        images = [images]
-    
-    images_pil = [_to_pil(im) for im in images]
-    
-    # If batch processing not available, fall back to per-image processing
-    if not model_dict.get("batch_supported", False):
-        return _predict_bboxes_per_image(model_dict, images_pil, tag, topn)
-    
-    # Use true batch processing
-    return _predict_bboxes_batched_internal(model_dict, images_pil, tag, topn, batch_size=len(images_pil))
+def _predict_bboxes_and_masks_per_image(
+    model_dict: Dict[str, Any],
+    images_pil: List[Image.Image],
+    tag: str,
+    topn: int,
+) -> List[List[tuple]]:
+    """Fallback per-image processing returning (bbox, mask) pairs."""
+    from sam3.model.sam3_image_processor import Sam3Processor
+
+    model = model_dict["model"]
+    confidence_threshold = model_dict.get("confidence_threshold", 0.5)
+
+    all_pairs: List[List[tuple]] = []
+
+    import gc
+
+    for img in images_pil:
+        try:
+            with torch.no_grad():
+                processor = Sam3Processor(model, confidence_threshold=confidence_threshold)
+                inference_state = processor.set_image(img)
+                processor.reset_all_prompts(inference_state)
+                inference_state = processor.set_text_prompt(state=inference_state, prompt=tag)
+
+                width, height = img.size
+                pairs = _extract_bboxes_and_masks_from_inference_state(
+                    inference_state, (width, height)
+                )
+
+                if topn > 0:
+                    pairs = pairs[:topn]
+
+                all_pairs.append(pairs)
+
+                del processor, inference_state
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        except Exception as e:
+            print(f"SAM3 prediction failed for image: {e}")
+            all_pairs.append([])
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    return all_pairs
 
 
 def _predict_bboxes_per_image(
@@ -485,34 +565,144 @@ def _predict_bboxes_per_image(
     tag: str,
     topn: int,
 ) -> List[List[List[int]]]:
-    """Fallback per-image processing using Sam3Processor."""
-    from sam3.model.sam3_image_processor import Sam3Processor
-    
+    """Legacy per-image wrapper: returns only bboxes."""
+    all_pairs = _predict_bboxes_and_masks_per_image(model_dict, images_pil, tag, topn)
+    return [[bb for bb, _m in pairs] for pairs in all_pairs]
+
+
+def _predict_bboxes_and_masks_batched_internal(
+    model_dict: Dict[str, Any],
+    images_pil: List[Image.Image],
+    tag: str,
+    topn: int,
+    batch_size: int,
+    debug: bool = False,
+) -> List[List[tuple]]:
+    """
+    True batched inference returning (bbox, mask) pairs.
+    """
+    import gc
+
     model = model_dict["model"]
-    confidence_threshold = model_dict.get("confidence_threshold", 0.5)
-    
-    all_bboxes: List[List[List[int]]] = []
-    
-    for img in images_pil:
-        try:
-            processor = Sam3Processor(model, confidence_threshold=confidence_threshold)
-            inference_state = processor.set_image(img)
-            processor.reset_all_prompts(inference_state)
-            inference_state = processor.set_text_prompt(state=inference_state, prompt=tag)
-            
-            width, height = img.size
-            img_bbs = _extract_bboxes_from_inference_state(inference_state, (width, height))
-            
-            if topn > 0:
-                img_bbs = img_bbs[:topn]
-            
-            all_bboxes.append(img_bbs)
-            
-        except Exception as e:
-            print(f"SAM3 prediction failed for image: {e}")
-            all_bboxes.append([])
-    
-    return all_bboxes
+    transform = model_dict["transform"]
+    postprocessor = model_dict["postprocessor"]
+    collate_fn = model_dict["collate_fn"]
+    copy_to_device_fn = model_dict["copy_to_device_fn"]
+    device = model_dict.get("device", torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+
+    all_pairs: List[List[tuple]] = [[] for _ in range(len(images_pil))]
+    image_sizes = [img.size for img in images_pil]
+
+    if debug:
+        print(f"[DEBUG] _predict_bboxes_and_masks_batched_internal: {len(images_pil)} images, batch_size={batch_size}")
+
+    with torch.no_grad():
+     for batch_start in range(0, len(images_pil), batch_size):
+      batch_end = min(batch_start + batch_size, len(images_pil))
+      batch_images = images_pil[batch_start:batch_end]
+      batch_sizes = image_sizes[batch_start:batch_end]
+
+      if debug:
+          print(f"[DEBUG] Processing batch {batch_start}-{batch_end}")
+
+      try:
+          datapoints = []
+          query_id_to_batch_idx = {}
+
+          for i, img in enumerate(batch_images):
+              query_id = batch_start + i + 1
+              datapoint = _create_datapoint_with_text_prompt(img, tag, query_id)
+              datapoint = transform(datapoint)
+              datapoints.append(datapoint)
+              query_id_to_batch_idx[query_id] = batch_start + i
+
+          if debug:
+              print(f"[DEBUG] Created {len(datapoints)} datapoints, query_ids: {list(query_id_to_batch_idx.keys())}")
+
+          batch = collate_fn(datapoints, dict_key="dummy")["dummy"]
+          batch = copy_to_device_fn(batch, device, non_blocking=True)
+
+          with torch.autocast("cuda", dtype=torch.bfloat16):
+              output = model(batch)
+
+          if debug:
+              print(f"[DEBUG] Model output keys: {output.keys() if hasattr(output, 'keys') else type(output)}")
+
+          processed_results = postprocessor.process_results(output, batch.find_metadatas)
+
+          if debug:
+              print(f"[DEBUG] Processed results keys: {list(processed_results.keys())}")
+
+          for query_id, result in processed_results.items():
+              if query_id in query_id_to_batch_idx:
+                  global_idx = query_id_to_batch_idx[query_id]
+                  local_idx = global_idx - batch_start
+                  img_size = batch_sizes[local_idx]
+                  pairs = _extract_bboxes_and_masks_from_postprocessed_result(
+                      result, img_size, topn
+                  )
+                  all_pairs[global_idx] = pairs
+                  if debug:
+                      print(f"[DEBUG]   Query {query_id} -> image {global_idx}: {len(pairs)} detections")
+
+          del batch, output, processed_results, datapoints
+          gc.collect()
+          if torch.cuda.is_available():
+              torch.cuda.empty_cache()
+
+      except Exception as e:
+          error_msg = str(e)
+          is_oom = "out of memory" in error_msg.lower() or "CUDA" in error_msg
+
+          if is_oom and batch_size > 1:
+              print(f"SAM3 batch OOM with batch_size={len(batch_images)}. Retrying with batch_size=1...")
+          else:
+              print(f"SAM3 batch prediction failed: {e}. Falling back to per-image.")
+
+          if debug:
+              import traceback
+              traceback.print_exc()
+
+          gc.collect()
+          if torch.cuda.is_available():
+              torch.cuda.empty_cache()
+
+          for i, img in enumerate(batch_images):
+              try:
+                  from sam3.model.sam3_image_processor import Sam3Processor
+
+                  gc.collect()
+                  if torch.cuda.is_available():
+                      torch.cuda.empty_cache()
+
+                  processor = Sam3Processor(
+                      model,
+                      confidence_threshold=model_dict.get("confidence_threshold", 0.5),
+                  )
+                  inference_state = processor.set_image(img)
+                  processor.reset_all_prompts(inference_state)
+                  inference_state = processor.set_text_prompt(
+                      state=inference_state, prompt=tag
+                  )
+
+                  width, height = img.size
+                  pairs = _extract_bboxes_and_masks_from_inference_state(
+                      inference_state, (width, height)
+                  )
+                  if topn > 0:
+                      pairs = pairs[:topn]
+                  all_pairs[batch_start + i] = pairs
+
+                  del processor, inference_state
+                  gc.collect()
+                  if torch.cuda.is_available():
+                      torch.cuda.empty_cache()
+
+              except Exception as e2:
+                  print(f"SAM3 fallback prediction also failed: {e2}")
+                  all_pairs[batch_start + i] = []
+
+    return all_pairs
 
 
 def _predict_bboxes_batched_internal(
@@ -523,152 +713,45 @@ def _predict_bboxes_batched_internal(
     batch_size: int,
     debug: bool = False,
 ) -> List[List[List[int]]]:
+    """Legacy batched wrapper: returns only bboxes."""
+    all_pairs = _predict_bboxes_and_masks_batched_internal(
+        model_dict, images_pil, tag, topn, batch_size, debug
+    )
+    return [[bb for bb, _m in pairs] for pairs in all_pairs]
+
+
+def predict_bboxes_and_masks_for_tag_sam3_batched(
+    model_dict: Dict[str, Any],
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    tag: str,
+    batch_size: int = 8,
+    topn: int = 10,
+    debug: bool = False,
+) -> List[List[tuple]]:
     """
-    True batched inference using SAM3's collate and forward APIs.
-    
-    Args:
-        debug: If True, print detailed debugging information.
+    Batched prediction returning (bbox, mask) pairs using SAM3.
+
+    Returns:
+        List parallel to images, each element is a list of
+        (bbox_xywh: List[int], mask: np.ndarray|None) tuples.
     """
-    import gc
-    
-    model = model_dict["model"]
-    transform = model_dict["transform"]
-    postprocessor = model_dict["postprocessor"]
-    collate_fn = model_dict["collate_fn"]
-    copy_to_device_fn = model_dict["copy_to_device_fn"]
-    device = model_dict.get("device", torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
-    
-    all_bboxes: List[List[List[int]]] = [[] for _ in range(len(images_pil))]
-    image_sizes = [img.size for img in images_pil]  # (width, height) per image
-    
-    if debug:
-        print(f"[DEBUG] _predict_bboxes_batched_internal called with {len(images_pil)} images, batch_size={batch_size}")
-    
-    # Process in batches
-    for batch_start in range(0, len(images_pil), batch_size):
-        batch_end = min(batch_start + batch_size, len(images_pil))
-        batch_images = images_pil[batch_start:batch_end]
-        batch_sizes = image_sizes[batch_start:batch_end]
-        
-        if debug:
-            print(f"[DEBUG] Processing batch {batch_start}-{batch_end}")
-        
-        try:
-            # Create datapoints for this batch
-            datapoints = []
-            query_id_to_batch_idx = {}
-            
-            for i, img in enumerate(batch_images):
-                query_id = batch_start + i + 1  # Unique ID per image
-                datapoint = _create_datapoint_with_text_prompt(img, tag, query_id)
-                datapoint = transform(datapoint)
-                datapoints.append(datapoint)
-                query_id_to_batch_idx[query_id] = batch_start + i
-            
-            if debug:
-                print(f"[DEBUG] Created {len(datapoints)} datapoints, query_ids: {list(query_id_to_batch_idx.keys())}")
-            
-            # Collate batch
-            batch = collate_fn(datapoints, dict_key="dummy")["dummy"]
-            batch = copy_to_device_fn(batch, device, non_blocking=True)
-            
-            if debug:
-                print(f"[DEBUG] Batch type: {type(batch)}")
-                if hasattr(batch, 'find_metadatas'):
-                    print(f"[DEBUG] find_metadatas: {batch.find_metadatas}")
-            
-            # Forward pass (with autocast for bfloat16)
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                output = model(batch)
-            
-            if debug:
-                print(f"[DEBUG] Model output keys: {output.keys() if hasattr(output, 'keys') else type(output)}")
-                # Check output contents
-                if hasattr(output, 'keys'):
-                    for k in list(output.keys())[:5]:
-                        v = output[k]
-                        if hasattr(v, 'shape'):
-                            print(f"[DEBUG]   {k}: shape={v.shape}")
-                        else:
-                            print(f"[DEBUG]   {k}: type={type(v)}")
-            
-            # Post-process results
-            processed_results = postprocessor.process_results(output, batch.find_metadatas)
-            
-            if debug:
-                print(f"[DEBUG] Processed results keys: {list(processed_results.keys())}")
-                for qid, res in processed_results.items():
-                    boxes = res.get("boxes")
-                    scores = res.get("scores")
-                    print(f"[DEBUG]   Query {qid}: boxes={boxes.shape if hasattr(boxes, 'shape') else 'None'}, scores={scores.shape if hasattr(scores, 'shape') else 'None'}")
-            
-            # Extract bboxes for each image
-            for query_id, result in processed_results.items():
-                if query_id in query_id_to_batch_idx:
-                    global_idx = query_id_to_batch_idx[query_id]
-                    local_idx = global_idx - batch_start
-                    img_size = batch_sizes[local_idx]
-                    bboxes = _extract_bboxes_from_postprocessed_result(result, img_size, topn)
-                    all_bboxes[global_idx] = bboxes
-                    if debug:
-                        print(f"[DEBUG]   Query {query_id} -> image {global_idx}: {len(bboxes)} boxes")
-            
-            # Clean up GPU memory after each batch
-            del batch, output, processed_results, datapoints
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                    
-        except Exception as e:
-            error_msg = str(e)
-            is_oom = "out of memory" in error_msg.lower() or "CUDA" in error_msg
-            
-            if is_oom and batch_size > 1:
-                print(f"SAM3 batch OOM with batch_size={len(batch_images)}. Retrying with batch_size=1...")
-            else:
-                print(f"SAM3 batch prediction failed: {e}. Falling back to per-image processing for this batch.")
-            
-            if debug:
-                import traceback
-                traceback.print_exc()
-            
-            # Clean up before fallback
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            # Fallback for this batch - process one at a time
-            for i, img in enumerate(batch_images):
-                try:
-                    from sam3.model.sam3_image_processor import Sam3Processor
-                    
-                    # Clear memory before each image
-                    gc.collect()
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    
-                    processor = Sam3Processor(model, confidence_threshold=model_dict.get("confidence_threshold", 0.5))
-                    inference_state = processor.set_image(img)
-                    processor.reset_all_prompts(inference_state)
-                    inference_state = processor.set_text_prompt(state=inference_state, prompt=tag)
-                    
-                    width, height = img.size
-                    img_bbs = _extract_bboxes_from_inference_state(inference_state, (width, height))
-                    if topn > 0:
-                        img_bbs = img_bbs[:topn]
-                    all_bboxes[batch_start + i] = img_bbs
-                    
-                    # Clean up after each image
-                    del processor, inference_state
-                    gc.collect()
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        
-                except Exception as e2:
-                    print(f"SAM3 fallback prediction also failed: {e2}")
-                    all_bboxes[batch_start + i] = []
-    
-    return all_bboxes
+    if isinstance(model_dict, tuple):
+        model, Sam3Processor, confidence_threshold = model_dict
+        model_dict = {
+            "model": model,
+            "confidence_threshold": confidence_threshold,
+            "batch_supported": False,
+        }
+
+    images_pil = [_to_pil(im) for im in images]
+
+    if not model_dict.get("batch_supported", False):
+        print(f"SAM3 batch APIs not available. Processing {len(images)} images one at a time.")
+        return _predict_bboxes_and_masks_per_image(model_dict, images_pil, tag, topn)
+
+    return _predict_bboxes_and_masks_batched_internal(
+        model_dict, images_pil, tag, topn, batch_size, debug=debug
+    )
 
 
 def predict_bboxes_for_tag_sam3_batched(
@@ -679,45 +762,320 @@ def predict_bboxes_for_tag_sam3_batched(
     topn: int = 10,
     debug: bool = False,
 ) -> List[List[List[int]]]:
-    """
-    Batched prediction using SAM3's native batch processing APIs.
-    
-    This function now performs TRUE batch inference using SAM3's collate_fn_api,
-    significantly improving throughput compared to per-image processing.
+    """Legacy batched API: returns only bboxes."""
+    all_pairs = predict_bboxes_and_masks_for_tag_sam3_batched(
+        model_dict, images, tag, batch_size, topn, debug
+    )
+    return [[bb for bb, _m in pairs] for pairs in all_pairs]
+
+
+# ---------------------------------------------------------------------------
+# Automatic (non-tag) segmentation for SAM3
+# ---------------------------------------------------------------------------
+
+_SAM3_GENERIC_PROMPTS = ["object", "thing", "item", "part"]
+
+
+def predict_all_masks_sam3(
+    model_dict: Dict[str, Any],
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    topn: int = 10,
+    min_mask_area: int = 100,
+    batch_size: int = 8,
+    debug: bool = False,
+    other_tags: Optional[List[str]] = None,
+    exclude_tag: Optional[str] = None,
+) -> List[List[tuple]]:
+    """Run non-tag segmentation using SAM3 with other concept tags.
+
+    SAM3 is text-prompted and cannot do auto-segmentation with generic
+    prompts like "object".  Instead, we iterate through all *other*
+    concept tags (from the mapping) and collect their detections.  The
+    image backbone is computed once per image and reused across prompts.
+
+    When ``other_tags`` is not supplied the function falls back to the
+    generic-prompt approach (kept for backward compat, but produces few
+    results).
 
     Args:
-        model_dict: Dict from load_sam3() containing model and batch processing utilities.
-        images: Sequence of image paths, PIL Images, or numpy arrays.
-        tag: Text prompt for the object name.
-        batch_size: Number of images to process in each batch.
-        topn: Maximum boxes per image.
-        debug: If True, print detailed debugging information.
+        model_dict: Dict returned by load_sam3().
+        images: List of image paths, PIL Images, or numpy arrays.
+        topn: Maximum number of masks per image.
+        min_mask_area: Discard masks with fewer pixels than this.
+        batch_size: Batch size for inference (unused in multi-tag path).
+        debug: Enable debug output.
+        other_tags: All concept tags from the mapping.  The function
+            will iterate through every tag *except* ``exclude_tag``.
+        exclude_tag: The current concept tag to skip (already handled
+            as the concept mask by the caller).
 
     Returns:
-        List parallel to images, each element is a list of [x, y, w, h] boxes.
+        List of length len(images). Each element is a list of
+        (bbox_xywh: List[int], mask: np.ndarray bool H×W) tuples.
     """
-    # Handle legacy tuple format for backward compatibility
-    if isinstance(model_dict, tuple):
-        model, Sam3Processor, confidence_threshold = model_dict
-        model_dict = {
-            "model": model,
-            "confidence_threshold": confidence_threshold,
-            "batch_supported": False,
-        }
-    
+    if model_dict is None:
+        model_dict = load_sam3()
+
+    # --- Multi-tag path (preferred): iterate other concept tags ---
+    if other_tags:
+        tags_to_query = [t for t in other_tags if t != exclude_tag]
+        if debug:
+            print(f"[predict_all_masks_sam3] multi-tag mode: {len(tags_to_query)} tags (excluding '{exclude_tag}')")
+        return _predict_nontag_masks_multitag(
+            model_dict, images, tags_to_query,
+            topn=topn, min_mask_area=min_mask_area, debug=debug,
+        )
+
+    # --- Legacy fallback: generic prompt (rarely produces results) ---
+    generic_prompt = _SAM3_GENERIC_PROMPTS[0]
+    all_pairs = predict_bboxes_and_masks_for_tag_sam3_batched(
+        model_dict, images, tag=generic_prompt,
+        batch_size=batch_size, topn=topn, debug=debug,
+    )
+
+    # Filter by min_mask_area
+    filtered: List[List[tuple]] = []
+    for img_pairs in all_pairs:
+        kept = []
+        for bbox, mask in img_pairs:
+            if mask is not None:
+                area = int(mask.sum()) if hasattr(mask, 'sum') else 0
+                if area < min_mask_area:
+                    continue
+            kept.append((bbox, mask))
+        filtered.append(kept[:topn])
+
+    return filtered
+
+
+def _predict_nontag_masks_multitag(
+    model_dict: Dict[str, Any],
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    tags: List[str],
+    topn: int = 10,
+    min_mask_area: int = 100,
+    debug: bool = False,
+) -> List[List[tuple]]:
+    """For each image run SAM3 with every tag in *tags*, reusing the
+    image backbone.  Collect all resulting (bbox, mask) pairs per image.
+
+    Uses Sam3Processor per-image so ``set_image`` is called once and
+    ``set_text_prompt`` is called once per tag (cheap).
+    """
+    from sam3.model.sam3_image_processor import Sam3Processor
+
+    model = model_dict["model"]
+    confidence_threshold = model_dict.get("confidence_threshold", 0.5)
+
+    import gc
+
     images_pil = [_to_pil(im) for im in images]
-    
-    # If batch processing not available, fall back to per-image
-    if not model_dict.get("batch_supported", False):
-        print(f"SAM3 batch APIs not available. Processing {len(images)} images one at a time.")
-        return _predict_bboxes_per_image(model_dict, images_pil, tag, topn)
-    
-    # True batch processing
-    return _predict_bboxes_batched_internal(model_dict, images_pil, tag, topn, batch_size, debug=debug)
+    all_results: List[List[tuple]] = [[] for _ in range(len(images_pil))]
+
+    for idx, img in enumerate(images_pil):
+        try:
+            with torch.no_grad():
+                processor = Sam3Processor(model, confidence_threshold=confidence_threshold)
+                state = processor.set_image(img)
+                width, height = img.size
+
+                for tag in tags:
+                    try:
+                        processor.reset_all_prompts(state)
+                        state = processor.set_text_prompt(state=state, prompt=tag)
+                        pairs = _extract_bboxes_and_masks_from_inference_state(
+                            state, (width, height),
+                        )
+                        for bbox, mask in pairs:
+                            if mask is not None:
+                                area = int(mask.sum()) if hasattr(mask, 'sum') else 0
+                                if area < min_mask_area:
+                                    continue
+                            all_results[idx].append((bbox, mask))
+                    except Exception as e:
+                        if debug:
+                            print(f"[predict_nontag] tag='{tag}' failed for image {idx}: {e}")
+
+                del processor, state
+
+            # Keep only top-N by mask area (largest first)
+            all_results[idx].sort(
+                key=lambda p: int(p[1].sum()) if p[1] is not None else 0,
+                reverse=True,
+            )
+            all_results[idx] = all_results[idx][:topn]
+
+            if debug:
+                print(f"[predict_nontag] image {idx}: {len(all_results[idx])} non-tag masks from {len(tags)} tags")
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        except Exception as e:
+            print(f"SAM3 non-tag prediction failed for image {idx}: {e}")
+            all_results[idx] = []
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    return all_results
+
+
+# ---------------------------------------------------------------------------
+# True automatic (prompt-free) mask generation via point-grid
+# ---------------------------------------------------------------------------
+
+def predict_auto_masks_sam3(
+    model_dict: Dict[str, Any],
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    topn: int = 10,
+    min_mask_area: int = 100,
+    points_per_side: int = 16,
+) -> List[List[tuple]]:
+    """Generate masks for all objects without text prompts using a point grid.
+
+    Uses SAM3's interactive predictor (SAM1-style) with a dense grid of
+    foreground points.  For each point the model returns up to 3 candidate
+    masks; the best (highest IoU score) is kept.  After collecting all
+    point masks, NMS-style deduplication removes near-duplicates (IoU > 0.8),
+    and the remaining masks are sorted by area (largest first) then
+    truncated to *topn*.
+
+    Args:
+        model_dict: Dict returned by :func:`load_sam3`.
+        images: List of image paths / PIL Images / numpy arrays.
+        topn: Maximum number of masks per image to return.
+        min_mask_area: Discard masks with fewer pixels than this.
+        points_per_side: Grid density (total points = points_per_side²).
+            Default 16 → 256 points (was 32 → 1024, too memory-heavy).
+
+    Returns:
+        List parallel to *images*.  Each element is a list of
+        ``(bbox_xywh, mask_bool_HxW)`` tuples.
+    """
+    import gc
+
+    model = model_dict["model"]
+    confidence_threshold = model_dict.get("confidence_threshold", 0.5)
+    images_pil = [_to_pil(im) for im in images]
+
+    all_results: List[List[tuple]] = []
+
+    for img_idx, img in enumerate(images_pil):
+        W, H = img.size
+
+        # ------ build uniform point grid ------
+        xs = np.linspace(0, W - 1, points_per_side)
+        ys = np.linspace(0, H - 1, points_per_side)
+        xv, yv = np.meshgrid(xs, ys)
+        grid_points = np.stack([xv.ravel(), yv.ravel()], axis=-1)  # (N, 2)
+
+        try:
+            from sam3.model.sam3_image_processor import Sam3Processor
+
+            with torch.no_grad():
+                processor = Sam3Processor(model, confidence_threshold=confidence_threshold)
+                state = processor.set_image(img)
+
+                candidate_masks: List[np.ndarray] = []
+                candidate_scores: List[float] = []
+
+                for pt in grid_points:
+                    try:
+                        point_coords = pt.reshape(1, 2)
+                        point_labels = np.array([1])  # foreground
+
+                        masks_out, scores_out, _ = model.predict_inst(
+                            state,
+                            point_coords=point_coords,
+                            point_labels=point_labels,
+                            multimask_output=True,
+                        )
+
+                        # masks_out: (C, H, W) tensor/array, scores_out: (C,)
+                        masks_np = _to_numpy(masks_out)
+                        scores_np = _to_numpy(scores_out).flatten()
+
+                        # Free GPU tensors immediately
+                        del masks_out, scores_out
+
+                        if len(scores_np) == 0:
+                            continue
+
+                        best_idx = int(np.argmax(scores_np))
+                        mask = _binarize_mask(masks_np[best_idx])
+                        area = int(mask.sum())
+                        del masks_np
+                        if area < min_mask_area:
+                            continue
+
+                        candidate_masks.append(mask)
+                        candidate_scores.append(float(scores_np[best_idx]))
+                    except Exception:
+                        continue
+
+                # Free the processor and image state before NMS
+                del processor, state
+
+            # ------ NMS-style deduplication (IoU > 0.8 → discard lower-score) ------
+            if candidate_masks:
+                order = np.argsort([-s for s in candidate_scores])
+                keep: List[int] = []
+                for idx in order:
+                    m = candidate_masks[idx]
+                    duplicate = False
+                    for kept_idx in keep:
+                        km = candidate_masks[kept_idx]
+                        inter = int((m & km).sum())
+                        union = int((m | km).sum())
+                        if union > 0 and inter / union > 0.8:
+                            duplicate = True
+                            break
+                    if not duplicate:
+                        keep.append(idx)
+                        if len(keep) >= topn:
+                            break
+
+                # Sort kept masks by area descending
+                keep.sort(key=lambda i: int(candidate_masks[i].sum()), reverse=True)
+
+                pairs: List[tuple] = []
+                for i in keep:
+                    m = candidate_masks[i]
+                    ys_m, xs_m = np.where(m)
+                    bbox = _clamp_bbox_xywh(
+                        float(xs_m.min()), float(ys_m.min()),
+                        float(xs_m.max() - xs_m.min() + 1),
+                        float(ys_m.max() - ys_m.min() + 1),
+                        W, H,
+                    )
+                    pairs.append((bbox, m))
+                all_results.append(pairs)
+            else:
+                all_results.append([])
+
+            del candidate_masks, candidate_scores
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        except Exception as e:
+            print(f"SAM3 auto-mask generation failed for image {img_idx}: {e}")
+            all_results.append([])
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    return all_results
 
 
 __all__ = [
     "load_sam3",
     "predict_bboxes_for_tag_sam3",
     "predict_bboxes_for_tag_sam3_batched",
+    "predict_bboxes_and_masks_for_tag_sam3",
+    "predict_bboxes_and_masks_for_tag_sam3_batched",
+    "predict_all_masks_sam3",
+    "predict_auto_masks_sam3",
 ]

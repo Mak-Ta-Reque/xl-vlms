@@ -21,7 +21,7 @@ def zca_whiten(X):
 def dominant_positive_index(lists):
     def is_positive_majority(sublist):
         no_not = sum(
-            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk') or item.lower().startswith('thing') or item.lower().startswith('nc') 
+            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk') or item.lower().startswith('thing') or item.lower().startswith('nc') or  item.lower().startswith('no')
             for item in sublist
         )
         positive = len(sublist) - no_not
@@ -37,7 +37,7 @@ def count_conditioned_items(sublist):
     """
     return sum(
         (s.lower().startswith('no_')
-         or s.lower().startswith('no ')
+         or s.lower().startswith('no')
          or s.lower().startswith('not_')
          or s.lower().startswith('unk')
          or s.lower().startswith('thing')
@@ -82,6 +82,7 @@ def combine_concepts(input_dir):
         'text_grounding': [],
         'image_grounding_paths': [],
         'image_grounding_bboxes': [],
+        'image_grounding_masks': [],
         'analysis_model': [],
         'image_grounding_predictions': [],
     }
@@ -113,7 +114,10 @@ def combine_concepts(input_dir):
             combined_data['image_grounding_paths'].append(image_grounding_path[idx])
             combined_data['analysis_model'].append(model_data['analysis_model'])
             combined_data['image_grounding_predictions'].append(model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None)
-            combined_data['image_grounding_bboxes'].append(model_data.get('image_grounding_bboxes', [])[idx])
+            combined_data['image_grounding_bboxes'].append(model_data.get('image_grounding_bboxes', [])[idx] if idx < len(model_data.get('image_grounding_bboxes', [])) else None)
+            # Propagate segmentation masks if available
+            ig_masks = model_data.get('image_grounding_masks', [])
+            combined_data['image_grounding_masks'].append(ig_masks[idx] if idx < len(ig_masks) else None)
         combined_data['decomposition_method'] = model_data['decomposition_method']
 
     combined_data['concepts'] = torch.stack(concepts, dim=0)

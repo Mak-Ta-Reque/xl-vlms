@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Large data — mount at runtime instead
+data/
+temp/
+*.pt
+yolo11x-seg.pt
+
+# Notebooks (not needed for demo)
+*.ipynb
+.ipynb_checkpoints
+
+# Node modules (model-kg-visualization)
+model-kg-visualization/node_modules
+
+# Misc
+*.log
+*.DS_Store

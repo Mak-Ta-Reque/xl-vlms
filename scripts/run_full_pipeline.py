@@ -25,6 +25,7 @@ import argparse
 import subprocess
 import shutil
 import logging
+import gc
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
@@ -74,27 +75,27 @@ class PipelineConfig:
         self.device_id = self._get_int("DEVICE_ID", 0)
         
         # Crops JSON generation
-        self.concept_crops_per_image = self._get_int("CONCEPT_CROPS_PER_IMAGE", 20)
+        self.masks_per_image = self._get_int("MASKS_PER_IMAGE", 5)
+        self.concept_masks_per_image = self._get_int("CONCEPT_MASKS_PER_IMAGE", 1)
         self.patch_size = self._get_int("PATCH_SIZE", 200)
         self.min_images_per_tag = self._get_int("MIN_IMAGES_PER_TAG", 10)
         self.max_images_per_tag = self._get_int("MAX_IMAGES_PER_TAG", 128)
-        self.patches_per_image = self._get_int("PATCHES_PER_IMAGE", 10)
-        self.concept_mode = self._get_int("CONCEPT_MODE", 1)
-        self.object_detector = self._get_str("OBJECT_DETECTOR", "none")  # 'none', 'langsam', 'sam3'
-        self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 5)
-        self.detection_topn = self._get_int("DETECTION_TOPN", 5)
+        self.object_detector = self._get_str("OBJECT_DETECTOR", "sam3")  # 'langsam' or 'sam3'
+        self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 2)
+        self.mask_blur_radius = self._get_int("MASK_BLUR_RADIUS", 15)
         
         # Inference prompt and image preprocessing
         self.prompt = self._get_str(
             "PROMPT",
             "Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations."
         )
+        self.prompt_template = self._get_str("PROMPT_TEMPLATE", "cgdl")
         # Use IMAGE_SIZE_WIDTH as the reference; height is derived per-image via aspect ratio.
         self.image_size_width = self._get_int("IMAGE_SIZE_WIDTH", 512)
         # Keep for backward compatibility / debugging; not used as a fixed resize target.
         self.image_size_height = self._get_int("IMAGE_SIZE_HEIGHT", 512)
         self.image_size = (self.image_size_width, self.image_size_height)
-        self.image_budget = self._get_int("IMAGE_BUDGET", 2000)# reduce for test , use 200 -> for a better run
+        self.image_budget = self._get_int("IMAGE_BUDGET", 100)# reduce for test , use 200 -> for a better run
         self.box_threshold = self._get_float("BOX_THRESHOLD", 0.5)
         
         # Decomposition methods
@@ -202,6 +203,44 @@ def setup_logging(logs_dir: Path) -> logging.Logger:
 
 
 # =============================================================================
+# GPU memory isolation helper
+# =============================================================================
+
+def _cleanup_gpu():
+    """Best-effort in-process GPU memory cleanup."""
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+    except Exception:
+        pass
+
+
+def _run_python_subprocess(script_args: List[str], env_overrides: dict = None,
+                           logger: logging.Logger = None) -> None:
+    """Run a Python module/script in a fresh subprocess for full GPU memory isolation.
+    
+    This prevents CUDA OOM when consecutive pipeline steps each need the full
+    GPU memory (e.g. Step 3 generate features → Step 4 decompose features).
+    """
+    env = os.environ.copy()
+    if env_overrides:
+        env.update(env_overrides)
+    
+    cmd = [sys.executable] + script_args
+    if logger:
+        logger.debug(f"Subprocess: {' '.join(cmd)}")
+    
+    proc = subprocess.run(cmd, env=env, cwd=str(ROOT_DIR))
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Subprocess failed (exit {proc.returncode}): {' '.join(cmd)}"
+        )
+
+
+# =============================================================================
 # Pipeline Steps
 # =============================================================================
 
@@ -279,7 +318,10 @@ def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
 
 
 def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
-    """Step 2: Build crops JSON from concept→image map."""
+    """Step 2: Build crops JSON from concept→image map.
+    
+    Runs as a subprocess to isolate detector GPU memory.
+    """
     
     if config.crops_json.exists():
         logger.info(f"Skip Crops JSON (found {config.crops_json})")
@@ -289,48 +331,34 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
     
     logger.info("START: Crops JSON")
     
-    sys.path.insert(0, str(ROOT_DIR / "preprocessing"))
-    from preprocessing.crops_to_json import main as crops_to_json_main
-    
     crops_args = [
-        "--input_root", str(config.input_dir),
-        "--json_mapping", str(config.concept_map_json),
+        str(ROOT_DIR / "preprocessing" / "crops_to_json.py"),
+        "--mapping_json", str(config.concept_map_json),
+        "--image_root", str(config.input_dir),
         "--output_json", str(config.crops_json),
-        "--patch_size", str(config.patch_size),
-        "--patches_per_image", str(config.patches_per_image),
+        "--detector", config.object_detector,
+        "--masks_per_image", str(config.masks_per_image),
+        "--concept_masks_per_image", str(config.concept_masks_per_image),
         "--min_images_per_tag", str(config.min_images_per_tag),
         "--max_images_per_tag", str(config.max_images_per_tag),
-        "--seed", str(config.seed),
-        "--device", f"cuda:{config.device_id}",
+        "--patch_size", str(config.patch_size),
+        "--batch_size", str(config.detection_batch_size),
         "--image_size_width", str(config.image_size_width),
+        "--device", f"cuda:{config.device_id}",
+        "--seed", str(config.seed),
+        "--confidence_threshold", str(config.box_threshold),
     ]
     
-    if config.concept_mode == 1:
-        crops_args.extend([
-            "--concept_mode",
-            "--concept_crops_per_image", str(config.concept_crops_per_image),
-        ])
-    
-    # Object detector: 'none' = random only, 'langsam'/'sam3' = detector + random
-    if config.object_detector in ("langsam", "sam3"):
-        crops_args.extend([
-            "--object_detector", config.object_detector,
-            "--batch_size", str(config.detection_batch_size),
-            "--topn", str(config.detection_topn),
-        ])
-    
-    original_argv = sys.argv
-    sys.argv = ["crops_to_json.py"] + crops_args
-    try:
-        crops_to_json_main()
-    finally:
-        sys.argv = original_argv
+    _run_python_subprocess(crops_args, logger=logger)
     
     logger.info("DONE: Crops JSON")
 
 
 def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
-    """Step 3: Generate features from crops JSON."""
+    """Step 3: Generate features from crops JSON.
+    
+    Runs as a subprocess to isolate VLM GPU memory from Step 4.
+    """
     
     features_path = config.features_dir / "features"
     if features_path.exists() and any(features_path.glob("*.pth")):
@@ -339,10 +367,8 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
     
     logger.info("START: Generate Features")
     
-    sys.path.insert(0, str(ROOT_DIR / "src"))
-    from src.save_features import main as save_features_main
-    
     features_args = [
+        str(ROOT_DIR / "src" / "save_features.py"),
         "--model_name", config.vlm_model,
         "--dataset_name", "json_crop_map",
         "--dataset_size", str(config.dataset_size),
@@ -351,7 +377,7 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--split", "train",
         "--hook_names", "save_hidden_states_mean",
         "--modules_to_hook", config.layer_path,
-        "--prompt_template", "cgdl",
+            "--prompt_template", config.prompt_template,
         "--save_dir", str(config.features_dir),
         "--batch_size", str(config.batch_size),
         "--generation_mode",
@@ -359,22 +385,17 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--exact_match_modules_to_hook",
     ]
     
-    original_argv = sys.argv
-    sys.argv = ["save_features.py"] + features_args
-    try:
-        save_features_main()
-    finally:
-        sys.argv = original_argv
+    _run_python_subprocess(features_args, logger=logger)
     
     logger.info("DONE: Generate Features")
 
 
 def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
-    """Step 4: Decompose features across methods."""
+    """Step 4: Decompose features across methods.
     
-    sys.path.insert(0, str(ROOT_DIR / "src"))
-    from src.analyse_features import main as analyse_features_main
-    from src.combine_concepts import main as combine_concepts_main
+    Each analyse_features call runs as a subprocess to isolate GPU memory,
+    since loading the model's lm_head requires significant VRAM.
+    """
     
     for method in config.decomp_methods:
         method = method.strip()
@@ -387,13 +408,14 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
         
         method_dir.mkdir(parents=True, exist_ok=True)
         
-        # Analyse features
+        # Analyse features (subprocess — loads model for lm_head)
         base_analysis_name = "decompose_activations_text_grounding_image_grounding"
         intermediate_dir = method_dir / f"intermediate_{method}"
         
         logger.info(f"START: Decompose:{method} (batch)")
         
         analyse_args = [
+            str(ROOT_DIR / "src" / "analyse_features.py"),
             "--model_name", config.vlm_model,
             "--analysis_name", f"{base_analysis_name}_{method}",
             "--features_path", str(config.features_dir / "features"),
@@ -403,48 +425,31 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
             "--save_dir", str(intermediate_dir),
         ]
         
-        original_argv = sys.argv
-        sys.argv = ["analyse_features.py"] + analyse_args
-        try:
-            analyse_features_main()
-        finally:
-            sys.argv = original_argv
+        _run_python_subprocess(analyse_args, logger=logger)
         
         logger.info(f"DONE: Decompose:{method} (batch)")
         
-        # Combine concepts
+        # Combine concepts (lightweight, no GPU — runs in-process)
         logger.info(f"START: Combine Concepts ({method})")
         
-        combine_args = [
+        combine_cli_args = [
+            str(ROOT_DIR / "src" / "combine_concepts.py"),
             "--input_dir", str(intermediate_dir),
             "--output_path", str(method_dir / f"combined_concept_{method}.pth"),
             "--normalization", "gl",
         ]
-        
-        # Add --delete flag if configured
         if config.delete_intermediate_files:
-            combine_args.append("--delete")
+            combine_cli_args.append("--delete")
         
-        sys.argv = ["combine_concepts.py"] + combine_args
-        try:
-            # combine_concepts.main() takes args as parameter, need to parse them
-            import argparse as ap
-            combine_parser = ap.ArgumentParser()
-            combine_parser.add_argument("--input_dir", type=str, required=True)
-            combine_parser.add_argument("--output_path", type=str, required=True)
-            combine_parser.add_argument("--normalization", type=str, default="gl")
-            combine_parser.add_argument("--delete", action="store_true", default=False)
-            combine_parsed = combine_parser.parse_args(combine_args)
-            combine_concepts_main(combine_parsed)
-        finally:
-            sys.argv = original_argv
+        _run_python_subprocess(combine_cli_args, logger=logger)
         
         logger.info(f"DONE: Combine Concepts ({method})")
         
-        # Regrounding
+        # Regrounding (subprocess — loads model again)
         logger.info(f"START: Reground Concepts ({method})")
         
         reground_args = [
+            str(ROOT_DIR / "src" / "analyse_features.py"),
             "--model_name", config.vlm_model,
             "--analysis_name", f"redefine_activations_text_grounding_{method}",
             "--analysis_saving_path", str(method_dir / f"combined_concept_{method}_raw.pth"),
@@ -455,11 +460,7 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
             "--load_matched_features",
         ]
         
-        sys.argv = ["analyse_features.py"] + reground_args
-        try:
-            analyse_features_main()
-        finally:
-            sys.argv = original_argv
+        _run_python_subprocess(reground_args, logger=logger)
         
         logger.info(f"DONE: Reground Concepts ({method})")
         
@@ -469,10 +470,10 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
 
 
 def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
-    """Step 5: VLM explainer per method."""
+    """Step 5: VLM explainer per method.
     
-    sys.path.insert(0, str(ROOT_DIR / "inference"))
-    from inference.vlm_explainer_multibatch import main as vlm_explainer_main
+    Runs as a subprocess — loads VLM model for explanation generation.
+    """
     
     for method in config.decomp_methods:
         method = method.strip()
@@ -489,6 +490,7 @@ def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
         logger.info(f"START: Explainer ({method})")
         
         explainer_args = [
+            str(ROOT_DIR / "inference" / "vlm_explainer_multibatch.py"),
             "--model_name", config.vlm_model,
             "--concept_path", str(concept_path),
             "--layer_path", config.layer_path,
@@ -503,21 +505,16 @@ def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
         if config.expl_choices:
             explainer_args.extend(["--choices", config.expl_choices])
         
-        original_argv = sys.argv
-        sys.argv = ["vlm_explainer_multibatch.py"] + explainer_args
-        try:
-            vlm_explainer_main()
-        finally:
-            sys.argv = original_argv
+        _run_python_subprocess(explainer_args, logger=logger)
         
         logger.info(f"DONE: Explainer ({method})")
 
 
 def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger):
-    """Step 6: Concept deletion eval per method."""
+    """Step 6: Concept deletion eval per method.
     
-    sys.path.insert(0, str(ROOT_DIR / "eval"))
-    from eval.concept_deletion_eval import main as concept_deletion_eval_main
+    Each eval run is a subprocess — loads VLM model for token evaluation.
+    """
     
     for method in config.decomp_methods:
         method = method.strip()
@@ -536,6 +533,7 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
             logger.info(f"START: Eval Insert (rank={rank+1}, {method})")
             
             insert_args = [
+                str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
                 "--results_json", str(in_json),
                 "--concept_path", str(concept_path),
                 "--model_name", config.vlm_model,
@@ -543,17 +541,12 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
                 "--mode", "token",
                 "--num_points", str(config.num_points),
                 "--out_dir", str(out_dir),
-                "--device", config.device_id,
+                "--device", f"cuda:{config.device_id}",
                 "--rank", str(rank+1),
                 "--insertion",
             ]
             
-            original_argv = sys.argv
-            sys.argv = ["concept_deletion_eval.py"] + insert_args
-            try:
-                concept_deletion_eval_main()
-            finally:
-                sys.argv = original_argv
+            _run_python_subprocess(insert_args, logger=logger)
             
             logger.info(f"DONE: Eval Insert (rank={rank+1}, {method})")
             
@@ -561,6 +554,7 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
             logger.info(f"START: Eval Delete (rank={rank+1}, {method})")
             
             delete_args = [
+                str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
                 "--results_json", str(in_json),
                 "--concept_path", str(concept_path),
                 "--model_name", config.vlm_model,
@@ -568,15 +562,11 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
                 "--mode", "token",
                 "--num_points", str(config.num_points),
                 "--out_dir", str(out_dir),
-                "--device", config.device_id,
+                "--device", f"cuda:{config.device_id}",
                 "--rank", str(rank+1),
             ]
             
-            sys.argv = ["concept_deletion_eval.py"] + delete_args
-            try:
-                concept_deletion_eval_main()
-            finally:
-                sys.argv = original_argv
+            _run_python_subprocess(delete_args, logger=logger)
             
             logger.info(f"DONE: Eval Delete (rank={rank+1}, {method})")
 
@@ -716,6 +706,8 @@ def main():
     # Set environment variables
     os.environ["HF_HOME"] = str(config.hf_home)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_id)
+    os.environ["MASK_BLUR_RADIUS"] = str(config.mask_blur_radius)
+    os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "1")
     
     # Create directories and setup logging
     create_directories(config, logging.getLogger())
@@ -730,7 +722,7 @@ def main():
     logger.info(f"Output dir: {config.output_dir}")
     logger.info(f"Model:      {config.vlm_model} | Batch: {config.batch_size} | Seed: {config.seed} | Device: cuda:{config.device_id}")
     logger.info(f"Decompose:  {', '.join(config.decomp_methods)}")
-    logger.info(f"Crops: input={config.input_dir} k={config.concept_crops_per_image} patch={config.patch_size} min={config.min_images_per_tag} max={config.max_images_per_tag}")
+    logger.info(f"Crops: detector={config.object_detector} masks={config.masks_per_image} concept={config.concept_masks_per_image} patch={config.patch_size} min={config.min_images_per_tag} max={config.max_images_per_tag}")
     logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
     logger.info(f"Plots Y:    [{config.plot_ymin}, {config.plot_ymax}]")

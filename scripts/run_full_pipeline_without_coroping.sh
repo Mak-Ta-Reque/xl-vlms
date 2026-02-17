@@ -75,6 +75,7 @@ CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/imag
 OBJECT_DETECTION="${OBJECT_DETECTION:-0}"      # 1 to enable LangSAM
 DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-5}"
 DETECTION_TOPN="${DETECTION_TOPN:-5}"
+MAX_OVERLAP="${MAX_OVERLAP:-0}"             # Max IoU overlap for box merging (0 = merge any overlap)
 
 # Inference prompt and image preproc
 PROMPT="${PROMPT:-Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations.}"
@@ -180,9 +181,8 @@ else
       --json_mapping \"$CONCEPT_MAP_JSON\" \
       --output_json \"$CROPS_JSON\" \
       --patch_size \"$PATCH_SIZE\" \
-      --patches_per_image \"$PATCHES_PER_IMAGE\" \
-      --min_images_per_tag \"$MIN_IMAGES_PER_TAG\" \
-      --max_images_per_tag \"$MAX_IMAGES_PER_TAG\" \
+      --min_images_per_tag \"$MIN_IMAGES_PER_TAG\" \\
+      --max_images_per_tag \"$MAX_IMAGES_PER_TAG\" \\
       --seed \"$SEED\" \
       --device cuda:1 \
       $CONCEPT_FLAG \

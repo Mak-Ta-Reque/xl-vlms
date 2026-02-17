@@ -197,7 +197,14 @@ def _bboxes_from_xyxy_boxes(boxes: Union[np.ndarray, Sequence], image_size: tupl
     return out
 
 
-def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: bool = False) -> List[List[int]]:
+def _extract_bboxes_and_masks_from_result(
+    result: dict, image_size: tuple, prefer_masks: bool = False
+) -> List[tuple]:
+    """Extract (bbox_xywh, binary_mask) tuples from a LangSAM result dict.
+
+    Returns:
+        List of (bbox_xywh: List[int], mask: np.ndarray|None) tuples.
+    """
     boxes = result.get("boxes")
     masks = result.get("masks")
     scores = result.get("scores")
@@ -219,16 +226,81 @@ def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: b
         if masks is not None and len(masks) == len(scores):
             masks = masks[idx]
 
-    if prefer_masks and masks is not None:
-        bbs = _bboxes_from_masks(masks, image_size)
-        if bbs:  # only fall back if masks empty
-            return bbs
+    W, H = image_size
+
+    # Build per-detection masks list (binarized at original resolution)
+    mask_list: List[Optional[np.ndarray]] = []
+    if masks is not None:
+        # masks shape: (N, H, W) or list of 2D arrays
+        masks_arr = masks if isinstance(masks, np.ndarray) and masks.ndim == 3 else None
+        if masks_arr is not None:
+            for k in range(masks_arr.shape[0]):
+                m = _binarize_mask(masks_arr[k])
+                mask_list.append(m)
+        else:
+            # list / tuple of 2D masks
+            for m in masks:
+                m_np = _to_numpy(m)
+                if m_np.ndim > 2:
+                    m_np = np.squeeze(m_np)
+                mask_list.append(_binarize_mask(m_np))
+
+    if prefer_masks and mask_list:
+        bbs = _bboxes_from_masks(
+            [m for m in mask_list if m is not None], image_size
+        )
+        if bbs:
+            # Pair each tight bbox with its mask
+            pairs = []
+            for bb, m in zip(bbs, mask_list):
+                pairs.append((bb, m))
+            return pairs
 
     if boxes is not None:
         # LangSAM returns boxes in xyxy format (x1, y1, x2, y2)
-        return _bboxes_from_xyxy_boxes(boxes, image_size)
+        bbs = _bboxes_from_xyxy_boxes(boxes, image_size)
+        # Pair bboxes with masks (if available)
+        pairs = []
+        for i, bb in enumerate(bbs):
+            m = mask_list[i] if i < len(mask_list) else None
+            pairs.append((bb, m))
+        return pairs
 
     return []
+
+
+def _extract_bboxes_from_result(result: dict, image_size: tuple, prefer_masks: bool = False) -> List[List[int]]:
+    """Legacy wrapper: returns only bboxes (backward compat)."""
+    pairs = _extract_bboxes_and_masks_from_result(result, image_size, prefer_masks)
+    return [bb for bb, _m in pairs]
+
+
+def predict_bboxes_and_masks_for_tag(
+    model: LangSAM,
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    tag: str,
+    prefer_masks: bool = True,
+) -> List[List[tuple]]:
+    """
+    Predict bounding boxes AND segmentation masks for a tag over a list of images.
+
+    Returns:
+        A list of length len(images). Each element is a list of
+        (bbox_xywh: List[int], mask: np.ndarray|None) tuples.
+    """
+    images_pil = [_to_pil(im) for im in images]
+
+    all_pairs: List[List[tuple]] = []
+    for img in images_pil:
+        results = model.predict([img], [tag])
+        img_pairs: List[tuple] = []
+        if isinstance(results, dict):
+            results = [results]
+        for res in results:
+            img_pairs.extend(_extract_bboxes_and_masks_from_result(res, img.size, prefer_masks))
+        all_pairs.append(img_pairs)
+
+    return all_pairs
 
 
 def predict_bboxes_for_tag(
@@ -238,53 +310,30 @@ def predict_bboxes_for_tag(
     prefer_masks: bool = True,
 ) -> List[List[List[int]]]:
     """
-    Predict bounding boxes for a tag over a list of images.
-
-    Args:
-        model: LangSAM model instance.
-        images: Sequence of image paths, PIL Images, or numpy arrays.
-        tag: Text prompt for the object name (e.g., "apple").
-        prefer_masks: If True, compute tight boxes from masks; otherwise rely on model boxes.
-
-    Returns:
-        A list of length len(images). Each element is a list of [x, y, w, h] integer bboxes
-        for the corresponding image; can be empty if nothing is detected.
+    Predict bounding boxes for a tag over a list of images (legacy API).
     """
-    images_pil = [_to_pil(im) for im in images]
-
-    all_bboxes: List[List[List[int]]] = []
-    for img in images_pil:
-        # Predict for a single image to keep API compatibility across versions
-        results = model.predict([img], [tag])
-        # Results is expected to be a list (per image). Gather all detections for this image.
-        img_bbs: List[List[int]] = []
-        if isinstance(results, dict):
-            results = [results]
-        for res in results:
-            img_bbs.extend(_extract_bboxes_from_result(res, img.size, prefer_masks))
-        all_bboxes.append(img_bbs)
-
-    return all_bboxes
+    all_pairs = predict_bboxes_and_masks_for_tag(model, images, tag, prefer_masks)
+    return [[bb for bb, _m in pairs] for pairs in all_pairs]
 
 
-def predict_bboxes_for_tag_batched(
+def predict_bboxes_and_masks_for_tag_batched(
     model: LangSAM,
     images: Sequence[Union[str, Image.Image, np.ndarray]],
     tag: str,
     prefer_masks: bool = True,
     batch_size: int = 8,
     topn: int = 2,
-) -> List[List[List[int]]]:
+) -> List[List[tuple]]:
     """
-    Batched version of predict_bboxes_for_tag for faster throughput.
+    Batched: predict (bbox, mask) pairs for a tag over a list of images.
 
-    Processes images in chunks (batch_size) and calls model.predict on each chunk.
-
-    Returns: Same as predict_bboxes_for_tag.
+    Returns:
+        List of length len(images). Each element is a list of
+        (bbox_xywh: List[int], mask: np.ndarray|None) tuples.
     """
     images_pil = [_to_pil(im) for im in images]
     N = len(images_pil)
-    all_bboxes: List[List[List[int]]] = [[] for _ in range(N)]
+    all_pairs: List[List[tuple]] = [[] for _ in range(N)]
 
     def chunked(seq, n):
         for i in range(0, len(seq), n):
@@ -295,46 +344,137 @@ def predict_bboxes_for_tag_batched(
         try:
             results = model.predict(imgs_chunk, tags_chunk)
         except Exception:
-            # Fallback to per-image if batch call not supported
-            # Log the message that batch size or overflowed using single batch
             print(f"Probably batch size {batch_size} overflowed; using single image prediction.")
             for idx, im in enumerate(imgs_chunk, start=start):
                 single_res = model.predict([im], [tag])
-                img_bbs: List[List[int]] = []
+                img_pairs: List[tuple] = []
                 if isinstance(single_res, dict):
                     single_res = [single_res]
                 for res in single_res:
-                    img_bbs.extend(_extract_bboxes_from_result(res, im.size, prefer_masks))
-                all_bboxes[idx] = img_bbs
+                    img_pairs.extend(_extract_bboxes_and_masks_from_result(res, im.size, prefer_masks))
+                all_pairs[idx] = img_pairs
             continue
 
-        # Parse batch results. Common case: list of length == len(imgs_chunk)
         if isinstance(results, list) and len(results) == len(imgs_chunk):
             for off, (im, res_i) in enumerate(zip(imgs_chunk, results)):
-                img_bbs: List[List[int]] = []
+                img_pairs: List[tuple] = []
                 if isinstance(res_i, dict):
-                    img_bbs.extend(_extract_bboxes_from_result(res_i, im.size, prefer_masks))
+                    img_pairs.extend(_extract_bboxes_and_masks_from_result(res_i, im.size, prefer_masks))
                 elif isinstance(res_i, (list, tuple)):
                     for r in res_i:
                         if isinstance(r, dict):
-                            img_bbs.extend(_extract_bboxes_from_result(r, im.size, prefer_masks))
-                all_bboxes[start + off] = img_bbs
+                            img_pairs.extend(_extract_bboxes_and_masks_from_result(r, im.size, prefer_masks))
+                all_pairs[start + off] = img_pairs
         else:
-            # Unexpected shape; fallback per image for this chunk
             for idx, im in enumerate(imgs_chunk, start=start):
                 single_res = model.predict([im], [tag])
-                img_bbs: List[List[int]] = []
+                img_pairs: List[tuple] = []
                 if isinstance(single_res, dict):
                     single_res = [single_res]
                 for res in single_res:
-                    img_bbs.extend(_extract_bboxes_from_result(res, im.size, prefer_masks))
-                all_bboxes[idx] = img_bbs
+                    img_pairs.extend(_extract_bboxes_and_masks_from_result(res, im.size, prefer_masks))
+                all_pairs[idx] = img_pairs
 
-    return all_bboxes
+    return all_pairs
+
+
+def predict_bboxes_for_tag_batched(
+    model: LangSAM,
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    tag: str,
+    prefer_masks: bool = True,
+    batch_size: int = 8,
+    topn: int = 2,
+) -> List[List[List[int]]]:
+    """Legacy batched API: returns only bboxes."""
+    all_pairs = predict_bboxes_and_masks_for_tag_batched(
+        model, images, tag, prefer_masks, batch_size, topn
+    )
+    return [[bb for bb, _m in pairs] for pairs in all_pairs]
+
+
+# ---------------------------------------------------------------------------
+# Automatic (non-tag) segmentation via SAM2AutomaticMaskGenerator
+# ---------------------------------------------------------------------------
+
+def predict_all_masks_langsam(
+    model: LangSAM,
+    images: Sequence[Union[str, Image.Image, np.ndarray]],
+    topn: int = 10,
+    min_mask_area: int = 100,
+) -> List[List[tuple]]:
+    """Run automatic segmentation (no text prompt) using LangSAM's inner SAM2.
+
+    Uses SAM2AutomaticMaskGenerator to segment *everything* in the image.
+
+    Args:
+        model: LangSAM model instance (from load_langsam).
+        images: List of image paths, PIL Images, or numpy arrays.
+        topn: Maximum number of masks per image (sorted by area, largest first).
+        min_mask_area: Discard masks with fewer pixels than this.
+
+    Returns:
+        List of length len(images). Each element is a list of
+        (bbox_xywh: List[int], mask: np.ndarray bool H×W) tuples.
+    """
+    images_pil = [_to_pil(im) for im in images]
+    all_pairs: List[List[tuple]] = []
+
+    for img in images_pil:
+        W, H = img.size
+        img_np = np.asarray(img)  # HWC uint8 RGB
+
+        try:
+            # model.sam is the inner SAM object which has .generate()
+            raw_masks = model.sam.generate(img_np)
+        except Exception as e:
+            print(f"LangSAM automatic segmentation failed: {e}")
+            all_pairs.append([])
+            continue
+
+        # raw_masks is a list of dicts with keys: segmentation, bbox, area, ...
+        # Sort by area descending (largest first)
+        raw_masks.sort(key=lambda m: m.get("area", 0), reverse=True)
+
+        pairs: List[tuple] = []
+        for m in raw_masks:
+            seg = m.get("segmentation")
+            if seg is None:
+                continue
+            seg_np = _to_numpy(seg).astype(bool)
+            if seg_np.ndim > 2:
+                seg_np = seg_np.squeeze()
+            area = int(seg_np.sum())
+            if area < min_mask_area:
+                continue
+            # bbox from SAM2 is [x, y, w, h]
+            bbox = m.get("bbox")
+            if bbox is not None:
+                bbox_xywh = _clamp_bbox_xywh(
+                    float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]), W, H
+                )
+            else:
+                # Derive bbox from mask
+                ys, xs = np.where(seg_np)
+                bbox_xywh = _clamp_bbox_xywh(
+                    float(xs.min()), float(ys.min()),
+                    float(xs.max() - xs.min() + 1), float(ys.max() - ys.min() + 1),
+                    W, H,
+                )
+            pairs.append((bbox_xywh, seg_np))
+            if len(pairs) >= topn:
+                break
+
+        all_pairs.append(pairs)
+
+    return all_pairs
 
 
 __all__ = [
     "load_langsam",
     "predict_bboxes_for_tag",
     "predict_bboxes_for_tag_batched",
+    "predict_bboxes_and_masks_for_tag",
+    "predict_bboxes_and_masks_for_tag_batched",
+    "predict_all_masks_langsam",
 ]

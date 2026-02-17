@@ -100,6 +100,7 @@ This type of explanation is crucial for **debugging model behavior**, **understa
      pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
 
      pip install matplotlib
+     pip install streamlit
      ```
 
 ## ⚙️ Configuration

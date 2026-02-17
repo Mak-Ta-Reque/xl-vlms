@@ -96,6 +96,9 @@ def refine_ground_activations(
         )
         grounding_dict["analysis_model"] = concept_dict["analysis_model"]
         grounding_dict['image_grounding_paths'] = concept_dict.get('image_grounding_paths', [])
+        grounding_dict['image_grounding_bboxes'] = concept_dict.get('image_grounding_bboxes', [])
+        grounding_dict['image_grounding_masks'] = concept_dict.get('image_grounding_masks', [])
+        grounding_dict['image_grounding_predictions'] = concept_dict.get('image_grounding_predictions', [])
         results_dict.update(grounding_dict)
     return results_dict
 
