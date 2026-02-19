@@ -33,6 +33,8 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 sys.path.insert(0, str(PROJECT_ROOT / "inference"))
 sys.path.insert(0, str(_THIS_DIR))
 
+import torch
+
 from vis_utils import (
     MASK_COLORS,
     MASK_COLORS_HEX,
@@ -70,7 +72,7 @@ BBOX_COLORS_HEX: list[str] = [
 
 CLASSIFY_PROMPT = os.getenv(
     "CLASSIFY_PROMPT",
-    "Name only the main object or animal in each part of the image. "
+    "Name only the main objects in each part of the image. "
     "Answer with a short comma-separated list of single words, no descriptions.",
 )
 
@@ -158,6 +160,17 @@ footer, #MainMenu, header[data-testid="stHeader"] { display: none !important; }
 [data-testid="stFileUploader"] small { font-size: 0.7rem; }
 </style>
 """
+
+# ──────────────────────── concept file loader (debug) ─────────────────────
+
+@st.cache_resource
+def _load_concept_file_predictions() -> List:
+    """Load image_grounding_predictions from the concept .pth file."""
+    try:
+        data = torch.load(str(CONCEPT_PTH), map_location="cpu")
+        return data.get("image_grounding_predictions", [])
+    except Exception:
+        return []
 
 # ──────────────────────── spaCy noun extraction ──────────────────────────
 
@@ -465,6 +478,10 @@ def main() -> None:
     )
     st.markdown(COMPACT_CSS, unsafe_allow_html=True)
 
+    # Debug toggle in sidebar
+    with st.sidebar:
+        debug_mode = st.checkbox("Debug mode", value=False, key="_debug_mode")
+
     # Header
     st.markdown(
         '<div class="compact-header">'
@@ -618,6 +635,12 @@ def main() -> None:
     binary_result = st.session_state[cache_key]
     top_concepts = binary_result.get("top_concepts_over_sequence") or []
 
+    # Show model output in debug mode
+    if debug_mode:
+        _model_out = binary_result.get("model_output", "")
+        with st.expander(f"Model output for \u201c{selected}\u201d", expanded=False):
+            st.code(_model_out, language=None)
+
     # ── Concepts + prototypes for selected class (inline rows) ──
     st.markdown(
         f'<div class="section-label">Concepts for &ldquo;{selected}&rdquo;</div>',
@@ -634,6 +657,24 @@ def main() -> None:
         color_hex = MASK_COLORS_HEX[(rank - 1) % len(MASK_COLORS_HEX)]
         pct = f"{sim * 100:.1f}%"
 
+        # Extract concept name: concept_name is a list of identical values → use set to get single name
+        raw_cname = concept_info.get("concept_name")
+        if isinstance(raw_cname, (list, tuple)) and raw_cname:
+            concept_label = ", ".join(sorted(set(str(v) for v in raw_cname if v)))
+        elif isinstance(raw_cname, str) and raw_cname:
+            concept_label = raw_cname
+        else:
+            concept_label = ""
+
+        # Get predictions for this concept from the concept file
+        ci = concept_info.get("concept_index")
+        all_preds = _load_concept_file_predictions()
+        preds_list = []
+        if ci is not None and ci < len(all_preds):
+            preds_raw = all_preds[ci]
+            if isinstance(preds_raw, (list, tuple)):
+                preds_list = [str(p) for p in preds_raw]
+
         n_avail = get_num_prototypes(concept_info)
         n_protos = min(3, n_avail)
 
@@ -642,13 +683,49 @@ def main() -> None:
         cols = st.columns(col_sizes, gap="small")
 
         with cols[0]:
+            # Build concept name HTML (shown below concept tag + similarity)
+            cname_html = ""
+            if concept_label:
+                cname_html = (
+                    f'<div style="color:{color_hex}; font-size:0.8rem; font-weight:500; '
+                    f'margin-top:0.1rem; padding-left:0.2rem; text-transform:capitalize;">'
+                    f'{concept_label}</div>'
+                )
+            # Build predictions HTML (shown below concept name)
+            preds_html = ""
+            if preds_list:
+                pills = " ".join(
+                    f'<span style="display:inline-block; padding:0.05rem 0.35rem; '
+                    f'border-radius:4px; font-size:0.7rem; font-weight:600; margin:0.05rem; '
+                    f'background:{"#166534" if p.lower()=="yes" else "#7f1d1d"}; '
+                    f'color:{"#bbf7d0" if p.lower()=="yes" else "#fecaca"};">'
+                    f'{p}</span>'
+                    for p in preds_list
+                )
+                preds_html = (
+                    f'<div style="margin-top:0.1rem; padding-left:0.2rem; line-height:1.6;">'
+                    f'{pills}</div>'
+                )
             st.markdown(
                 f'<div class="concept-row" style="border-left-color:{color_hex};">'
                 f'<span class="name">{tg}</span>'
                 f'<span class="sim" style="color:{color_hex};">{pct}</span>'
-                f'</div>',
+                f'</div>'
+                f'{cname_html}'
+                f'{preds_html}',
                 unsafe_allow_html=True,
             )
+
+        # Debug: show image_grounding_predictions for this concept
+        if debug_mode:
+            if ci is not None and ci < len(all_preds):
+                with st.expander(f"Predictions for {tg} (idx={ci})", expanded=False):
+                    preds = all_preds[ci]
+                    if isinstance(preds, (list, tuple)):
+                        for pi_pred, p in enumerate(preds):
+                            st.text(f"{pi_pred}: {p}")
+                    else:
+                        st.text(str(preds))
 
         for pi in range(n_protos):
             rendered = render_prototype(

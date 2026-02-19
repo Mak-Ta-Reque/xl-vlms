@@ -20,10 +20,7 @@ def zca_whiten(X):
 
 def dominant_positive_index(lists):
     def is_positive_majority(sublist):
-        no_not = sum(
-            item.lower().startswith('no_') or item.lower().startswith('not_') or item.lower().startswith('unk') or item.lower().startswith('thing') or item.lower().startswith('nc') or  item.lower().startswith('no')
-            for item in sublist
-        )
+        no_not = sum(is_negative_prediction(item) for item in sublist)
         positive = len(sublist) - no_not
         return positive > no_not
 
@@ -31,52 +28,61 @@ def dominant_positive_index(lists):
     return indices[0] if len(indices) == 1 else None
 
 
+def is_negative_prediction(s):
+    """
+    Return True if a prediction string is a negative/unknown outcome.
+    Matches: exact 'no', or prefixes 'no_', 'not_', 'unk', 'thing', 'nc' (case-insensitive).
+    """
+    low = s.lower().strip()
+    return (
+        low == 'no'
+        or low.startswith('no_')
+        or low.startswith('not_')
+        or low.startswith('unk')
+        or low.startswith('thing')
+        or low.startswith('nc')
+    )
+
+
+def has_all_positive_predictions(predictions):
+    """
+    Return True only if ALL predictions in the list are positive
+    (none match the negative conditions).
+    """
+    if not predictions:
+        return False
+    return not any(is_negative_prediction(s) for s in predictions)
+
+
 def count_conditioned_items(sublist):
     """
-    Count items that start with the conditioned prefixes: no_, not_, unk, thing, nc (case-insensitive).
+    Count items that match the negative/unknown conditions (case-insensitive).
     """
-    return sum(
-        (s.lower().startswith('no_')
-         or s.lower().startswith('no')
-         or s.lower().startswith('not_')
-         or s.lower().startswith('unk')
-         or s.lower().startswith('thing')
-         or s.lower().startswith('nc'))
-        for s in sublist
-    )
+    return sum(is_negative_prediction(s) for s in sublist)
 
 
 def eligible_indices_by_threshold(lists):
     """
-    Given a list of lists, return indices i where the number of conditioned items in lists[i]
-    is strictly less than len(lists[0]) / 2, per user specification.
+    Given a list of lists of predictions, return indices where ALL predictions
+    are positive (none match the negative conditions).
 
-    Notes/assumptions:
-    - Uses length of lists[0] as denominator as requested.
-    - If lists is empty or lists[0] empty, returns [].
+    Only includes an index if every single prediction in lists[idx] is positive.
+    Returns list of eligible indices (can be empty if no concept qualifies).
     """
-    if not lists or not lists[0]:
+    if not lists:
         return []
 
-    #threshold = 50 * len(lists[0]) / 100
-    threshold = 10 * len(lists[0]) / 100
-
-    # Count conditioned items per sublist
-    counts = [count_conditioned_items(sub) for sub in lists]
-    # Filter indices that satisfy the threshold, keep (index, count)
-    eligible = [(i, c) for i, c in enumerate(counts) if c < threshold]
-    # Sort by ascending count (fewest conditioned items first) and return top-2 indices
-    eligible_sorted = sorted(eligible, key=lambda x: x[1])
-    return [i for i, _ in eligible_sorted[:1]]
+    return [i for i, preds in enumerate(lists) if has_all_positive_predictions(preds)]
 
 
 
 
 def combine_concepts(input_dir):
-    pth_files = [f for f in os.listdir(input_dir) if f.endswith('.pth')]
+    pth_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.pth')])
 
     combined_data = {
         'concepts': [],
+        'concept_names': [],
         'activations': [],
         'decomposition_method': None,
         'text_grounding': [],
@@ -89,22 +95,52 @@ def combine_concepts(input_dir):
 
     concepts = []
     activations = []
-    print(f"Loaded {len(pth_files)} .pth files from {input_dir}")
+
+    # ── Tracking stats ──
+    total_files = len(pth_files)
+    total_concepts_seen = 0
+    total_concepts_included = 0
+    total_concepts_skipped = 0
+    files_fully_skipped = 0
+
+    print(f"\n{'='*60}")
+    print(f"Combine Concepts: loaded {total_files} .pth files from {input_dir}")
+    print(f"{'='*60}")
+
     for filename in pth_files:
         filepath = os.path.join(input_dir, filename)
         model_data = torch.load(filepath)
         image_grounding_path = model_data['image_grounding_paths']
         image_grounding_predictions = model_data.get('image_grounding_predictions', None)
-        
-        # Eligible indices: conditioned count < len(list[0]) / 2
+
+        n_concepts_in_file = len(image_grounding_predictions) if image_grounding_predictions else 0
+        total_concepts_seen += n_concepts_in_file
+
+        # Only include concepts where ALL predictions are positive
         eligible = eligible_indices_by_threshold(image_grounding_predictions)
-        
-        # If none eligible, fallback to index with minimal conditioned count
+        n_skipped = n_concepts_in_file - len(eligible)
+
+        # Log per-file details
+        print(f"\n  File: {filename}  ({n_concepts_in_file} concepts)")
+        for c_idx in range(n_concepts_in_file):
+            preds = image_grounding_predictions[c_idx] if image_grounding_predictions else []
+            neg_items = [p for p in preds if is_negative_prediction(p)]
+            status = "INCLUDED" if c_idx in eligible else "SKIPPED"
+            if neg_items:
+                print(f"    concept {c_idx}: {status} -- negative predictions: {neg_items}")
+            else:
+                print(f"    concept {c_idx}: {status} -- all positive")
+
+        total_concepts_skipped += n_skipped
+
+        # Skip this file if no concept has all-positive predictions
         if len(eligible) < 1:
-            #continue
-            counts = [count_conditioned_items(sub) for sub in image_grounding_path]
-            min_idx = int(np.argmin(counts)) if counts else 0
-            eligible = [min_idx]
+            files_fully_skipped += 1
+            print(f"    >> FILE SKIPPED (0/{n_concepts_in_file} concepts eligible)")
+            continue
+
+        total_concepts_included += len(eligible)
+        print(f"    >> {len(eligible)}/{n_concepts_in_file} concepts eligible")
 
         # Append each eligible index
         for idx in eligible:
@@ -112,6 +148,7 @@ def combine_concepts(input_dir):
             activations.append(model_data['activations'][:, idx])
             combined_data['text_grounding'].append(model_data['text_grounding'][idx])
             combined_data['image_grounding_paths'].append(image_grounding_path[idx])
+            combined_data['concept_names'].append(model_data['image_concept_names'][idx])
             combined_data['analysis_model'].append(model_data['analysis_model'])
             combined_data['image_grounding_predictions'].append(model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None)
             combined_data['image_grounding_bboxes'].append(model_data.get('image_grounding_bboxes', [])[idx] if idx < len(model_data.get('image_grounding_bboxes', [])) else None)
@@ -119,6 +156,25 @@ def combine_concepts(input_dir):
             ig_masks = model_data.get('image_grounding_masks', [])
             combined_data['image_grounding_masks'].append(ig_masks[idx] if idx < len(ig_masks) else None)
         combined_data['decomposition_method'] = model_data['decomposition_method']
+
+    # ── Summary ──
+    print(f"\n{'='*60}")
+    print(f"COMBINE CONCEPTS SUMMARY")
+    print(f"  Files processed:        {total_files}")
+    print(f"  Files fully skipped:    {files_fully_skipped}")
+    print(f"  Total concepts seen:    {total_concepts_seen}")
+    print(f"  Concepts included:      {total_concepts_included}")
+    print(f"  Concepts skipped:       {total_concepts_skipped}  (had negative predictions)")
+    if total_concepts_seen > 0:
+        pct = 100 * total_concepts_skipped / total_concepts_seen
+        print(f"  Skip rate:              {pct:.1f}%")
+    print(f"{'='*60}\n")
+
+    if not concepts:
+        print("WARNING: No concepts with all-positive predictions found in any file.")
+        combined_data['concepts'] = torch.empty(0)
+        combined_data['activations'] = []
+        return combined_data
 
     combined_data['concepts'] = torch.stack(concepts, dim=0)
     combined_data['activations'] = activations

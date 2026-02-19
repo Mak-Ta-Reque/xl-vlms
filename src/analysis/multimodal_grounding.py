@@ -148,6 +148,7 @@ def get_multimodal_grounding(
             num_images_per_concept=num_most_activating_samples,
         )
         image_paths = metadata.get("image", [])
+        concept_names = metadata.get("concept", [])
         concept_bbox = metadata.get("bbox", [])
         concept_seg_mask_rle = metadata.get("seg_mask_rle", [])
         predictions = metadata.get("model_predictions", [])
@@ -169,6 +170,7 @@ def get_multimodal_grounding(
             ]
 
         all_concept_image_paths = []
+        all_concept_names = []
         all_concept_predictions = []
         all_concept_bbox = []
         all_concept_seg_masks = []
@@ -179,7 +181,11 @@ def get_multimodal_grounding(
                 image_paths[concept_indices[k]] for k in range(len(concept_indices))
             ]
             all_concept_image_paths.append(concept_image_paths)
-        
+            concept_image_names = [
+                concept_names[concept_indices[k]] for k in range(len(concept_indices))
+            ]
+            all_concept_names.append(concept_image_names)
+
             concept_predictions = [
                 predictions[concept_indices[k]] for k in range(len(concept_indices))
             ]
@@ -219,7 +225,7 @@ def get_multimodal_grounding(
         grounding_dict["image_grounding_bboxes"] = all_concept_bbox
         grounding_dict["image_grounding_masks"] = all_concept_seg_masks
         grounding_dict["image_grounding_is_concept"] = all_concept_is_concept
-
+        grounding_dict["image_concept_names"] = all_concept_names
     grounding_dict["concepts"] = concepts
     grounding_dict["activations"] = activations
 

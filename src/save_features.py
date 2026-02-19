@@ -46,7 +46,7 @@ def inference(
         texts = item["text"] if isinstance(item["text"], list) else [item["text"]]
         # Replace placeholder [concept] with --token_of_interest value if provided
         toi = getattr(args, "token_of_interest", None)
-        if toi is not None and "cgdl" in getattr(args, "prompt_template", None):
+        if toi is not None and getattr(args, "prompt_template", None) in ["cgdl", "yn"]:
             toi_str = str(toi).strip()
             texts = [t.replace("[concept]", toi_str) if isinstance(t, str) else t for t in texts]
         item["text"] = texts
@@ -404,7 +404,7 @@ def inference(
             item["model_output"] = out
         # Keep using `out` locally for subsequent computations
 
-
+        item["concept_name"] = toi_str
         # Compute per-sample input lengths (no attention mask): first pad or full length
         pad_id = getattr(model_class.get_tokenizer(), "pad_token_id", 0) or 0
         input_ids_tensor = inputs["input_ids"]

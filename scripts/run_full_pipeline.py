@@ -224,6 +224,8 @@ def _run_python_subprocess(script_args: List[str], env_overrides: dict = None,
     
     This prevents CUDA OOM when consecutive pipeline steps each need the full
     GPU memory (e.g. Step 3 generate features → Step 4 decompose features).
+    Captures stdout/stderr and relays through the pipeline logger so that
+    combine_concepts skip summaries (and other subprocess output) appear in logs.
     """
     env = os.environ.copy()
     if env_overrides:
@@ -233,7 +235,19 @@ def _run_python_subprocess(script_args: List[str], env_overrides: dict = None,
     if logger:
         logger.debug(f"Subprocess: {' '.join(cmd)}")
     
-    proc = subprocess.run(cmd, env=env, cwd=str(ROOT_DIR))
+    proc = subprocess.run(
+        cmd, env=env, cwd=str(ROOT_DIR),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+
+    # Relay subprocess output through logger
+    if proc.stdout:
+        for line in proc.stdout.splitlines():
+            if logger:
+                logger.info(f"  [sub] {line}")
+            else:
+                print(line)
+
     if proc.returncode != 0:
         raise RuntimeError(
             f"Subprocess failed (exit {proc.returncode}): {' '.join(cmd)}"

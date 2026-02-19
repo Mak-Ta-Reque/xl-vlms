@@ -267,7 +267,7 @@ class JSONDataset(ImageTextDataset):
 
         # Try to load annotations if a JSON path is provided
         annotation_json_path = _resolve_json_path()
-        if annotation_json_path.endswith(".json") and os.path.isfile(annotation_json_path) and self.prompt_template == "cgdl" :
+        if annotation_json_path.endswith(".json") and os.path.isfile(annotation_json_path) and self.prompt_template in ["cgdl", "yn"]:
             with open(annotation_json_path, "r") as f:
                 annotations = json.load(f)
 
