@@ -42,3 +42,4 @@ data/train
 dtd
 models/
 yolo11x-seg.pt
+/api/temp_images

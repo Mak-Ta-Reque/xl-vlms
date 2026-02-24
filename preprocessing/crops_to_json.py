@@ -245,7 +245,7 @@ def detect_concept_masks(
     detector: str,
     model,
     batch_size: int = 2,
-    concept_masks_per_image: int = 1,
+    concept_masks_per_image: int = 5,
 ) -> List[List[Tuple[List[int], Any]]]:
     """Run text-prompted detection for *tag* and return top masks per image.
 
@@ -506,6 +506,7 @@ def process_mapping(
     seed: Optional[int] = None,
     verbose: bool = False,
     show_progress: bool = True,
+    positive_negative_segment: bool = False,
 ):
     """Process a tag->images mapping and write a crops JSON with RLE masks.
 
@@ -515,9 +516,31 @@ def process_mapping(
       2. Fill remaining slots (up to ``masks_per_image``) with prompt-free
          automatic masks.
       3. Subtract concept mask area from auto masks so they don't overlap.
+
+    When ``positive_negative_segment=True``:
+      - All detected concept instances are unioned into a single FG mask.
+      - An inverted copy becomes the "background" mask.
+      - Exactly 2 masks per image: [concept (fg), inverted (bg)].
+      - ``masks_per_image`` is forced to 2.
     """
     if seed is not None:
         random.seed(seed)
+
+    # --- Override masks_per_image for binary segmentation mode ---
+    # In pos/neg mode the output is always 2 masks: 1 fg (union of all
+    # instances) + 1 bg (inverse).  concept_masks_per_image stays 1
+    # (= "1 foreground segment"); a separate _detect_topn controls how
+    # many instances we fetch from the detector so the union can merge
+    # all of them.
+    _detect_topn: int = concept_masks_per_image     # default: same as output
+    if positive_negative_segment:
+        masks_per_image = 2
+        concept_masks_per_image = 1
+        _detect_topn = 10   # fetch up to 10 instances for union
+        print(f"[positive_negative_segment] Binary fg/bg mode: "
+              f"masks_per_image forced to {masks_per_image}, "
+              f"concept_masks_per_image={concept_masks_per_image} "
+              f"(detect_topn={_detect_topn}, all instances will be unioned)")
 
     mapping = load_mapping(mapping_json)
 
@@ -556,9 +579,17 @@ def process_mapping(
           f"(detector={detector}, masks_per_image={masks_per_image}, concept={concept_masks_per_image})")
 
     pbar = tqdm(total=total_images, desc="Segmenting", unit="img",
-                disable=not (show_progress and TQDM_AVAILABLE)) if TQDM_AVAILABLE else None
+                disable=not (show_progress and TQDM_AVAILABLE),
+                file=sys.stderr) if TQDM_AVAILABLE else None
 
-    for tag, rels in valid_tags:
+    # Tag-level progress bar (concepts segmented / remaining)
+    tag_pbar = tqdm(total=len(valid_tags), desc="Tags", unit="tag",
+                    disable=not (show_progress and TQDM_AVAILABLE),
+                    file=sys.stderr, leave=True) if TQDM_AVAILABLE else None
+
+    for tag_idx, (tag, rels) in enumerate(valid_tags):
+        if tag_pbar:
+            tag_pbar.set_postfix(current=tag[:20], remaining=len(valid_tags) - tag_idx)
         tag_bucket: Dict[str, dict] = result.setdefault(tag, {})
 
         # Resolve absolute paths and filter already-done
@@ -603,11 +634,13 @@ def process_mapping(
                 sizes.append((w, h))
 
             # --- 1. Concept masks (text-prompted, batched) ---
+            # In pos/neg mode _detect_topn > concept_masks_per_image so
+            # all instances are returned for the union step.
             try:
                 concept_per_img = detect_concept_masks(
                     pil_images, tag=tag, detector=detector, model=model,
                     batch_size=batch_size,
-                    concept_masks_per_image=concept_masks_per_image,
+                    concept_masks_per_image=_detect_topn,
                 )
             except Exception as e:
                 print(f"Warning: concept detection failed for tag='{tag}': {e}")
@@ -615,47 +648,147 @@ def process_mapping(
 
             _cleanup_gpu()
 
-            # --- 2. Auto masks (prompt-free, per image) ---
-            auto_topn = max(masks_per_image * 2, 20)  # fetch extra, will be filtered
-            try:
-                auto_per_img = detect_auto_masks(
-                    pil_images, detector=detector, model=model,
-                    topn=auto_topn, min_mask_area=100,
-                )
-            except Exception as e:
-                print(f"Warning: auto segmentation failed for tag='{tag}': {e}")
-                auto_per_img = [[] for _ in pil_images]
+            # --- 2. Auto masks or binary fg/bg split ---
+            if positive_negative_segment:
+                # Binary mode: no auto masks needed.  For each image,
+                # union all concept instances into one mask, then create
+                # an inverted copy as the "background" mask.
+                # Dilation/erosion via MASK_BOUNDARY_PIXELS is applied
+                # later at inference time (save_features.py) so the
+                # stored masks stay canonical.
+                import numpy as np
+                auto_per_img = [[] for _ in pil_images]  # unused
 
-            _cleanup_gpu()
+                for i, (rel, _) in enumerate(chunk):
+                    cp = concept_per_img[i] if i < len(concept_per_img) else []
 
-            # --- 3. Combine, subtract, record ---
-            for i, (rel, _) in enumerate(chunk):
-                cp = concept_per_img[i] if i < len(concept_per_img) else []
-                ap = auto_per_img[i] if i < len(auto_per_img) else []
+                    if len(cp) == 0:
+                        # No concept mask detected — record empty
+                        _record_for_image(
+                            tag_bucket, rel, sizes[i], patch_size, [], 0,
+                        )
+                        if pbar:
+                            pbar.update(1)
+                            pbar.set_postfix(tag=tag[:12], masks=0, concept=0, mode="pos_neg")
+                        continue
 
-                pairs, n_concept = _build_masks_for_image(
-                    cp, ap,
-                    masks_per_image=masks_per_image,
-                    concept_masks_per_image=concept_masks_per_image,
-                )
+                    # --- Union all detected concept instances into one mask ---
+                    union_mask = None
+                    for _bbox_c, _mask_c in cp:
+                        if _mask_c is None:
+                            continue
+                        if union_mask is None:
+                            union_mask = _mask_c.copy()
+                        else:
+                            # Handle potential shape mismatch between instances
+                            if union_mask.shape != _mask_c.shape:
+                                from PIL import Image as _Img
+                                h, w = union_mask.shape
+                                _mask_c = np.array(
+                                    _Img.fromarray(_mask_c.astype(np.uint8) * 255).resize((w, h), _Img.NEAREST)
+                                ) > 127
+                            union_mask = union_mask | _mask_c
 
-                _record_for_image(
-                    tag_bucket, rel, sizes[i], patch_size, pairs, n_concept,
-                )
+                    if union_mask is None:
+                        _record_for_image(
+                            tag_bucket, rel, sizes[i], patch_size, [], 0,
+                        )
+                        if pbar:
+                            pbar.update(1)
+                        continue
 
-                if pbar:
-                    pbar.update(1)
-                    pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=n_concept)
+                    mask_fg = union_mask
+
+                    # Compute FG bbox from union mask
+                    ys_fg, xs_fg = np.where(mask_fg)
+                    if len(ys_fg) == 0:
+                        _record_for_image(
+                            tag_bucket, rel, sizes[i], patch_size, [], 0,
+                        )
+                        if pbar:
+                            pbar.update(1)
+                        continue
+                    bbox_fg = [
+                        int(xs_fg.min()), int(ys_fg.min()),
+                        int(xs_fg.max() - xs_fg.min() + 1),
+                        int(ys_fg.max() - ys_fg.min() + 1),
+                    ]
+
+                    # Create inverted mask (background)
+                    mask_bg = ~mask_fg
+                    ys_bg, xs_bg = np.where(mask_bg)
+                    if len(ys_bg) == 0:
+                        # Concept mask covers entire image — only fg
+                        pairs = [(bbox_fg, mask_fg)]
+                        n_concept = 1
+                    else:
+                        bbox_bg = [
+                            int(xs_bg.min()), int(ys_bg.min()),
+                            int(xs_bg.max() - xs_bg.min() + 1),
+                            int(ys_bg.max() - ys_bg.min() + 1),
+                        ]
+                        # pairs: [foreground (concept), background (inverted)]
+                        pairs = [(bbox_fg, mask_fg), (bbox_bg, mask_bg)]
+                        n_concept = 1
+
+                    _record_for_image(
+                        tag_bucket, rel, sizes[i], patch_size, pairs, n_concept,
+                    )
+
+                    if pbar:
+                        pbar.update(1)
+                        pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=n_concept, mode="pos_neg")
+            else:
+                # --- Standard multi-mask mode ---
+                auto_topn = max(masks_per_image * 2, 20)  # fetch extra, will be filtered
+                try:
+                    auto_per_img = detect_auto_masks(
+                        pil_images, detector=detector, model=model,
+                        topn=auto_topn, min_mask_area=100,
+                    )
+                except Exception as e:
+                    print(f"Warning: auto segmentation failed for tag='{tag}': {e}")
+                    auto_per_img = [[] for _ in pil_images]
+
+                _cleanup_gpu()
+
+                # --- 3. Combine, subtract, record ---
+                for i, (rel, _) in enumerate(chunk):
+                    cp = concept_per_img[i] if i < len(concept_per_img) else []
+                    ap = auto_per_img[i] if i < len(auto_per_img) else []
+
+                    pairs, n_concept = _build_masks_for_image(
+                        cp, ap,
+                        masks_per_image=masks_per_image,
+                        concept_masks_per_image=concept_masks_per_image,
+                    )
+
+                    _record_for_image(
+                        tag_bucket, rel, sizes[i], patch_size, pairs, n_concept,
+                    )
+
+                    if pbar:
+                        pbar.update(1)
+                        pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=n_concept)
 
             # Free chunk images + results before next chunk
-            del pil_images, concept_per_img, auto_per_img
+            del pil_images, concept_per_img
+            try:
+                del auto_per_img
+            except NameError:
+                pass
             _cleanup_gpu()
 
         # Flush after each tag
         _atomic_write_json(output_json, result)
 
+        if tag_pbar:
+            tag_pbar.update(1)
+
     if pbar:
         pbar.close()
+    if tag_pbar:
+        tag_pbar.close()
 
     # Final summary
     total_tags_out = len(result)
@@ -682,7 +815,7 @@ def main():
                         help="Segmentation model (default: sam3)")
     parser.add_argument("--masks_per_image", type=int, default=5,
                         help="Total masks per image (concept + auto)")
-    parser.add_argument("--concept_masks_per_image", type=int, default=1,
+    parser.add_argument("--concept_masks_per_image", type=int, default=5,
                         help="Number of concept (text-prompted) masks per image")
     parser.add_argument("--min_images_per_tag", type=int, default=5,
                         help="Skip tags with fewer images than this")
@@ -703,8 +836,20 @@ def main():
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--no-progress", action="store_true",
                         help="Disable progress bars")
+    parser.add_argument("--positive_negative_segment", type=int, default=0,
+                        help="1 = binary fg/bg masks (concept + inverted), "
+                             "0 = multi-mask pipeline (default: 0, reads "
+                             "POSITIVE_NEGATIVE_SEGMENT env var as fallback)")
 
     args = parser.parse_args()
+
+    # Resolve positive_negative_segment: CLI wins, then env var
+    pos_neg = args.positive_negative_segment
+    if pos_neg == 0:
+        pos_neg = int(os.environ.get(
+            "POSITIVE_NEGATIVE_SEGMENT",
+            os.environ.get("POSITIVE_NEGATVE_SEGMENT", "0"),
+        ))
 
     process_mapping(
         mapping_json=args.mapping_json,
@@ -723,6 +868,7 @@ def main():
         seed=args.seed,
         verbose=args.verbose,
         show_progress=not getattr(args, "no_progress", False),
+        positive_negative_segment=bool(pos_neg),
     )
 
 

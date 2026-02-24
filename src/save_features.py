@@ -16,6 +16,83 @@ from models import get_model_class
 from models.image_text_model import ImageTextModel
 from helpers.logger import log_num_transformer_layers
 
+
+# ---------------------------------------------------------------------------
+# Background masking helper — replaces pixels outside the segment mask
+# ---------------------------------------------------------------------------
+
+def _apply_background_masking(
+    crop_img: Image.Image,
+    crop_mask_np,  # bool ndarray (H, W)
+    method: str = "gaussian_blur",
+    blur_radius: int = 15,
+) -> Image.Image:
+    """Apply background masking to a cropped image.
+
+    Args:
+        crop_img:      PIL RGB image (the tight-bbox crop).
+        crop_mask_np:  Boolean numpy array, True = foreground (keep sharp).
+        method:        One of ``'gaussian_blur'``, ``'ns'`` (Navier-Stokes
+                       inpainting), ``'telea'`` (Telea inpainting),
+                       ``'noisy_linear'`` (sparse linear interpolation),
+                       or ``'blackout'`` (zero-fill).
+        blur_radius:   Radius for Gaussian blur *or* inpainting radius.
+
+    Returns:
+        PIL RGB image with background masked according to *method*.
+    """
+    import numpy as np
+    from PIL import ImageFilter
+
+    crop_mask_pil = Image.fromarray(
+        crop_mask_np.astype("uint8") * 255, mode="L"
+    )
+
+    if method == "gaussian_blur":
+        blurred = crop_img.filter(
+            ImageFilter.GaussianBlur(radius=blur_radius)
+        )
+        return Image.composite(crop_img, blurred, crop_mask_pil)
+
+    elif method in ("ns", "telea"):
+        # OpenCV Navier-Stokes or Telea inpainting
+        import cv2
+
+        img_array = np.array(crop_img)  # RGB uint8 (H, W, 3)
+        # Inpainting mask: 255 where we want to inpaint (i.e. outside fg)
+        inpaint_mask = (~crop_mask_np).astype("uint8") * 255
+        flag = cv2.INPAINT_NS if method == "ns" else cv2.INPAINT_TELEA
+        # cv2.inpaint expects BGR input
+        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        inpainted_bgr = cv2.inpaint(
+            img_bgr, inpaint_mask,
+            inpaintRadius=max(3, blur_radius // 5),
+            flags=flag,
+        )
+        inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
+        # Composite: keep original foreground pixels, use inpainted for bg
+        inpainted_pil = Image.fromarray(inpainted_rgb)
+        return Image.composite(crop_img, inpainted_pil, crop_mask_pil)
+
+    elif method == "noisy_linear":
+        # Noisy linear imputation (Rong et al. / ROAD framework)
+        from imputers import noisy_linear_inpaint
+
+        inpainted_pil = noisy_linear_inpaint(crop_img, crop_mask_np, noise=0.01)
+        # Composite: keep original fg sharp, use imputed values for bg
+        return Image.composite(crop_img, inpainted_pil, crop_mask_pil)
+
+    elif method == "blackout":
+        black = Image.new("RGB", crop_img.size, (0, 0, 0))
+        return Image.composite(crop_img, black, crop_mask_pil)
+
+    else:
+        # Unknown method — fall back to Gaussian blur
+        blurred = crop_img.filter(
+            ImageFilter.GaussianBlur(radius=blur_radius)
+        )
+        return Image.composite(crop_img, blurred, crop_mask_pil)
+
 @torch.no_grad()
 def inference(
     loader: Callable,
@@ -59,6 +136,16 @@ def inference(
 
         # Load blur radius from env (default 15)
         _blur_radius = int(os.environ.get("MASK_BLUR_RADIUS", "15"))
+
+        # Background masking method: 'gaussian_blur', 'ns', 'telea', 'noisy_linear', 'blackout'
+        _inpainting_method = os.environ.get(
+            "INPAINTING_METHOD",
+            os.environ.get("IMPAINING_METHOD", "gaussian_blur"),
+        )
+
+        # BG-specific overrides (used when mask is_concept == False)
+        _blur_radius_bg = int(os.environ.get("MASK_BLUR_RADIUS_BG", str(_blur_radius)))
+        _inpainting_method_bg = os.environ.get("INPAINTING_METHOD_BG", _inpainting_method)
 
         # Debug: save VLM input images (blurred full + final crop) to disk
         _debug_save = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "0") == "1"
@@ -142,6 +229,12 @@ def inference(
         # Context pixels beyond the mask boundary to keep for spatial context
         _context_pixels = int(os.environ.get("MASK_CONTEXT_PIXELS", "10"))
 
+        # Mask boundary pixels: dilate FG mask / erode BG mask by N pixels
+        # at inference time.  Applied on the cropped mask region so the
+        # morphological op only touches pixels inside the image, never
+        # fabricates pixels beyond the image boundary.
+        _boundary_pixels = int(os.environ.get("MASK_BOUNDARY_PIXELS", "0"))
+
         for idx in range(len(image_paths)):
             img_ref = image_paths[idx]
             bbox = per_image_bboxes[idx]
@@ -155,16 +248,21 @@ def inference(
             # Pipeline:
             #   1. Decode RLE mask
             #   2. Find tight bounding box of the mask
-            #   3. Expand bbox by MASK_CONTEXT_PIXELS for spatial context
+            #   3. Expand bbox by MASK_CONTEXT_PIXELS (fg) or
+            #      MASK_CONTEXT_PIXELS_BG (bg) for spatial context
             #   4. Crop image + mask to expanded bbox
-            #   5. Blur outside mask WITHIN the crop (sharp segment, blurred bg)
+            #   5. Inpaint outside mask WITHIN the crop
             #   6. Resize crop to patch_size × patch_size
             #   7. Pass resized crop to VLM
             #   8. Save debug images when DEBUG_SAVE_VLM_INPUTS=1
             # ================================================================
             if mask_rle is not None and isinstance(mask_rle, dict):
+                # Select masking parameters based on fg / bg role
+                _eff_blur     = _blur_radius        if _is_concept else _blur_radius_bg
+                _eff_method   = _inpainting_method  if _is_concept else _inpainting_method_bg
+
                 if logger and idx == 0:
-                    logger.info(f"[mask-centric] batch {i}, idx {idx}: mask_rle keys={list(mask_rle.keys())}, blur={_blur_radius}, ctx={_context_pixels}, patch={_ps}, debug={_debug_save}")
+                    logger.info(f"[mask-centric] batch {i}, idx {idx}: is_concept={_is_concept}, mask_rle keys={list(mask_rle.keys())}, blur={_eff_blur}, method={_eff_method}, ctx={_context_pixels}, boundary={_boundary_pixels}, patch={_ps}, debug={_debug_save}")
                 img = Image.open(img_ref).convert("RGB") if not isinstance(img_ref, Image.Image) else img_ref
 
                 # Resize to virtual size if specified
@@ -186,15 +284,11 @@ def inference(
                     from PIL import ImageFilter
 
                     mask_np = decode_mask_rle(mask_rle)  # bool (H, W)
-                    # Safety: invert non-concept masks that cover >50% of
-                    # the image (background masks from point-grid auto
-                    # segmentation).  Concept masks keep their original
-                    # polarity because text-prompted detection is correct
-                    # even for large segments (ground, sky, water, etc.).
-                    if not _is_concept:
-                        _total_px = mask_np.shape[0] * mask_np.shape[1]
-                        if _total_px > 0 and mask_np.sum() / _total_px > 0.50:
-                            mask_np = ~mask_np
+                    # Mask polarity is already normalised in
+                    # crops_to_json.py (_normalize_mask_polarity /
+                    # positive_negative_segment).  No alteration here —
+                    # save_features uses masks exactly as produced.
+
                     # Resize mask to image size if needed
                     if mask_np.shape != (H, W):
                         mask_pil = Image.fromarray(mask_np.astype("uint8") * 255, mode="L")
@@ -210,34 +304,74 @@ def inference(
                     mx1, my1 = int(xs.min()), int(ys.min())
                     mx2, my2 = int(xs.max()) + 1, int(ys.max()) + 1
 
-                    # Step 3: Expand bbox by context buffer
-                    cx1 = _clip(mx1 - _context_pixels, 0, W)
-                    cy1 = _clip(my1 - _context_pixels, 0, H)
-                    cx2 = _clip(mx2 + _context_pixels, 0, W)
-                    cy2 = _clip(my2 + _context_pixels, 0, H)
+                    # Step 3: Expand bbox by context + boundary pixels
+                    # so that dilated FG mask still fits inside the crop.
+                    _crop_pad = max(max(_context_pixels, 0), _boundary_pixels)
+                    cx1 = _clip(mx1 - _crop_pad, 0, W)
+                    cy1 = _clip(my1 - _crop_pad, 0, H)
+                    cx2 = _clip(mx2 + _crop_pad, 0, W)
+                    cy2 = _clip(my2 + _crop_pad, 0, H)
 
                     # Step 4: Crop image and mask to expanded bbox
                     crop_img = img.crop((cx1, cy1, cx2, cy2))
                     crop_mask = mask_np[cy1:cy2, cx1:cx2]
 
-                    # Step 5: Blur outside mask within the crop
-                    if _blur_radius > 0:
-                        blurred_crop = crop_img.filter(
-                            ImageFilter.GaussianBlur(radius=_blur_radius)
+                    # Step 4b: Apply MASK_BOUNDARY_PIXELS morphological op.
+                    # FG (is_concept=True)  → dilate: expand the sharp
+                    #     foreground region so a ring of real surrounding
+                    #     pixels is kept — gives the VLM spatial context.
+                    # BG (is_concept=False) → erode: shrink the sharp
+                    #     background region inward so boundary pixels
+                    #     near the object edge are removed — prevents
+                    #     the object silhouette from leaking into the
+                    #     background view.
+                    # Operates on the *cropped* mask so it only uses
+                    # pixels that exist inside the image.
+                    if _boundary_pixels > 0:
+                        _struct = np.ones(
+                            (2 * _boundary_pixels + 1,
+                             2 * _boundary_pixels + 1), dtype=bool,
                         )
-                        crop_mask_pil = Image.fromarray(
-                            crop_mask.astype("uint8") * 255, mode="L"
+                        if _is_concept:
+                            from scipy.ndimage import binary_dilation
+                            crop_mask = binary_dilation(
+                                crop_mask, structure=_struct, iterations=1,
+                            ).astype(bool)
+                        else:
+                            from scipy.ndimage import binary_erosion
+                            eroded = binary_erosion(
+                                crop_mask, structure=_struct, iterations=1,
+                            )
+                            # Guard: if erosion empties the mask keep original
+                            if eroded is not None and eroded.any():
+                                crop_mask = eroded.astype(bool)
+
+                    # Step 5: Mask outside the segment within the crop
+                    # using the role-appropriate method & radius.
+                    if _eff_blur > 0 or _eff_method != "gaussian_blur":
+                        vlm_img = _apply_background_masking(
+                            crop_img, crop_mask,
+                            method=_eff_method,
+                            blur_radius=_eff_blur,
                         )
-                        vlm_img = Image.composite(crop_img, blurred_crop, crop_mask_pil)
                     else:
                         vlm_img = crop_img
 
-                    # Step 6: Resize to patch_size × patch_size
+                    # Step 6: Resize to patch_size keeping aspect ratio,
+                    # pad remaining space with white pixels.
                     if _ps is not None and _ps > 0:
                         _resample = getattr(
                             getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC
                         )
-                        vlm_img = vlm_img.resize((_ps, _ps), resample=_resample)
+                        cw, ch = vlm_img.size
+                        scale = min(_ps / cw, _ps / ch)
+                        new_w = max(1, int(round(cw * scale)))
+                        new_h = max(1, int(round(ch * scale)))
+                        vlm_img = vlm_img.resize((new_w, new_h), resample=_resample)
+                        if new_w != _ps or new_h != _ps:
+                            padded = Image.new("RGB", (_ps, _ps), (255, 255, 255))
+                            padded.paste(vlm_img, ((_ps - new_w) // 2, (_ps - new_h) // 2))
+                            vlm_img = padded
 
                 except Exception as _mask_exc:
                     # Mask decode failed — fall back to full image (no blur)
@@ -254,8 +388,10 @@ def inference(
                         _tag = getattr(args, "token_of_interest", "unknown")
                         _tag_dir = os.path.join(_debug_dir, str(_tag))
                         os.makedirs(_tag_dir, exist_ok=True)
+                        # Label: fg (concept) vs bg (background) for clarity
+                        _role = "fg" if _is_concept else "bg"
                         vlm_img.save(os.path.join(
-                            _tag_dir, f"{_img_name}_mask_vlm_input.jpg"
+                            _tag_dir, f"{_img_name}_{_role}_vlm_input.jpg"
                         ), quality=90)
                         # Save the raw binary mask (cropped region) so we can inspect it
                         try:
@@ -263,8 +399,21 @@ def inference(
                                 crop_mask.astype("uint8") * 255, mode="L"
                             )
                             mask_vis.save(os.path.join(
-                                _tag_dir, f"{_img_name}_mask_binary.png"
+                                _tag_dir, f"{_img_name}_{_role}_mask_binary.png"
                             ))
+                        except Exception:
+                            pass
+                        # Save a metadata text file with masking info
+                        try:
+                            with open(os.path.join(
+                                _tag_dir, f"{_img_name}_{_role}_mask_method.txt"
+                            ), "w") as _mf:
+                                _mf.write(f"method={_eff_method}\n")
+                                _mf.write(f"blur_radius={_eff_blur}\n")
+                                _mf.write(f"context_pixels={_context_pixels}\n")
+                                _mf.write(f"boundary_pixels={_boundary_pixels}\n")
+                                _mf.write(f"is_concept={_is_concept}\n")
+                                _mf.write(f"role={_role}\n")
                         except Exception:
                             pass
                     except Exception:
@@ -305,7 +454,15 @@ def inference(
 
                 if _ps is not None and _ps > 0:
                     _resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
-                    crop_img = crop_img.resize((_ps, _ps), resample=_resample)
+                    cw, ch = crop_img.size
+                    scale = min(_ps / cw, _ps / ch)
+                    new_w = max(1, int(round(cw * scale)))
+                    new_h = max(1, int(round(ch * scale)))
+                    crop_img = crop_img.resize((new_w, new_h), resample=_resample)
+                    if new_w != _ps or new_h != _ps:
+                        padded = Image.new("RGB", (_ps, _ps), (255, 255, 255))
+                        padded.paste(crop_img, ((_ps - new_w) // 2, (_ps - new_h) // 2))
+                        crop_img = padded
 
                 if _debug_save and _debug_dir:
                     try:

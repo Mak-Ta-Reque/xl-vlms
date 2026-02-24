@@ -83,6 +83,23 @@ class PipelineConfig:
         self.object_detector = self._get_str("OBJECT_DETECTOR", "sam3")  # 'langsam' or 'sam3'
         self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 2)
         self.mask_blur_radius = self._get_int("MASK_BLUR_RADIUS", 15)
+        self.mask_blur_radius_bg = self._get_int("MASK_BLUR_RADIUS_BG", self.mask_blur_radius)
+        self.mask_context_pixels = self._get_int("MASK_CONTEXT_PIXELS", 0)
+        self.mask_boundary_pixels = self._get_int("MASK_BOUNDARY_PIXELS", 0)
+        # Positive/Negative binary segmentation (1=fg/bg only, 0=multi-mask)
+        _pns = os.environ.get(
+            "POSITIVE_NEGATIVE_SEGMENT",
+            os.environ.get("POSITIVE_NEGATVE_SEGMENT", "0"),
+        )
+        self.positive_negative_segment = int(_pns)
+        # Background masking method: 'gaussian_blur', 'ns', 'telea', 'noisy_linear', 'blackout'
+        self.inpainting_method = os.environ.get(
+            "INPAINTING_METHOD",
+            os.environ.get("IMPAINING_METHOD", "gaussian_blur"),
+        )
+        self.inpainting_method_bg = os.environ.get(
+            "INPAINTING_METHOD_BG", self.inpainting_method,
+        )
         
         # Inference prompt and image preprocessing
         self.prompt = self._get_str(
@@ -361,6 +378,7 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         "--device", f"cuda:{config.device_id}",
         "--seed", str(config.seed),
         "--confidence_threshold", str(config.box_threshold),
+        "--positive_negative_segment", str(config.positive_negative_segment),
     ]
     
     _run_python_subprocess(crops_args, logger=logger)
@@ -721,6 +739,12 @@ def main():
     os.environ["HF_HOME"] = str(config.hf_home)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_id)
     os.environ["MASK_BLUR_RADIUS"] = str(config.mask_blur_radius)
+    os.environ["MASK_BLUR_RADIUS_BG"] = str(config.mask_blur_radius_bg)
+    os.environ["INPAINTING_METHOD"] = config.inpainting_method
+    os.environ["INPAINTING_METHOD_BG"] = config.inpainting_method_bg
+    os.environ["MASK_CONTEXT_PIXELS"] = str(config.mask_context_pixels)
+    os.environ["MASK_BOUNDARY_PIXELS"] = str(config.mask_boundary_pixels)
+    os.environ["POSITIVE_NEGATIVE_SEGMENT"] = str(config.positive_negative_segment)
     os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "1")
     
     # Create directories and setup logging
@@ -737,6 +761,8 @@ def main():
     logger.info(f"Model:      {config.vlm_model} | Batch: {config.batch_size} | Seed: {config.seed} | Device: cuda:{config.device_id}")
     logger.info(f"Decompose:  {', '.join(config.decomp_methods)}")
     logger.info(f"Crops: detector={config.object_detector} masks={config.masks_per_image} concept={config.concept_masks_per_image} patch={config.patch_size} min={config.min_images_per_tag} max={config.max_images_per_tag}")
+    logger.info(f"Masking: fg_method={config.inpainting_method} fg_blur={config.mask_blur_radius} bg_method={config.inpainting_method_bg} bg_blur={config.mask_blur_radius_bg}")
+    logger.info(f"         ctx={config.mask_context_pixels} boundary_px={config.mask_boundary_pixels} pos_neg_segment={config.positive_negative_segment}")
     logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
     logger.info(f"Plots Y:    [{config.plot_ymin}, {config.plot_ymax}]")

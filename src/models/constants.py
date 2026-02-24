@@ -80,8 +80,8 @@ TASK_PROMPTS = {
         "Repeat the text": "Write the given text only"
     },
     "yn": {
-        "ShortVQA": "Does the image contain [concept]? Output only 'yes' or 'no'.",
-        "ShortCaptioning": "Output only 'yes' if the image contains [concept]; otherwise output only 'no'.",
+        "ShortVQA": "Does the image contain/visible/shows [concept]? Output only 'yes' or 'no'.",
+        "ShortCaptioning": "Output only 'yes' if the image contains/shows [concept]; otherwise output only 'no'.",
         "List of item": "Binary decision: image contains [concept]. Output only yes/no.",
         "Repeat the text": "Return ONLY one token: yes or no. Criterion: image contains [concept]."
     }

@@ -13,7 +13,7 @@
 # qwen_vl_utils==0.0.11
 # Requests==2.32.5
 # scikit_learn==1.7.1
-# scipy==1.16.1
+scipy>=1.10.0
 # spacy==3.8.7
 # torch==2.8.0+cu126
 # torchvision==0.23.0+cu126
@@ -34,3 +34,6 @@ scikit-learn>=1.0.0
 # YOLO instance segmentation detector
 ultralytics>=8.3
 pycocotools>=2.0
+
+# OpenCV for inpainting (Navier-Stokes / Telea)
+opencv-python>=4.5.0
