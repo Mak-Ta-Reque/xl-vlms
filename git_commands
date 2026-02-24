@@ -1,0 +1,3 @@
+git stash push -u -a -m "WIP: untracked + ignored files"
+git stash list
+git stash apply stash@{0}
