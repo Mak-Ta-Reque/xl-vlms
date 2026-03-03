@@ -20,7 +20,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 # Use conda xlvlm-v1 environment
-CONDA_RUN="conda run --no-capture-output -n xlvlm-v1"
+CONDA_RUN="conda run --no-capture-output -n xvlm-clean"
 
 # Ensure spaCy model is available (download silently if missing)
 $CONDA_RUN python -c "import spacy; spacy.load('en_core_web_sm')" 2>/dev/null \

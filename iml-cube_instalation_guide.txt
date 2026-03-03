@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# ===========================================================
+# Full Environment Setup for XL-VLM / SAM3 / Qwen
+# ===========================================================
+
+# 1️⃣ Create and activate a new conda environment
+echo "Creating conda environment xvlm-v1 with Python 3.10.19..."
+
+conda create -p /mnt/sdz/abka03_data/env/xvlm-demo python=3.10.19 -y
+
+conda activate xvlm-demo
+
+conda install -c conda-forge libgcc-ng=15 libstdcxx-ng=15 -y
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+conda install nvidia::cuda-toolkit==12.6.3
+
+pip install --no-cache-dir  transformers==4.57.3 
+# 2️⃣ Install PyTorch 2.2.2 + CUDA 12.6
+echo "Installing PyTorch 2.2.2 + CUDA 12.6..."
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# 3️⃣ General Python dependencies
+echo "Installing general Python packages..."
+pip install --no-cache-dir tqdm psutil spacy timm accelerate matplotlib streamlit setuptools==68.2.2
+python -m spacy download en_core_web_sm
+
+# 4️⃣ Language evaluation tools
+echo "Installing language evaluation packages..."
+pip install --no-cache-dir bert-score
+pip install --no-cache-dir git+https://github.com/openai/CLIP.git
+pip install --no-cache-dir qwen-vl-utils
+pip install --no-cache-dir git+https://github.com/bckim92/language-evaluation.git
+python -c "import language_evaluation; language_evaluation.download('coco')"
+conda install -c conda-forge inflect
+conda install -c conda-forge scikit-learn
+conda install -c conda-forge openjdk
+pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
+
+# 5️⃣ Install SAM3 dependencies
+echo "Installing SAM3 dependencies..."
+pip install --no-cache-dir einops iopath ftfy regex numpy timm huggingface_hub decord pycocotools
+
+# 6️⃣ Install SAM3 itself
+echo "Installing SAM3..."
+pip install --no-cache-dir git+https://github.com/facebookresearch/sam3.git
+pip install --no-cache-dir numpy>=2.2
+
+
+
+
+# 8️⃣ Java support (optional)
+echo "Installing Java (if needed)..."
+conda install -c conda-forge openjdk -y
+
+# 9️⃣ Lang-segment-anything
+echo "Installing lang-segment-anything..."
+pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
+
+# 1️⃣0️⃣ ✅ Sanity checks
+echo "Running sanity checks..."
+python -c "import torch; print('PyTorch version:', torch.__version__)"
+python -c "import sam3; print('SAM3 OK')"
+python -c "import decord; print('Decord OK')"
+python -c "import pycocotools; print('COCO OK')"
+
+echo "✅ Environment setup complete!"

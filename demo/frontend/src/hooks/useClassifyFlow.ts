@@ -119,7 +119,7 @@ export function useClassifyFlow() {
   const uploadSample = useCallback(
     async (filename: string) => {
       try {
-        const res = await fetch(`/samples/${filename}`);
+        const res = await fetch(`${api.BASE}/samples/${filename}`);
         const blob = await res.blob();
         const file = new File([blob], filename, { type: blob.type });
         await upload(file);
