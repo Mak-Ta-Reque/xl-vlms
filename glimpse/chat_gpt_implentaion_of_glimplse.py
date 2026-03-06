@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn.functional as F
 from transformers import AutoModelForVision2Seq, AutoProcessor
@@ -5,10 +6,10 @@ import matplotlib.pyplot as plt
 
 class GLIMPSE:
     def __init__(self, model_name="Qwen/Qwen2.5-VL-2B-Instruct", device=None):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or os.getenv("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
         self.model = AutoModelForVision2Seq.from_pretrained(
-            model_name, torch_dtype=torch.float16, device_map="auto"
-        )
+            model_name, torch_dtype=torch.float16,
+        ).to(self.device)
         self.processor = AutoProcessor.from_pretrained(model_name)
 
         self.model.eval()

@@ -51,9 +51,7 @@ except ImportError:
     GEMMA3N_AVAILABLE = False
     print("Warning: Gemma3nForConditionalGeneration not available. Using fallback for Gemma models.")
 
-# Configure Hugging Face environment settings
-if not os.environ.get("HF_HOME"):
-    os.environ["HF_HOME"] = "/mnt/abka03/huggingface/hub"
+# HF_HOME should be set via .env; no hardcoded fallback
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -201,7 +199,7 @@ def resize_image_by_width(image: Image.Image, target_width: Optional[int] = None
     return image.resize((tw, th), Image.Resampling.LANCZOS)
 
 
-def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_token: str = None) -> Tuple[object, object]:
+def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_token: str = None, device_str: str = None) -> Tuple[object, object]:
     """
     Load Hugging Face vision language model and processor.
     Automatically detects if model exists in cache and uses local files if available.
@@ -210,12 +208,13 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
         model_name: Hugging Face model name or path
         trust_remote_code: Whether to trust remote code
         hf_token: Hugging Face authentication token for private models
+        device_str: Device config string (e.g. 'cuda:1', 'auto', etc.)
         
     Returns:
         Tuple of (model, processor)
     """
     # Set up Hugging Face cache directory
-    hf_cache_dir = os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub")
+    hf_cache_dir = os.environ.get("HF_HOME")
     
     # Check if model exists in cache
     # Convert model name to cache directory format (e.g., "google/gemma-3n-E4B-it" -> "models--google--gemma-3n-E4B-it")
@@ -246,6 +245,26 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
     else:
         logger.info("No HF token provided, proceeding without authentication")
     try:
+        # Parse device configuration
+        _project_root = Path(__file__).resolve().parents[1]
+        _src_dir = _project_root / "src"
+        if str(_src_dir) not in os.sys.path:
+            os.sys.path.insert(0, str(_src_dir))
+        from device_utils import get_device_config  # type: ignore
+        device_config = get_device_config(device_str)
+        logger.info(f"Device config: {device_config.raw} -> gpu_ids={device_config.gpu_ids}")
+
+        # For single-GPU or CPU: load without device_map then .to(device)
+        # For multi-GPU or auto: use device_map + max_memory (requires accelerate)
+        _use_device_map = device_config.is_multi_gpu
+        _dm_kwargs = {}
+        _target_device = device_config.primary_device  # e.g. cuda:1 or cpu
+        if _use_device_map:
+            if device_config.device_map is not None:
+                _dm_kwargs["device_map"] = device_config.device_map
+            if device_config.max_memory is not None:
+                _dm_kwargs["max_memory"] = device_config.max_memory
+
         # Try different model classes based on model name
         if 'qwen' in model_name.lower():
             # Prefer bfloat16 to reduce overflow/NaNs when supported
@@ -254,16 +273,18 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
                 model_name,
                 cache_dir=hf_cache_dir,
                 token=loading_kwargs['token'] if 'token' in loading_kwargs else None,
-                device_map="auto",
                 torch_dtype=preferred_dtype,
+                **_dm_kwargs,
             ).eval()
+            if not _use_device_map:
+                model = model.to(_target_device)
         elif 'gemma' in model_name.lower():
             # Use specific Gemma3nForConditionalGeneration if available
             if GEMMA3N_AVAILABLE and ('gemma-3n' in model_name.lower() or 'gemma3n' in model_name.lower()):
                 model = Gemma3nForConditionalGeneration.from_pretrained(
                     model_name,
                     torch_dtype=torch.bfloat16,
-                    device_map="auto",
+                    **_dm_kwargs,
                     **loading_kwargs
                 ).eval()
             else:
@@ -271,25 +292,29 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
                 model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.bfloat16,
-                    device_map="auto",
+                    **_dm_kwargs,
                     **loading_kwargs
                 )
+            if not _use_device_map:
+                model = model.to(_target_device)
         else:
             # Generic approach - try Vision2Seq first, then CausalLM
             try:
                 model = AutoModelForVision2Seq.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16,
-                    device_map="auto",
+                    **_dm_kwargs,
                     **loading_kwargs
                 )
             except Exception:
                 model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.bfloat16,
-                    device_map="auto",
+                    **_dm_kwargs,
                     **loading_kwargs
                 )
+            if not _use_device_map:
+                model = model.to(_target_device)
         
         processor = AutoProcessor.from_pretrained(
             model_name,
@@ -316,7 +341,16 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
                 if getattr(gen_cfg, 'pad_token_id', None) is None and getattr(tok, 'pad_token_id', None) is not None:
                     gen_cfg.pad_token_id = tok.pad_token_id
         
-        logger.info(f"Model loaded successfully on device: {model.device}")
+        # Log where the model actually lives
+        if _use_device_map:
+            _hf_map = getattr(model, 'hf_device_map', None)
+            if _hf_map:
+                _devices_used = sorted(set(str(v) for v in _hf_map.values()))
+                logger.info(f"Model loaded with device_map across: {_devices_used}")
+            else:
+                logger.info(f"Model loaded with device_map (device: {model.device})")
+        else:
+            logger.info(f"Model loaded on {_target_device} (model.device={model.device})")
         return model, processor
         
     except Exception as e:
@@ -511,7 +545,8 @@ def process_dataset(
     hf_token: str = None,
     batch_size: int = 1,
     image_budget: Optional[int] = None,
-    seed: int = 42
+    seed: int = 42,
+    device_str: str = None,
 ) -> None:
     """
     Process the entire dataset and save results to CSV.
@@ -562,7 +597,7 @@ def process_dataset(
         logger.info(f"Remaining files to process: {len(image_files)}")
     
     # Load the model and processor
-    model, processor = load_huggingface_model(model_name, trust_remote_code, hf_token)
+    model, processor = load_huggingface_model(model_name, trust_remote_code, hf_token, device_str=device_str)
     
     # Prepare CSV file (no 'subfolder'; using 'image_relpath')
     fieldnames = ['root_path', 'image_relpath', 'image_name', 'predicted_text', 'prompt_used']
@@ -749,8 +784,8 @@ Popular models:
     parser.add_argument(
         '--model_name',
         type=str,
-        default='google/gemma-3n-E4B',
-        help='Hugging Face model name or path (default: google/gemma-3n-E4B)'
+        default=os.environ.get('VLM_MODEL', 'Qwen/Qwen2.5-VL-3B-Instruct'),
+        help='Hugging Face model name or path'
     )
     
     parser.add_argument(
@@ -818,8 +853,8 @@ Popular models:
     parser.add_argument(
             '--batch_size',
             type=int,
-            default=1,
-            help='Batch size for inference (default: 1)'
+            default=int(os.environ.get('BATCH_SIZE', '10')),
+            help='Batch size for inference'
         )
     parser.add_argument(
         '--image_budget',
@@ -830,8 +865,14 @@ Popular models:
     parser.add_argument(
         '--seed',
         type=int,
-        default=42,
+        default=int(os.environ.get('SEED', '42')),
         help='Random seed for image sampling (default: 42)'
+    )
+    parser.add_argument(
+        '--device',
+        type=str,
+        default=os.environ.get('DEVICE', 'auto'),
+        help="Device config. Formats: 'cuda:1', 'cuda:0,2', 'cuda:[0,2]', 'auto', 'cpu'."
     )
 
     args = parser.parse_args()
@@ -888,7 +929,8 @@ Popular models:
             resume=args.resume,
             hf_token=hf_token,
             image_budget=args.image_budget,
-            seed=args.seed
+            seed=args.seed,
+            device_str=args.device,
         )
     except KeyboardInterrupt:
         print("\n⚠️ Processing interrupted by user")

@@ -46,7 +46,7 @@ class GLIMPSEExplainer:
         lambda_head: float = 1.0,
         lambda_depth: float = 0.1,
         lambda_flow: float = 0.5,
-        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device: torch.device = None
     ):
         """
         Initialize GLIMPSE explainer.
@@ -65,9 +65,9 @@ class GLIMPSEExplainer:
         self.lambda_head = lambda_head
         self.lambda_depth = lambda_depth
         self.lambda_flow = lambda_flow
-        self.device = device
-        
-        # Storage for attention weights and gradients
+        self.device = device if device is not None else (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
         self.attention_weights = {}  # {layer: {head: attention_matrix}}
         self.attention_gradients = {}  # {layer: {head: gradient_matrix}}
         self.hooks = []

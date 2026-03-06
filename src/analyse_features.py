@@ -36,7 +36,10 @@ def main():
     logger = setup_logger(log_file=os.path.join(args.save_dir, f"logs.log"))
     log_args(args, logger)
 
-    device = torch.device(args.device)
+    from device_utils import get_device_config  # type: ignore
+    device_config = get_device_config(args.device)
+    device = device_config.primary_device
+    logger.info(f"Device config: {device_config.raw} -> primary={device}, gpu_ids={device_config.gpu_ids}")
 
     model_class = get_model_class(
         args.model_name_or_path,
@@ -44,6 +47,7 @@ def main():
         device=device,
         logger=logger,
         args=args,
+        device_config=device_config,
     )
     
     # Extract only the components we need (lm_head and tokenizer)

@@ -218,19 +218,22 @@ class ConceptDeletionEvaluator:
 
         # Load model via repo loader
         from models import get_model_class  # type: ignore
+        from device_utils import get_device_config  # type: ignore
         args = argparse.Namespace(
             local_files_only=False,
-            cache_dir=cache_dir or os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub"),
+            cache_dir=cache_dir or os.environ.get("HF_HOME"),
         )
-        device = torch.device(device) if device is not None else (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        device_config = get_device_config(
+            str(device) if device is not None else None
         )
+        device = device_config.primary_device
         model_class = get_model_class(
             model_name_or_path=model_name,
             processor_name=model_name,
             device=device,
             logger=None,
             args=args,
+            device_config=device_config,
         )
         self.model = model_class.get_model().eval()
         self.tokenizer = _get_tokenizer_from(model_class)
@@ -702,7 +705,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Concept deletion/insertion evaluation (c-deletion / c-insertion)")
     ap.add_argument("--results_json", required=True, help="JSON file produced by vlm_explainer.py")
     ap.add_argument("--concept_path", required=True, help="Concept matrix file (.pth/.pt/.json/.npz)")
-    ap.add_argument("--model_name", default="google/gemma-3n-E4B-it")
+    ap.add_argument("--model_name", default=os.environ.get('VLM_MODEL', 'Qwen/Qwen2.5-VL-3B-Instruct'))
     ap.add_argument("--layer_path", required=False, help="Hooked layer path; if omitted, read from results JSON")
     ap.add_argument("--mode", choices=["sequence", "token"], default="sequence")
     ap.add_argument("--insertion", action="store_true", help="Use c-insertion instead of c-deletion")
@@ -714,7 +717,7 @@ def main() -> None:
     ap.add_argument("--device", default=None, help="cuda, cpu, or cuda:N")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--deterministic", action="store_true")
-    ap.add_argument("--out_dir", default="/mnt/abka03/Projects/xl-vlms/outputs")
+    ap.add_argument("--out_dir", default=os.environ.get('OUTPUT_DIR', '.'))
     # New: smoothing fraction for zeroing top-|grad| before ranking
     ap.add_argument("--grad_top_zero_frac", type=float, default=0.0, help="Fraction of top-|grad| coordinates to zero before ranking (smoothing)")
     # New: whether to multiply gradient with concept vector prior to op

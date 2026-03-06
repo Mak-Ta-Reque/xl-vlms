@@ -72,7 +72,7 @@ class PipelineConfig:
         self.vlm_model = self._get_str("VLM_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct")
         self.batch_size = self._get_int("BATCH_SIZE", 48)
         self.seed = self._get_int("SEED", 42)
-        self.device_id = self._get_int("DEVICE_ID", 0)
+        self.device = self._get_str("DEVICE", "cuda:0")
         
         # Crops JSON generation
         self.masks_per_image = self._get_int("MASKS_PER_IMAGE", 5)
@@ -316,6 +316,7 @@ def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
         "--batch_size", str(config.batch_size),
         "--image_size_width", str(config.image_size_width),
         "--image_budget", str(config.image_budget),
+        "--device", config.device,
         "--trust_remote_code",
     ]
     
@@ -375,7 +376,7 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         "--patch_size", str(config.patch_size),
         "--batch_size", str(config.detection_batch_size),
         "--image_size_width", str(config.image_size_width),
-        "--device", f"cuda:{config.device_id}",
+        "--device", config.device,
         "--seed", str(config.seed),
         "--confidence_threshold", str(config.box_threshold),
         "--positive_negative_segment", str(config.positive_negative_segment),
@@ -573,7 +574,7 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
                 "--mode", "token",
                 "--num_points", str(config.num_points),
                 "--out_dir", str(out_dir),
-                "--device", f"cuda:{config.device_id}",
+                "--device", config.device,
                 "--rank", str(rank+1),
                 "--insertion",
             ]
@@ -594,7 +595,7 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
                 "--mode", "token",
                 "--num_points", str(config.num_points),
                 "--out_dir", str(out_dir),
-                "--device", f"cuda:{config.device_id}",
+                "--device", config.device,
                 "--rank", str(rank+1),
             ]
             
@@ -737,7 +738,8 @@ def main():
     
     # Set environment variables
     os.environ["HF_HOME"] = str(config.hf_home)
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_id)
+    # Do NOT override CUDA_VISIBLE_DEVICES — device placement is handled by
+    # device_utils.parse_device_config() using the DEVICE env var.
     os.environ["MASK_BLUR_RADIUS"] = str(config.mask_blur_radius)
     os.environ["MASK_BLUR_RADIUS_BG"] = str(config.mask_blur_radius_bg)
     os.environ["INPAINTING_METHOD"] = config.inpainting_method
@@ -758,7 +760,7 @@ def main():
     logger.info(f"Root:       {config.root_dir}")
     logger.info(f"Input dir:  {config.input_dir}")
     logger.info(f"Output dir: {config.output_dir}")
-    logger.info(f"Model:      {config.vlm_model} | Batch: {config.batch_size} | Seed: {config.seed} | Device: cuda:{config.device_id}")
+    logger.info(f"Model:      {config.vlm_model} | Batch: {config.batch_size} | Seed: {config.seed} | Device: {config.device}")
     logger.info(f"Decompose:  {', '.join(config.decomp_methods)}")
     logger.info(f"Crops: detector={config.object_detector} masks={config.masks_per_image} concept={config.concept_masks_per_image} patch={config.patch_size} min={config.min_images_per_tag} max={config.max_images_per_tag}")
     logger.info(f"Masking: fg_method={config.inpainting_method} fg_blur={config.mask_blur_radius} bg_method={config.inpainting_method_bg} bg_blur={config.mask_blur_radius_bg}")

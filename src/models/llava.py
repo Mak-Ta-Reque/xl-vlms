@@ -13,13 +13,22 @@ class LLaVA(ImageTextModel):
     def set_model(
         self,
     ) -> None:
-
-        self.model_ = LlavaForConditionalGeneration.from_pretrained(
-            self.model_name_or_path,
+        load_kwargs = dict(
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             local_files_only=self.local_files_only,
         )
+        _use_device_map = self.device_config is not None and self.device_config.is_multi_gpu
+        if _use_device_map:
+            if self.device_config.device_map is not None:
+                load_kwargs["device_map"] = self.device_config.device_map
+            if self.device_config.max_memory is not None:
+                load_kwargs["max_memory"] = self.device_config.max_memory
+        self.model_ = LlavaForConditionalGeneration.from_pretrained(
+            self.model_name_or_path, **load_kwargs
+        )
+        if not _use_device_map and self.device_config is not None:
+            self.model_ = self.model_.to(self.device_config.primary_device)
 
     def get_language_model(
         self,

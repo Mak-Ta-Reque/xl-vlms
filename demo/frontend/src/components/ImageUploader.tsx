@@ -79,7 +79,7 @@ export function ImageUploader({ onUpload, onSampleClick, disabled }: Props) {
                 onClick={() => onSampleClick(fname)}
               >
                 <img
-                  src={`/samples/${fname}`}
+                  src={`${api.BASE}/samples/${fname}`}
                   alt={fname}
                   className="w-full h-20 object-cover"
                   loading="lazy"

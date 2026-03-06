@@ -58,6 +58,11 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
+# Source .env as single source of truth
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a; source "$ROOT_DIR/.env"; set +a
+fi
+
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/qwen2_5_10cls_coxlmm/imnet100}"
 DECOMP_METHODS="${DECOMP_METHODS:-snmf,simple,random,kmeans,pca}"
 HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"

@@ -218,7 +218,7 @@ def sample_bertscore_per_k(gt_words, pred_text_list, k):
     if not preds_flat:
         return 0.0
 
-    _, _, F1 = bert_score(preds_flat, gts_flat, lang="en", verbose=True, device=os.environ.get("BERT_DEVICE", "cuda"))
+    _, _, F1 = bert_score(preds_flat, gts_flat, lang="en", verbose=True, device=os.environ.get("BERT_DEVICE", os.environ.get("DEVICE", "cuda")))
     f1_vals = np.asarray([float(x) for x in F1], dtype=np.float32)
 
     # max per GT group

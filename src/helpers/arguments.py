@@ -1,4 +1,5 @@
 import argparse
+import os
 from typing import List
 
 __all__ = ["get_arguments"]
@@ -13,13 +14,13 @@ def get_arguments():
     parser = argparse.ArgumentParser(description="XL-VLMs arguments parser")
 
     # General
-    parser.add_argument("--seed", type=int, default=0, help="Global seed.")
+    parser.add_argument("--seed", type=int, default=int(os.environ.get("SEED", "42")), help="Global seed.")
 
     # Model
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="facebook/opt-125m",
+        default=os.environ.get("VLM_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct"),
         help="The path or name of the pre-trained model.",
     )
 
@@ -41,7 +42,7 @@ def get_arguments():
     parser.add_argument(
         "--prompt_template",
         type=str,
-        default="llava",
+        default=os.environ.get("PROMPT_TEMPLATE", "yn"),
         help="Task prompts to be applied to each input instruction.",
     )
     parser.add_argument(
@@ -85,7 +86,7 @@ def get_arguments():
         "--dataset_name", type=str, default="coco", help="Dataset name."
     )
     parser.add_argument(
-        "--batch_size", type=int, default=2, help="Batch size for data loading"
+        "--batch_size", type=int, default=int(os.environ.get("BATCH_SIZE", "10")), help="Batch size for data loading"
     )
 
     # Hooks
@@ -471,8 +472,8 @@ def get_arguments():
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda:0",
-        help="Device to use for computation.",
+        default=os.environ.get("DEVICE", "auto"),
+        help="Device config. Formats: 'cuda:1', 'cuda:0,2', 'cuda:[0,2]', 'auto', 'cpu'.",
     )
 
     return parser.parse_args()

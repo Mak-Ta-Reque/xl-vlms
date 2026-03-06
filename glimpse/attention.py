@@ -19,14 +19,22 @@ def visualize_attention(attention_map, save_path="attention.png"):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-VL-7B-Instruct")
+    parser.add_argument("--model", type=str, default=os.environ.get("VLM_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct"))
     parser.add_argument("--prompt", type=str, default="What is in the image?")
     parser.add_argument("--target", type=str, default="dishes")
     parser.add_argument("--image", type=str, required=True)
     parser.add_argument("--output", type=str, default="glimpse_local_image")
     args = parser.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+    # For simple .to() usage, extract primary device if it's a complex format
+    if any(c in device for c in ['[', ',']):
+        import sys as _sys
+        _src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
+        if _src not in _sys.path:
+            _sys.path.insert(0, _src)
+        from device_utils import get_device_config
+        device = str(get_device_config(device).primary_device)
 
     # Load model and processor
     processor = AutoProcessor.from_pretrained(args.model)

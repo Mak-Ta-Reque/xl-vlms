@@ -42,8 +42,10 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
 
-_device_id = os.getenv("DEVICE_ID", "0")
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", _device_id)
+_device_str = os.getenv("DEVICE", "auto")
+# Legacy support: if DEVICE_ID is set but DEVICE is not, convert
+if "DEVICE" not in os.environ and "DEVICE_ID" in os.environ:
+    _device_str = f"cuda:{os.environ['DEVICE_ID']}"
 
 sys.path.insert(0, str(PROJECT_ROOT / "inference"))
 sys.path.insert(0, str(_THIS_DIR))
@@ -125,7 +127,7 @@ def _get_explainer():
                     model_name=VLM_MODEL,
                     concept_path=str(CONCEPT_PTH),
                     layer_path=LAYER_PATH,
-                    device="cuda",
+                    device=_device_str,
                     prompt_mode="unsupervised",
                     normalize_concepts=False,
                     verbose=False,
@@ -613,7 +615,7 @@ async def startup_event():
     print(f"VLM Classify API starting...")
     print(f"  Model:   {VLM_MODEL}")
     print(f"  Concept: {CONCEPT_PTH}")
-    print(f"  Device:  CUDA:{_device_id}")
+    print(f"  Device:  {_device_str}")
 
 
 @app.on_event("shutdown")

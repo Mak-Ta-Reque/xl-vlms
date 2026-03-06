@@ -5,7 +5,8 @@ import type {
   SamplesResponse,
 } from "../types";
 
-const BASE = ""; // proxied by Vite dev server → http://localhost:8501
+// Strip trailing slash so we can concat e.g. BASE + "/api/classify"
+export const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, init);

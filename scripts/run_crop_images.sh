@@ -3,6 +3,14 @@
 # Defaults mirror the README example. Override via CLI flags or env vars.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Source .env as single source of truth
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a; source "$ROOT_DIR/.env"; set +a
+fi
+
 # Default parameters, prefer orchestrator exports
 INPUT_ROOT="${INPUT_ROOT:-${INPUT_DIR:-/mnt/abka03/Projects/xl-vlms/data}}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${CROPS_DIR:-/mnt/abka03/Projects/xl-vlms/crops/train}}"

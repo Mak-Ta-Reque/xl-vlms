@@ -51,7 +51,7 @@ def _blur_box(img: Image.Image, bbox_norm: List[float], radius: float) -> Image.
     return out
 
 
-def _load_model_and_tools(model_name: str):
+def _load_model_and_tools(model_name: str, device_str: str = None):
     # Reuse the repo's model loader for consistency with explainer
     import sys
     root = Path(__file__).resolve().parents[1]
@@ -59,11 +59,13 @@ def _load_model_and_tools(model_name: str):
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
     from models import get_model_class  # type: ignore
+    from device_utils import get_device_config  # type: ignore
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device_config = get_device_config(device_str)
+    device = device_config.primary_device
     args = argparse.Namespace(
         local_files_only=False,
-        cache_dir=os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub"),
+        cache_dir=os.environ.get("HF_HOME"),
     )
     model_class = get_model_class(
         model_name_or_path=model_name,
@@ -71,6 +73,7 @@ def _load_model_and_tools(model_name: str):
         device=device,
         logger=None,
         args=args,
+        device_config=device_config,
     )
     model = model_class.get_model()
     processor = model_class.get_processor()
@@ -203,6 +206,8 @@ def main() -> None:
     ap.add_argument("--eval_batch_size", type=int, default=16, help="Batch size for evaluating blurred images")
     ap.add_argument("--amp_dtype", type=str, default="float16", choices=["float16", "bfloat16", "none"], help="Autocast dtype for forward pass")
     ap.add_argument("--max_text_tokens", type=int, default=50, help="Cap the number of text tokens (input_ids) per sample")
+    ap.add_argument("--device", type=str, default=os.environ.get("DEVICE", None),
+                    help="Device config. Formats: 'cuda:1', 'cuda:0,2', 'cuda:[0,2]', 'auto', 'cpu'.")
     args = ap.parse_args()
 
     results_payload = json.loads(Path(args.results_json).read_text())
@@ -213,7 +218,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     # Outputs are aggregated across all tokens; per-image files are not required.
 
-    model, processor, tokenizer, model_class = _load_model_and_tools(str(model_name))
+    model, processor, tokenizer, model_class = _load_model_and_tools(str(model_name), device_str=getattr(args, 'device', None))
     device = next(model.parameters()).device
     model.eval()
 

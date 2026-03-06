@@ -17,12 +17,19 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# Source .env for DEVICE and other settings
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+  set -a
+  source "$PROJECT_ROOT/.env"
+  set +a
+fi
+
 # ─── Configurable vars ────────────────────────────────────────────────
 API_PORT="${CLASSIFY_API_PORT:-8501}"
 FE_PORT="${FRONTEND_PORT:-5173}"
-CONDA_ENV="${CONDA_ENV:-xlvlm-v1}"
+CONDA_ENV="${CONDA_ENV:-xvlm-demo}"
 CONDA_RUN="conda run --no-capture-output -n $CONDA_ENV"
-
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 # ─── Ensure spaCy model is available ──────────────────────────────────
 echo "» Checking spaCy model..."
 $CONDA_RUN python -c "

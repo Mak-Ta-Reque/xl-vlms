@@ -136,7 +136,9 @@ class VLMConceptExplainer:
 
         # Load model and processor via repo's loader
         self.model, self.processor = self._load_model(device)
-        self.device = torch.device(device) if device else next(self.model.parameters()).device
+        self.device = getattr(self, '_device_config', None) and self._device_config.primary_device or (
+            torch.device(device) if device else next(self.model.parameters()).device
+        )
 
         # Load concept vectors and metadata
         self.concept_data = self._load_concepts(concept_path)
@@ -198,9 +200,12 @@ class VLMConceptExplainer:
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
 
-        device = torch.device(device_override) if device_override is not None else (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        from device_utils import get_device_config  # type: ignore
+        device_config = get_device_config(
+            str(device_override) if device_override is not None else None
         )
+        device = device_config.primary_device
+        self._device_config = device_config
 
         
         from models import get_model_class  # type: ignore
@@ -208,7 +213,7 @@ class VLMConceptExplainer:
         # Minimal args namespace expected by get_model_class
         args = argparse.Namespace(
             local_files_only=False,
-            cache_dir=os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub"),
+            cache_dir=os.environ.get("HF_HOME"),
         )
 
         model_class = get_model_class(
@@ -217,6 +222,7 @@ class VLMConceptExplainer:
             device=device,
             logger=None,
             args=args,
+            device_config=device_config,
         )
         self._model_class = model_class
         model = model_class.get_model()

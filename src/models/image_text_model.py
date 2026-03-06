@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import requests
 from PIL import Image
@@ -12,6 +12,7 @@ class ImageTextModel:
         model_name_or_path: str = "llava-hf/llava-1.5-7b-hf",
         processor_name: str = "llava-hf/llava-1.5-7b-hf",
         local_files_only: bool = False,
+        device_config: Optional[Any] = None,
         **kwargs: Any,
     ):
 
@@ -19,6 +20,9 @@ class ImageTextModel:
 
         self.processor_name = processor_name
         self.local_files_only = local_files_only
+
+        # Store device_config from device_utils.DeviceConfig (or None for legacy)
+        self.device_config = device_config
 
         if processor_name is None:
             self.processor_name = model_name_or_path

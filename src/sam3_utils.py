@@ -112,18 +112,18 @@ def load_sam3(
         use_cuda = True
         target_device = torch.device("cuda")
         if device:
-            dev = str(device).lower()
-            if dev == "cpu":
-                use_cuda = False
-                target_device = torch.device("cpu")
-            elif dev.startswith("cuda"):
-                target_device = torch.device(dev)
-                if ":" in dev:
-                    try:
-                        idx = int(dev.split(":", 1)[1])
-                        torch.cuda.set_device(idx)
-                    except Exception:
-                        pass
+            try:
+                from device_utils import get_device_config
+                _dc = get_device_config(str(device))
+                target_device = _dc.primary_device
+                use_cuda = target_device.type == "cuda"
+            except Exception:
+                dev = str(device).lower()
+                if dev == "cpu":
+                    use_cuda = False
+                    target_device = torch.device("cpu")
+                elif dev.startswith("cuda"):
+                    target_device = torch.device(dev)
 
     # Enable TF32 and autocast for better performance on Ampere GPUs
     if use_cuda and torch is not None:

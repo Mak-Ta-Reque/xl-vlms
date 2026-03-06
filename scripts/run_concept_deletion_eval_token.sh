@@ -5,6 +5,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Source .env as single source of truth
+if [[ -f "$WORKSPACE/.env" ]]; then
+  set -a; source "$WORKSPACE/.env"; set +a
+fi
+
 # Resolve Python interpreter
 if command -v "${PYTHON:-${PYTHON_BIN:-python}}" >/dev/null 2>&1; then
   PYTHON_BIN="${PYTHON:-${PYTHON_BIN:-python}}"

@@ -79,14 +79,20 @@ class VLMGroundingExplainer:
         if str(src_dir) not in os.sys.path:
             os.sys.path.insert(0, str(src_dir))
 
-        device = torch.device(device_override) if device_override is not None else (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+
+        from device_utils import get_device_config  # type: ignore
+        device_config = get_device_config(
+            str(device_override) if device_override is not None else None
         )
+        device = device_config.primary_device
+        self._device_config = device_config
+
         from models import get_model_class  # type: ignore
 
         args = argparse.Namespace(
             local_files_only=False,
-            cache_dir=os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub"),
+            cache_dir=os.environ.get("HF_HOME"),
         )
         model_class = get_model_class(
             model_name_or_path=self.model_name,
@@ -94,6 +100,7 @@ class VLMGroundingExplainer:
             device=device,
             logger=None,
             args=args,
+            device_config=device_config,
         )
         model = model_class.get_model()
         processor = model_class.get_processor()
@@ -485,18 +492,18 @@ class VLMGroundingExplainer:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Prompt-based grounding explainer for VLMs")
-    ap.add_argument('--model_name', default='google/gemma-3n-E4B-it')
+    ap.add_argument('--model_name', default=os.environ.get('VLM_MODEL', 'Qwen/Qwen2.5-VL-3B-Instruct'))
     ap.add_argument('--image', action='append', help='Image path; can be repeated')
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append', help='Ground-truth label per image (optional)')
-    ap.add_argument('--batch_size', type=int, default=1)
+    ap.add_argument('--batch_size', type=int, default=int(os.environ.get('BATCH_SIZE', '10')))
     ap.add_argument('--seed', type=int, default=42)
     ap.add_argument('--deterministic', action='store_true')
     ap.add_argument('--verbose', action='store_true')
     ap.add_argument('--temperature', type=float, default=0.0)
     ap.add_argument('--max_new_tokens', type=int, default=128)
     ap.add_argument('--bbox_format', choices=['xyxy_norm', 'xywh_norm'], default='xyxy_norm')
-    ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_groundings.json')
+    ap.add_argument('--out_json', default=os.path.join(os.environ.get('OUTPUT_DIR', '.'), 'vlm_groundings.json'))
     ap.add_argument('--data_root', default=None, help='Root path of dataset for metadata')
     args = ap.parse_args()
 
