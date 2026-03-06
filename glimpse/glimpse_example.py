@@ -83,10 +83,14 @@ def run_glimpse_example(
     print("=" * 60)
     
     # Setup device
-    if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = torch.device(device)
-    print(f"Using device: {device}")
+    import sys as _sys
+    _src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
+    if _src not in _sys.path:
+        _sys.path.insert(0, _src)
+    from device_utils import get_device_config  # type: ignore
+    _dc = get_device_config(device if device != 'auto' else None)
+    device = _dc.primary_device
+    print(f"Using device: {device} (gpu_ids={_dc.gpu_ids})")
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -140,9 +144,10 @@ def run_glimpse_example(
             model = AutoModelForVision2Seq.from_pretrained(
                 model_name,
                 torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
-                device_map=device if device.type == "cuda" else None,
                 trust_remote_code=True
             )
+            if device.type == "cuda":
+                model = model.to(device)
         except ValueError as e:
             if "Unrecognized configuration class" in str(e):
                 print(f"⚠️  Model {model_name} is not supported by AutoModelForVision2Seq")
@@ -153,9 +158,10 @@ def run_glimpse_example(
                     model = AutoModel.from_pretrained(
                         model_name,
                         torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
-                        device_map=device if device.type == "cuda" else None,
                         trust_remote_code=True
                     )
+                    if device.type == "cuda":
+                        model = model.to(device)
                     print(f"✓ Loaded {model_name} using AutoModel")
                 except Exception as e2:
                     print(f"❌ Failed to load {model_name}: {e2}")

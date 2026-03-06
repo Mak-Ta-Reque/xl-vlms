@@ -58,15 +58,22 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_1000/train}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/1000_imagenet_cgdl_2}" #run_$TIMESTAMP
+# Source .env for DEVICE, OUTPUT_DIR, VLM_MODEL, etc.
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
+INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/data/imagenet_5_class/train}"
+OUTPUT_DIR="${OUTPUT_DIR:-/mnt/sdz/abka03_data/outputs/imagenet_5_gpu1}" #run_$TIMESTAMP
 DECOMP_METHODS="${DECOMP_METHODS:-snmf}" # e.g., pca,nmf,ica,svd
-HF_HOME="${HF_HOME:-/mnt/abka03/huggingface/hub}"
+HF_HOME="${HF_HOME:-/mnt/sda/abka03-data/hf_cache}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
-VLM_MODEL="${VLM_MODEL:-"Qwen/Qwen2.5-VL-7B-Instruct"}"         # e.g., llava, llava-7b, qwen-vl, etc.
-BATCH_SIZE="${BATCH_SIZE:-12}"       # e.g., 16
-DEVICE="${DEVICE:-cuda}"               # e.g., cuda:0
+VLM_MODEL="${VLM_MODEL:-"Qwen/Qwen2.5-VL-3B-Instruct"}"         # e.g., llava, llava-7b, qwen-vl, etc.
+BATCH_SIZE="${BATCH_SIZE:-10}"       # e.g., 16
+DEVICE="${DEVICE:-cuda:1}"               # e.g., cuda:0, cuda:0,2, cuda:[0,2], auto, cpu
 NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
 

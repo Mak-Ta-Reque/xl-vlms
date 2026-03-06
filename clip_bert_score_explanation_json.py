@@ -215,7 +215,7 @@ def sample_bertscore_per_k(gt_words, pred_text_list, k):
     _, _, F1 = bert_score(
         preds_flat, gts_flat, lang="en",
         verbose=False,
-        device=os.environ.get("BERT_DEVICE", "cuda")
+        device=os.environ.get("BERT_DEVICE", os.environ.get("DEVICE", "cuda"))
     )
     f1_vals = np.asarray([float(x) for x in F1], dtype=np.float32)
 
@@ -414,7 +414,7 @@ def sample_clipscore_per_k(gt_words, pred_img_list, pred_bbox_list, k, device=No
         return 0.0
 
     if device is None:
-        device = os.environ.get("CLIP_DEVICE", "cuda")
+        device = os.environ.get("CLIP_DEVICE", os.environ.get("DEVICE", "cuda"))
 
     model, preprocess = load_clip_once(device=device)
 

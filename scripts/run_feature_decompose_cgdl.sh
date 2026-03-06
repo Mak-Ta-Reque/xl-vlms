@@ -6,6 +6,14 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Source .env as single source of truth
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a; source "$ROOT_DIR/.env"; set +a
+fi
+
 # Positional arguments with defaults (override order: CLI > ENV > hardcoded default)
 HF_HOME_INPUT=${1:-${HF_HOME:-"/mnt/sdz/abka03_data/models"}}
 MODEL_NAME_INPUT=${2:-${VLM_MODEL:-${MODEL_NAME:-"Qwen/Qwen2.5-VL-3B-Instruct"}}}

@@ -54,6 +54,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
+# Source .env for DEVICE, OUTPUT_DIR, VLM_MODEL, etc.
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
 # Data & outputs
 INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/xl-vlms/data}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/test_kashan}"
@@ -61,9 +68,10 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/test_kashan}"
 
 # Model/runtime knobs
 VLM_MODEL="${VLM_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
-BATCH_SIZE="${BATCH_SIZE:-48}"
+BATCH_SIZE="${BATCH_SIZE:-10}"
 SEED="${SEED:-42}"
-DEVICE_ID="${DEVICE_ID:-0}"   # default to GPU 1; override with DEVICE_ID or CUDA_VISIBLE_DEVICES
+# DEVICE: 'cuda:1', 'cuda:0,2', 'cuda:[0,2]', 'auto', 'cpu'
+DEVICE="${DEVICE:-cuda:1}"
 
 # Crops JSON generation
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-20}"
@@ -73,7 +81,7 @@ MAX_IMAGES_PER_TAG="${MAX_IMAGES_PER_TAG:-128}"
 PATCHES_PER_IMAGE="${PATCHES_PER_IMAGE:-10}"
 CONCEPT_MODE="${CONCEPT_MODE:-1}"              # 1: concept-focused k crops/image; 0: random/grid modes
 OBJECT_DETECTION="${OBJECT_DETECTION:-0}"      # 1 to enable LangSAM
-DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-5}"
+DETECTION_BATCH_SIZE="${DETECTION_BATCH_SIZE:-1}"
 DETECTION_TOPN="${DETECTION_TOPN:-5}"
 MAX_OVERLAP="${MAX_OVERLAP:-0}"             # Max IoU overlap for box merging (0 = merge any overlap)
 
@@ -130,12 +138,12 @@ EVAL_DIR="$OUTPUT_DIR/eval"
 PLOTS_DIR="$OUTPUT_DIR/plots"
 
 export HF_HOME
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$DEVICE_ID}"
+export DEVICE
 
 log "Root:       $ROOT_DIR"
 log "Input dir:  $INPUT_DIR"
 log "Output dir: $OUTPUT_DIR"
-log "Model:      $VLM_MODEL | Batch: $BATCH_SIZE | Seed: $SEED | Device: cuda:$CUDA_VISIBLE_DEVICES"
+log "Model:      $VLM_MODEL | Batch: $BATCH_SIZE | Seed: $SEED | Device: $DEVICE"
 log "Decompose:  $DECOMP_METHODS"
 log "Crops: data_dir=$INPUT_DIR k=$CONCEPT_CROPS_PER_IMAGE patch=$PATCH_SIZE min=$MIN_IMAGES_PER_TAG max=$MAX_IMAGES_PER_TAG concept_mode=$CONCEPT_MODE det=$OBJECT_DETECTION"
 log "Explainer:  layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N mode=$EXPL_PROMPT_MODE"
@@ -158,8 +166,7 @@ else
       --prompt \"$PROMPT\" \
       --batch_size \"$BATCH_SIZE\" \
       --image_size $IMAGE_SIZE \
-      --image_budget \"$IMAGE_BUDGET\" \
-      --trust_remote_code"
+      --image_budget \"$IMAGE_BUDGET\" \      --device \"$DEVICE\" \\      --trust_remote_code"
 
   run_step "Build Concept Map" \
     "python -u \"$ROOT_DIR/concept_image_mapping.py\" --input \"$OBJECTS_CSV\" --output \"$CONCEPT_MAP_JSON\""
@@ -184,7 +191,7 @@ else
       --min_images_per_tag \"$MIN_IMAGES_PER_TAG\" \\
       --max_images_per_tag \"$MAX_IMAGES_PER_TAG\" \\
       --seed \"$SEED\" \
-      --device cuda:1 \
+      --device "$DEVICE" \
       $CONCEPT_FLAG \
       $DETECT_FLAG"
 fi
@@ -207,8 +214,7 @@ run_step "Generate Features" \
     --modules_to_hook $LAYER_PATH \
     --prompt_template cgdl \
     --save_dir \"$FEATURES_DIR\" \
-    --batch_size 30 \
-    --generation_mode \
+    --batch_size 30 \    --device \"$DEVICE\" \\    --generation_mode \
     --save_only_generated_tokens \
     --exact_match_modules_to_hook"
 fi
@@ -309,19 +315,19 @@ for method in "${DECOMP_ARRAY[@]}"; do
         --mode token \
         --num_points \"$NUM_POINTS\" \
         --out_dir \"$out_dir\" \
-        --device cuda \
-        --rank \"$RANK\" \
+        --device "$DEVICE" \\
+        --rank \"$RANK\" \\
         --insertion"
     run_step "Eval Delete (rank=$RANK, $method)" \
-      "python -u \"$ROOT_DIR/eval/concept_deletion_eval.py\" \
-        --results_json \"$in_json\" \
-        --concept_path \"$concept_path\" \
-        --model_name \"$VLM_MODEL\" \
-        --layer_path \"$LAYER_PATH\" \
-        --mode token \
-        --num_points \"$NUM_POINTS\" \
-        --out_dir \"$out_dir\" \
-        --device cuda \
+      "python -u \"$ROOT_DIR/eval/concept_deletion_eval.py\" \\
+        --results_json \"$in_json\" \\
+        --concept_path \"$concept_path\" \\
+        --model_name \"$VLM_MODEL\" \\
+        --layer_path \"$LAYER_PATH\" \\
+        --mode token \\
+        --num_points \"$NUM_POINTS\" \\
+        --out_dir \"$out_dir\" \\
+        --device "$DEVICE" \\
         --rank \"$RANK\""
   done
 done

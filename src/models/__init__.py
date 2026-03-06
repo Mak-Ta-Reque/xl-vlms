@@ -1,5 +1,5 @@
 import argparse
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple, Union
 
 import torch
 
@@ -19,10 +19,29 @@ SUPPORTED_MODELS = [
 def get_model_class(
     model_name_or_path: str = "llava-hf/llava-1.5-7b-hf",
     processor_name: str = "llava-hf/llava-1.5-7b-hf",
-    device: torch.device = torch.device("cuda"),
+    device: Union[torch.device, str, None] = None,
     logger: Callable = None,
     args: argparse.Namespace = None,
+    device_config=None,
 ) -> Tuple[Callable]:
+    """Load model class.
+
+    Parameters
+    ----------
+    device_config : DeviceConfig | None
+        Preferred way to specify placement.  When supplied, *device* is ignored
+        and the model is loaded with ``device_map`` / ``max_memory`` from the
+        config.  When ``None``, legacy ``device`` + ``.to()`` behaviour is kept.
+    """
+    # Lazy-import to avoid circular deps when device_utils lives in src/
+    if device_config is None and device is not None:
+        try:
+            from device_utils import parse_device_config  # type: ignore
+            device_config = parse_device_config(str(device))
+        except Exception:
+            pass  # fall back to legacy .to(device)
+
+    _dc_kwarg = dict(device_config=device_config) if device_config is not None else {}
 
     if "llava-1.5" in model_name_or_path:
         from models.llava import LLaVA
@@ -32,6 +51,7 @@ def get_model_class(
             processor_name=processor_name,
             local_files_only=args.local_files_only,
             cache_dir=args.cache_dir,
+            **_dc_kwarg,
         )
     elif "Qwen2.5-VL" in model_name_or_path:
         from models.qwen_2_5 import Qwen2_5VL
@@ -40,6 +60,7 @@ def get_model_class(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
+            **_dc_kwarg,
         )
     elif "Qwen2-VL" in model_name_or_path:
         from models.qwen_vl import QwenVL
@@ -48,6 +69,7 @@ def get_model_class(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
+            **_dc_kwarg,
         )
     elif "gemma-3" in model_name_or_path:
         from models.gemma3 import Gemma3nVL
@@ -56,6 +78,7 @@ def get_model_class(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
+            **_dc_kwarg,
         )
     elif "idefics" in model_name_or_path:
         from models.idefics2 import IDEFICS
@@ -64,6 +87,7 @@ def get_model_class(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
+            **_dc_kwarg,
         )
     elif "Molmo" in model_name_or_path:
         from models.molmo import Molmo
@@ -72,6 +96,7 @@ def get_model_class(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
+            **_dc_kwarg,
         )
     elif "CheXagent" in model_name_or_path:
         from models.chexagent import CheXagent
@@ -79,6 +104,7 @@ def get_model_class(
             model_name_or_path=model_name_or_path,
             processor_name=processor_name,
             local_files_only=args.local_files_only,
+            **_dc_kwarg,
         )
 
     else:
@@ -87,10 +113,13 @@ def get_model_class(
         )
 
     if logger is not None:
-        logger.info(f"Successfully loaded {model_name_or_path}, device: {device}")
+        logger.info(f"Successfully loaded {model_name_or_path}, device config: {device_config or device}")
 
+    # Place model on device: single-GPU device_config or legacy device string
     if getattr(model_class.model_, 'hf_device_map', None) is None:
-        model_class.model_.to(device)
-    #model_class.model_.to(device)
+        if device_config is not None and not device_config.is_multi_gpu:
+            model_class.model_.to(device_config.primary_device)
+        elif device_config is None and device is not None:
+            model_class.model_.to(device)
 
     return model_class

@@ -138,7 +138,9 @@ class VLMConceptExplainer:
 
         # Load model and processor via repo's loader
         self.model, self.processor = self._load_model(device)
-        self.device = torch.device(device) if device else next(self.model.parameters()).device
+        self.device = getattr(self, '_device_config', None) and self._device_config.primary_device or (
+            torch.device(device) if device else next(self.model.parameters()).device
+        )
 
         # Load concept vectors and metadata
         self.concept_data = self._load_concepts(concept_path)
@@ -199,9 +201,12 @@ class VLMConceptExplainer:
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
 
-        device = torch.device(device_override) if device_override is not None else (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        from device_utils import get_device_config  # type: ignore
+        device_config = get_device_config(
+            str(device_override) if device_override is not None else None
         )
+        device = device_config.primary_device
+        self._device_config = device_config
 
         
         from models import get_model_class  # type: ignore
@@ -209,7 +214,7 @@ class VLMConceptExplainer:
         # Minimal args namespace expected by get_model_class
         args = argparse.Namespace(
             local_files_only=False,
-            cache_dir=os.environ.get("HF_HOME", "/mnt/abka03/huggingface/hub"),
+            cache_dir=os.environ.get("HF_HOME"),
         )
 
         model_class = get_model_class(
@@ -218,6 +223,7 @@ class VLMConceptExplainer:
             device=device,
             logger=None,
             args=args,
+            device_config=device_config,
         )
         self._model_class = model_class
         model = model_class.get_model()
@@ -665,14 +671,14 @@ __all__ = ["VLMConceptExplainer"]
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Quick test for VLMConceptExplainer")
-    ap.add_argument('--model_name', default='google/gemma-3n-E4B-it')
+    ap.add_argument('--model_name', default=os.environ.get('VLM_MODEL', 'Qwen/Qwen2.5-VL-3B-Instruct'))
     ap.add_argument('--concept_path', required=True)
     ap.add_argument('--layer_path', required=True)
     ap.add_argument('--image', action='append')  # removed required=True to allow --image_root only
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
-    ap.add_argument('--batch_size', type=int, default=5)
+    ap.add_argument('--batch_size', type=int, default=int(os.environ.get('BATCH_SIZE', '10')))
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')
@@ -682,7 +688,7 @@ if __name__ == "__main__":
     ap.add_argument('--choice', action='append', dest='choice_list', help='Add a choice label (can be repeated)')
     ap.add_argument('--choices', default=None, dest='choices_csv', help='Comma-separated choices (alternative to repeated --choice)')
     # New: JSON output and data root controls
-    ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json', help='Path to save JSON results')
+    ap.add_argument('--out_json', default=os.path.join(os.environ.get('OUTPUT_DIR', '.'), 'vlm_explanations.json'), help='Path to save JSON results')
     ap.add_argument('--data_root', default=None, help='Root path of dataset. If omitted, inferred from image paths')
     ap.add_argument('--save_only_generated_tokens', default=True, action='store_true', help='Save only the generated tokens in the output')
     args = ap.parse_args()

@@ -38,6 +38,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
+# Source .env as single source of truth
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a; source "$ROOT_DIR/.env"; set +a
+fi
+
 IMAGE_ROOT="/mnt/abka03/Projects/xl-vlms/data/val"
 MODEL_NAME="google/gemma-3n-E4B-it"
 OUT_DIR="$ROOT_DIR/outputs/grounding_run_20250919_144409"

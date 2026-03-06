@@ -6,6 +6,12 @@ set -euo pipefail
 # IMAGE_ROOT, TOP_N, EXPLAIN_DIR, DECOMP_DIR, EXPL_PROMPT_MODE, EXPL_LABEL, EXPL_CHOICES
 
 WORKSPACE_DIR="${WORKSPACE_DIR:-/mnt/abka03/Projects/xl-vlms}"
+
+# Source .env as single source of truth
+if [[ -f "$WORKSPACE_DIR/.env" ]]; then
+  set -a; source "$WORKSPACE_DIR/.env"; set +a
+fi
+
 # Resolve Python interpreter
 if command -v "${PYTHON:-${PYTHON_BIN:-python}}" >/dev/null 2>&1; then
   PYTHON_BIN="${PYTHON:-${PYTHON_BIN:-python}}"

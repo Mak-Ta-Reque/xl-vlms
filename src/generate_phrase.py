@@ -122,6 +122,14 @@ if __name__ == "__main__":
     log_args(args, logger)
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # Use device_config if available
+    device_config = None
+    try:
+        from device_utils import get_device_config
+        device_config = get_device_config(getattr(args, 'device', None))
+        device = device_config.primary_device
+    except Exception:
+        pass
 
     model_class = get_model_class(
         args.model_name_or_path,
@@ -129,6 +137,7 @@ if __name__ == "__main__":
         device=device,
         logger=logger,
         args=args,
+        device_config=device_config,
     )
 
     

@@ -54,6 +54,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
+# Source .env as single source of truth
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a; source "$ROOT_DIR/.env"; set +a
+fi
+
 # Data & outputs
 INPUT_DIR="${INPUT_DIR:-/mnt/abka03/xlvlm_data/imagenet_1000}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/dtd_concepts/gemma_imnet_colorful_eval_4_grid}"
@@ -132,12 +137,12 @@ EVAL_DIR="$OUTPUT_DIR/eval"
 PLOTS_DIR="$OUTPUT_DIR/plots"
 
 export HF_HOME
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$DEVICE_ID}"
+export DEVICE
 
 log "Root:       $ROOT_DIR"
 log "Input dir:  $INPUT_DIR"
 log "Output dir: $OUTPUT_DIR"
-log "Model:      $VLM_MODEL | Batch: $BATCH_SIZE | Seed: $SEED | Device: cuda:$CUDA_VISIBLE_DEVICES"
+log "Model:      $VLM_MODEL | Batch: $BATCH_SIZE | Seed: $SEED | Device: $DEVICE"
 log "Decompose:  $DECOMP_METHODS"
 log "Crops: data_dir=$INPUT_DIR k=$CONCEPT_CROPS_PER_IMAGE patch=$PATCH_SIZE min=$MIN_IMAGES_PER_TAG max=$MAX_IMAGES_PER_TAG concept_mode=$CONCEPT_MODE det=$OBJECT_DETECTION"
 log "Explainer:  layer=$LAYER_PATH image_root=$IMAGE_ROOT top_n=$TOP_N mode=$EXPL_PROMPT_MODE"

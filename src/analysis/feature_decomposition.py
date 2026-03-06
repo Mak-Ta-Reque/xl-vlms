@@ -1,4 +1,5 @@
 import argparse
+import os
 from typing import Any, Callable, Dict, List
 
 import numpy as np
@@ -288,7 +289,12 @@ def decompose_activations(
     elif decomposition_method == "sae":
         from src.helpers.sae_ import SparseAutoencoder, train_sae  # modularized SAE
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        _device_str = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+        try:
+            from device_utils import get_device_config
+            device = get_device_config(_device_str).primary_device
+        except Exception:
+            device = torch.device(_device_str if ":" in _device_str or _device_str == "cpu" else "cuda")
 
         input_dim = mat.shape[1]
         hidden_dim = num_concepts

@@ -134,8 +134,8 @@ def inference(
         is_concept_flags = item.get("is_concept", None)
         patch_sizes = item.get("patch_size", None)
 
-        # Load blur radius from env (default 15)
-        _blur_radius = int(os.environ.get("MASK_BLUR_RADIUS", "15"))
+        # Load blur radius from env (default from .env MASK_BLUR_RADIUS)
+        _blur_radius = int(os.environ.get("MASK_BLUR_RADIUS", "10"))
 
         # Background masking method: 'gaussian_blur', 'ns', 'telea', 'noisy_linear', 'blackout'
         _inpainting_method = os.environ.get(
@@ -227,13 +227,13 @@ def inference(
         per_image_patch_sizes = _ensure_per_image_patch_size(patch_sizes, len(image_paths))
 
         # Context pixels beyond the mask boundary to keep for spatial context
-        _context_pixels = int(os.environ.get("MASK_CONTEXT_PIXELS", "10"))
+        _context_pixels = int(os.environ.get("MASK_CONTEXT_PIXELS", "0"))
 
         # Mask boundary pixels: dilate FG mask / erode BG mask by N pixels
         # at inference time.  Applied on the cropped mask region so the
         # morphological op only touches pixels inside the image, never
         # fabricates pixels beyond the image boundary.
-        _boundary_pixels = int(os.environ.get("MASK_BOUNDARY_PIXELS", "0"))
+        _boundary_pixels = int(os.environ.get("MASK_BOUNDARY_PIXELS", "50"))
 
         for idx in range(len(image_paths)):
             img_ref = image_paths[idx]
@@ -627,7 +627,10 @@ def main():
     logger.info(f"Loading model: {args.model_name_or_path}")
     log_args(args, logger)
 
-    device = torch.device(args.device)
+    from device_utils import get_device_config  # type: ignore
+    device_config = get_device_config(args.device)
+    device = device_config.primary_device
+    logger.info(f"Device config: {device_config.raw} -> primary={device}, gpu_ids={device_config.gpu_ids}")
 
     model_class = get_model_class(
         args.model_name_or_path,
@@ -635,6 +638,7 @@ def main():
         device=device,
         logger=logger,
         args=args,
+        device_config=device_config,
     )
 
     hook_return_functions, hook_postprocessing_functions = setup_hooks(

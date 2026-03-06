@@ -147,7 +147,7 @@ def main():
     ap.add_argument("--img_key", default="image_path", help="Key for image path (optional).")
     ap.add_argument("--img_root", default=None,
                     help="If provided, join this root with relative image paths.")
-    ap.add_argument("--device", default="cuda", help="cuda or cpu.")
+    ap.add_argument("--device", default=os.environ.get("DEVICE", "auto"), help="Device config string.")
     ap.add_argument("--bertscore_lang", default="en")
     ap.add_argument("--no_clip", action="store_true", help="Force skip CLIPScore even if backend exists.")
     args = ap.parse_args()
