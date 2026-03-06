@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { RotateCcw, AlertCircle } from "lucide-react";
 import { Header } from "./components/Header";
+import { ApiReference } from "./components/ApiReference";
 import { ImageUploader } from "./components/ImageUploader";
 import { BboxCanvas } from "./components/BboxCanvas";
 import { ClassPill } from "./components/ClassPill";
@@ -54,6 +55,8 @@ function App() {
     [selectWord],
   );
 
+  const [showApiDocs, setShowApiDocs] = useState(false);
+
   const isProcessing =
     state.step === "classifying" ||
     state.step === "grounding" ||
@@ -61,7 +64,17 @@ function App() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-4">
-      <Header />
+      <Header
+        onApiDocsClick={() => setShowApiDocs((v) => !v)}
+        showingApiDocs={showApiDocs}
+      />
+
+      {showApiDocs && (
+        <ApiReference onBack={() => setShowApiDocs(false)} />
+      )}
+
+      {showApiDocs ? null : (
+      <>
 
       {/* error banner */}
       {state.error && (
@@ -205,6 +218,8 @@ function App() {
             )}
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

@@ -3,11 +3,12 @@
 FastAPI backend for the VLM Classify demo.
 
 Replaces the Streamlit vlm_classify_demo.py with a REST API that exposes:
-  POST /api/classify   — upload image → classify → return nouns
-  POST /api/ground     — image_id + nouns → bounding boxes
-  POST /api/explain    — image_id + label → binary concept scoring + prototypes
-  GET  /api/samples    — list of sample image filenames
-  GET  /api/health     — health check
+  POST /api/classify       — upload image → classify → return nouns
+  POST /api/ground         — image_id + nouns → bounding boxes
+  POST /api/explain        — image_id + label → binary concept scoring + prototypes
+  POST /api/explain-image  — upload image + label → binary concept scoring (no prior classify needed)
+  GET  /api/samples        — list of sample image filenames
+  GET  /api/health         — health check
 
 Usage:
   conda run -n xlvlm-v1 python -m uvicorn demo.classify_api:app \
@@ -592,6 +593,119 @@ async def explain(req: ExplainRequest):
         )
 
     return {
+        "model_output": model_output,
+        "top_concepts": concepts,
+        "mask_colors_hex": MASK_COLORS_HEX[: n_show],
+        "bbox_colors_hex": BBOX_COLORS_HEX,
+    }
+
+
+@app.post("/api/explain-image")
+async def explain_image(
+    file: UploadFile = File(...),
+    label: str = Form(...),
+):
+    """Upload a fresh image and run binary concept scoring directly.
+
+    Unlike /api/explain this does NOT require a prior /api/classify call —
+    the image is uploaded as part of the request.
+
+    Returns the same shape as /api/explain.
+    """
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Save to temp
+    suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
+    image_id = f"{uuid.uuid4().hex}{suffix}"
+    save_path = TEMP_DIR / image_id
+    content = await file.read()
+    save_path.write_bytes(content)
+
+    try:
+        binary_result = _run_binary_for_class(str(save_path), label.strip())
+    except Exception as e:
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Explain failed: {e}")
+
+    model_output = binary_result.get("model_output", "")
+    top_concepts_raw = binary_result.get("top_concepts_over_sequence") or []
+    all_preds = _load_concept_predictions()
+    concept_dir = CONCEPT_PTH.parent
+    PROTO_W, PROTO_H = 140, 100
+
+    concepts: List[dict] = []
+    n_show = min(3, len(top_concepts_raw))
+
+    for rank, concept_info in enumerate(top_concepts_raw[:n_show], 1):
+        sim = concept_info.get("similarity", 0.0)
+        ci = concept_info.get("concept_index")
+
+        raw_cname = concept_info.get("concept_name")
+        if isinstance(raw_cname, (list, tuple)) and raw_cname:
+            cnames = sorted(set(str(v) for v in raw_cname if v))
+        elif isinstance(raw_cname, str) and raw_cname:
+            cnames = [raw_cname]
+        else:
+            cnames = []
+
+        preds_list: List[str] = []
+        if ci is not None and ci < len(all_preds):
+            preds_raw = all_preds[ci]
+            if isinstance(preds_raw, (list, tuple)):
+                preds_list = [str(p) for p in preds_raw]
+
+        color = MASK_COLORS[(rank - 1) % len(MASK_COLORS)]
+        n_avail = get_num_prototypes(concept_info)
+        n_protos = min(3, n_avail)
+        protos: List[dict] = []
+        for pi in range(n_protos):
+            rendered_masked = render_prototype(
+                concept_info,
+                concept_dir=concept_dir,
+                target_width=max(PROTO_W, 300),
+                mask_color=color,
+                proto_index=pi,
+                draw_mask=True,
+            )
+            rendered_clean = render_prototype(
+                concept_info,
+                concept_dir=concept_dir,
+                target_width=max(PROTO_W, 300),
+                mask_color=color,
+                proto_index=pi,
+                draw_mask=False,
+            )
+            if rendered_masked is not None:
+                def _crop_proto(img: Image.Image) -> Image.Image:
+                    w, h = img.size
+                    scale = max(PROTO_W / w, PROTO_H / h)
+                    new_w, new_h = int(w * scale), int(h * scale)
+                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    left = (new_w - PROTO_W) // 2
+                    top_ = (new_h - PROTO_H) // 2
+                    return img.crop((left, top_, left + PROTO_W, top_ + PROTO_H))
+
+                masked_b64 = pil_to_base64(_crop_proto(rendered_masked), fmt="JPEG")
+                clean_b64 = pil_to_base64(_crop_proto(rendered_clean), fmt="JPEG") if rendered_clean else masked_b64
+                protos.append({
+                    "image_b64": masked_b64,
+                    "image_b64_clean": clean_b64,
+                })
+
+        concepts.append(
+            {
+                "rank": rank,
+                "similarity": sim,
+                "concept_index": ci if ci is not None else -1,
+                "concept_names": cnames,
+                "predictions": preds_list,
+                "prototypes": protos,
+            }
+        )
+
+    return {
+        "image_id": image_id,
         "model_output": model_output,
         "top_concepts": concepts,
         "mask_colors_hex": MASK_COLORS_HEX[: n_show],
