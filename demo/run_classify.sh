@@ -85,7 +85,7 @@ done
 
 # ─── Start Vite dev server ────────────────────────────────────────────
 echo "» Starting frontend on port $FE_PORT..."
-(cd "$SCRIPT_DIR/frontend" && npx vite --port "$FE_PORT" --host) &
+(cd "$SCRIPT_DIR/frontend" && CLASSIFY_API_PORT="$API_PORT" npx vite --port "$FE_PORT" --host) &
 FRONTEND_PID=$!
 
 echo ""
