@@ -125,6 +125,7 @@ function App() {
             <BboxCanvas
               imageUrl={state.imageUrl}
               objects={state.groundedObjects}
+              bboxImageSize={state.bboxImageSize}
               nouns={state.nouns}
               selectedClass={state.selectedClass}
               onBoxClick={selectClass}

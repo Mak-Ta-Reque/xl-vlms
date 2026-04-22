@@ -173,6 +173,36 @@ bash demo/run_demo.sh
 
 ---
 
+## Classify API Resize Sync Contract
+
+For the FastAPI classify flow (`demo/classify_api.py`), image resizing and bbox
+coordinates are synchronized via explicit response fields.
+
+- `POST /api/classify` returns:
+  - `downsample_ratio`
+  - `original_size` (`[width, height]`)
+  - `processed_size` (`[width, height]`)
+- `POST /api/ground` returns:
+  - `bbox_space` (`processed` or `original`)
+  - `bbox_image_size` (the image size that bbox coordinates are defined in)
+  - `original_size`, `processed_size`, `downsample_ratio`
+  - `sync_contract_version`
+
+Recommended setting for robust visualization:
+
+```dotenv
+export GROUND_BBOX_COORD_SPACE=processed
+```
+
+Frontend rule:
+
+- Always scale/draw bounding boxes using `bbox_image_size` from `/api/ground`,
+  not guessed dimensions.
+- Prefer displaying the backend image from `GET /api/image/{image_id}` so the
+  rendered image matches inference/grounding space.
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |

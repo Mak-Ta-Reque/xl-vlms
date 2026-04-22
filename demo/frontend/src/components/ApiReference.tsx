@@ -48,7 +48,10 @@ Fields:
   "image_id": "abc123",
   "model_output": "A fluffy orange cat sitting on a couch.",
   "nouns": ["cat", "couch"],
-  "prompt": "Describe what you see."
+  "prompt": "Describe what you see.",
+  "downsample_ratio": 0.5,
+  "original_size": [4032, 3024],
+  "processed_size": [2016, 1512]
 }`,
     curlExample: `curl -X POST http://localhost:8501/api/classify \\
   -F "file=@photo.jpg" \\
@@ -70,7 +73,13 @@ Fields:
     { "name": "cat",   "bbox": [52, 80, 310, 400] },
     { "name": "couch", "bbox": [0, 200, 500, 480] }
   ],
-  "prompt": "Locate cat, couch in the image."
+  "prompt": "Locate cat, couch in the image.",
+  "bbox_space": "processed",
+  "bbox_image_size": [512, 384],
+  "original_size": [4032, 3024],
+  "processed_size": [512, 384],
+  "downsample_ratio": 0.126984,
+  "sync_contract_version": 1
 }`,
     curlExample: `curl -X POST http://localhost:8501/api/ground \\
   -H "Content-Type: application/json" \\
@@ -134,7 +143,10 @@ Fields:
     }
   ],
   "mask_colors_hex": ["#ff0000", "#00ff00", "#0000ff"],
-  "bbox_colors_hex": ["#ff0000", "#00ff00", "#0000ff"]
+  "bbox_colors_hex": ["#ff0000", "#00ff00", "#0000ff"],
+  "downsample_ratio": 0.5,
+  "original_size": [4032, 3024],
+  "processed_size": [2016, 1512]
 }`,
     curlExample: `curl -X POST http://localhost:8501/api/explain-image \\
   -F "file=@photo.jpg" \\

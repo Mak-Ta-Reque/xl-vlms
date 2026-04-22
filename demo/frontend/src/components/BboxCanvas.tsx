@@ -13,6 +13,7 @@ const BBOX_COLORS = [
 interface Props {
   imageUrl: string;
   objects: GroundedObject[];
+  bboxImageSize?: [number, number] | null;
   nouns: string[];
   selectedClass: string | null;
   onBoxClick: (noun: string) => void;
@@ -22,6 +23,7 @@ interface Props {
 export function BboxCanvas({
   imageUrl,
   objects,
+  bboxImageSize,
   nouns,
   selectedClass,
   onBoxClick,
@@ -75,14 +77,16 @@ export function BboxCanvas({
     (obj: GroundedObject) => {
       if (!imgSize) return null;
       let [x1, y1, x2, y2] = obj.bbox;
+      const sourceW = bboxImageSize?.[0] ?? imgSize.natW;
+      const sourceH = bboxImageSize?.[1] ?? imgSize.natH;
       if ([x1, y1, x2, y2].every((v) => v >= 0 && v <= 1)) {
-        x1 *= imgSize.natW;
-        y1 *= imgSize.natH;
-        x2 *= imgSize.natW;
-        y2 *= imgSize.natH;
+        x1 *= sourceW;
+        y1 *= sourceH;
+        x2 *= sourceW;
+        y2 *= sourceH;
       }
-      const scaleX = imgSize.dispW / imgSize.natW;
-      const scaleY = imgSize.dispH / imgSize.natH;
+      const scaleX = imgSize.dispW / sourceW;
+      const scaleY = imgSize.dispH / sourceH;
       x1 *= scaleX; y1 *= scaleY; x2 *= scaleX; y2 *= scaleY;
       if (x1 > x2) [x1, x2] = [x2, x1];
       if (y1 > y2) [y1, y2] = [y2, y1];
@@ -93,7 +97,7 @@ export function BboxCanvas({
       if (x2 - x1 < 2 || y2 - y1 < 2) return null;
       return { x1, y1, x2, y2 };
     },
-    [imgSize],
+    [imgSize, bboxImageSize],
   );
 
   // Draw bboxes on canvas overlay

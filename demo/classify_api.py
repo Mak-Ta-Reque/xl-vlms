@@ -23,16 +23,16 @@ import sys
 import json
 import uuid
 import threading
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from io import BytesIO
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from PIL import Image
+from PIL import Image, ImageOps
 
 # ── path setup ────────────────────────────────────────────────────────────
 
@@ -75,6 +75,9 @@ CONCEPT_PTH = _resolve_concept_path()
 VLM_MODEL = os.getenv("VLM_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct")
 LAYER_PATH = os.getenv("LAYER_PATH", "model.language_model.norm")
 IMAGE_SIZE_WIDTH = int(os.getenv("IMAGE_SIZE_WIDTH", "512"))
+CLASSIFY_API_DOWNSAMPLE_RATIO = float(os.getenv("CLASSIFY_API_DOWNSAMPLE_RATIO", "1.0"))
+CLASSIFY_API_MAX_LONG_EDGE = int(os.getenv("CLASSIFY_API_MAX_LONG_EDGE", str(IMAGE_SIZE_WIDTH)))
+GROUND_BBOX_COORD_SPACE = os.getenv("GROUND_BBOX_COORD_SPACE", "processed").strip().lower()
 
 CLASSIFY_PROMPT = os.getenv(
     "CLASSIFY_PROMPT",
@@ -141,6 +144,11 @@ def _get_explainer():
 
 _concept_predictions: Optional[List] = None
 _concept_predictions_lock = threading.Lock()
+
+# Track original vs processed image sizes by image_id to keep bbox coordinates
+# consistent with the original uploaded image shown in the frontend.
+_image_meta: Dict[str, Dict[str, Any]] = {}
+_image_meta_lock = threading.Lock()
 
 
 def _load_concept_predictions() -> List:
@@ -376,6 +384,84 @@ def _run_binary_for_class(image_path: str, label: str) -> Dict[str, Any]:
     return results[0]
 
 
+def _save_upload_with_downsample(content: bytes, save_path: Path) -> Dict[str, Any]:
+    """Save upload to disk with optional downsampling to reduce GPU memory pressure."""
+    img = Image.open(BytesIO(content))
+    # Keep orientation consistent with browser rendering for bbox overlays.
+    img = ImageOps.exif_transpose(img)
+
+    img = img.convert("RGB")
+    orig_w, orig_h = img.size
+    orig_long = max(orig_w, orig_h)
+
+    env_ratio = CLASSIFY_API_DOWNSAMPLE_RATIO
+    if env_ratio <= 0:
+        env_ratio = 1.0
+
+    max_edge_ratio = 1.0
+    if CLASSIFY_API_MAX_LONG_EDGE > 0 and orig_long > CLASSIFY_API_MAX_LONG_EDGE:
+        max_edge_ratio = CLASSIFY_API_MAX_LONG_EDGE / float(orig_long)
+
+    applied_ratio = min(1.0, env_ratio, max_edge_ratio)
+
+    if applied_ratio < 1.0:
+        new_w = max(1, int(round(orig_w * applied_ratio)))
+        new_h = max(1, int(round(orig_h * applied_ratio)))
+        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    img.save(save_path, format="JPEG", quality=92, optimize=True)
+    final_w, final_h = img.size
+
+    return {
+        "downsample_ratio": round(applied_ratio, 6),
+        "original_size": [orig_w, orig_h],
+        "processed_size": [final_w, final_h],
+    }
+
+
+def _rescale_bboxes_to_original(
+    objects: List[Dict[str, Any]],
+    original_size: List[int],
+    processed_size: List[int],
+) -> List[Dict[str, Any]]:
+    """Convert bbox coordinates from processed-image pixels back to original-image pixels."""
+    if len(original_size) != 2 or len(processed_size) != 2:
+        return objects
+
+    orig_w, orig_h = original_size
+    proc_w, proc_h = processed_size
+    if proc_w <= 0 or proc_h <= 0 or orig_w <= 0 or orig_h <= 0:
+        return objects
+
+    scale_x = orig_w / float(proc_w)
+    scale_y = orig_h / float(proc_h)
+
+    remapped: List[Dict[str, Any]] = []
+    for obj in objects:
+        bb = obj.get("bbox")
+        if not isinstance(bb, (list, tuple)) or len(bb) != 4:
+            remapped.append(obj)
+            continue
+
+        x1, y1, x2, y2 = [float(v) for v in bb]
+
+        # Keep normalized [0,1] coordinates unchanged.
+        if not all(0.0 <= v <= 1.0 for v in (x1, y1, x2, y2)):
+            x1 *= scale_x
+            x2 *= scale_x
+            y1 *= scale_y
+            y2 *= scale_y
+
+        x1 = max(0.0, min(float(orig_w), x1))
+        x2 = max(0.0, min(float(orig_w), x2))
+        y1 = max(0.0, min(float(orig_h), y1))
+        y2 = max(0.0, min(float(orig_h), y2))
+
+        remapped.append({**obj, "bbox": [x1, y1, x2, y2]})
+
+    return remapped
+
+
 # ── Pydantic models ──────────────────────────────────────────────────────
 
 
@@ -449,11 +535,12 @@ async def classify(
         raise HTTPException(status_code=400, detail="File must be an image")
 
     # Save to temp
-    suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
-    image_id = f"{uuid.uuid4().hex}{suffix}"
+    image_id = f"{uuid.uuid4().hex}.jpg"
     save_path = TEMP_DIR / image_id
     content = await file.read()
-    save_path.write_bytes(content)
+    upload_meta = _save_upload_with_downsample(content, save_path)
+    with _image_meta_lock:
+        _image_meta[image_id] = upload_meta
 
     # Classify (with optional custom prompt)
     custom_prompt = prompt.strip() if prompt and prompt.strip() else None
@@ -471,6 +558,9 @@ async def classify(
         "model_output": model_output,
         "nouns": nouns,
         "prompt": prompt_used,
+        "downsample_ratio": upload_meta["downsample_ratio"],
+        "original_size": upload_meta["original_size"],
+        "processed_size": upload_meta["processed_size"],
     }
 
 
@@ -491,9 +581,27 @@ async def ground(req: GroundRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Grounding failed: {e}")
 
+    with _image_meta_lock:
+        meta = _image_meta.get(req.image_id)
+
+    bbox_space = "processed"
+    if GROUND_BBOX_COORD_SPACE == "original" and meta:
+        objects = _rescale_bboxes_to_original(
+            objects,
+            meta.get("original_size", []),
+            meta.get("processed_size", []),
+        )
+        bbox_space = "original"
+
     return {
         "objects": [GroundedObject(name=o["name"], bbox=o["bbox"]) for o in objects],
         "prompt": grounding_prompt,
+        "bbox_space": bbox_space,
+        "bbox_image_size": (meta.get("processed_size") if bbox_space == "processed" else meta.get("original_size")) if meta else None,
+        "original_size": meta.get("original_size") if meta else None,
+        "processed_size": meta.get("processed_size") if meta else None,
+        "downsample_ratio": meta.get("downsample_ratio") if meta else None,
+        "sync_contract_version": 1,
     }
 
 
@@ -616,11 +724,12 @@ async def explain_image(
         raise HTTPException(status_code=400, detail="File must be an image")
 
     # Save to temp
-    suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
-    image_id = f"{uuid.uuid4().hex}{suffix}"
+    image_id = f"{uuid.uuid4().hex}.jpg"
     save_path = TEMP_DIR / image_id
     content = await file.read()
-    save_path.write_bytes(content)
+    upload_meta = _save_upload_with_downsample(content, save_path)
+    with _image_meta_lock:
+        _image_meta[image_id] = upload_meta
 
     try:
         binary_result = _run_binary_for_class(str(save_path), label.strip())
@@ -710,6 +819,9 @@ async def explain_image(
         "top_concepts": concepts,
         "mask_colors_hex": MASK_COLORS_HEX[: n_show],
         "bbox_colors_hex": BBOX_COLORS_HEX,
+        "downsample_ratio": upload_meta["downsample_ratio"],
+        "original_size": upload_meta["original_size"],
+        "processed_size": upload_meta["processed_size"],
     }
 
 
@@ -741,6 +853,8 @@ async def shutdown_event():
         except Exception:
             pass
         _explainer = None
+    with _image_meta_lock:
+        _image_meta.clear()
 
 
 if __name__ == "__main__":

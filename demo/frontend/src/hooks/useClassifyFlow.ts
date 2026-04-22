@@ -29,6 +29,7 @@ export interface ClassifyFlowState {
 
   /* grounding */
   groundedObjects: GroundedObject[];
+  bboxImageSize: [number, number] | null;
 
   /* explain */
   selectedClass: string | null;
@@ -51,6 +52,7 @@ const INITIAL: ClassifyFlowState = {
   groundingPrompt: null,
   isCustomPrompt: false,
   groundedObjects: [],
+  bboxImageSize: null,
   selectedClass: null,
   explainResult: null,
   bboxColorsHex: ["#e67e22", "#27ae60", "#c0392b", "#2980b9", "#8e44ad"],
@@ -84,8 +86,19 @@ export function useClassifyFlow() {
       try {
         // 1. classify
         const cls: ClassifyResponse = await api.classifyImage(file, customPrompt);
+        let displayImageUrl = localUrl;
+        try {
+          const img = await api.getImageB64(cls.image_id);
+          if (img?.image_b64) {
+            displayImageUrl = img.image_b64;
+            URL.revokeObjectURL(localUrl);
+          }
+        } catch {
+          // Keep local preview if backend image fetch fails.
+        }
         const usingCustom = !!customPrompt;
         update({
+          imageUrl: displayImageUrl,
           imageId: cls.image_id,
           modelOutput: cls.model_output,
           nouns: cls.nouns,
@@ -99,6 +112,7 @@ export function useClassifyFlow() {
           const gr = await api.groundImage(cls.image_id, cls.nouns);
           update({
             groundedObjects: gr.objects,
+            bboxImageSize: gr.bbox_image_size ?? null,
             groundingPrompt: gr.prompt ?? null,
             step: "selecting",
           });
@@ -205,6 +219,7 @@ export function useClassifyFlow() {
               return {
                 ...prev,
                 groundedObjects: gr.objects,
+                bboxImageSize: gr.bbox_image_size ?? prev.bboxImageSize,
                 nouns: [word],
                 groundingPrompt: gr.prompt ?? prev.groundingPrompt,
               };
@@ -216,6 +231,7 @@ export function useClassifyFlow() {
             return {
               ...prev,
               groundedObjects: [...prev.groundedObjects, ...newObjs],
+              bboxImageSize: gr.bbox_image_size ?? prev.bboxImageSize,
               nouns: updatedNouns,
               groundingPrompt: gr.prompt ?? prev.groundingPrompt,
             };
@@ -261,7 +277,7 @@ export function useClassifyFlow() {
 
   /** Reset to initial state. */
   const reset = useCallback(() => {
-    if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
+    if (state.imageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.imageUrl);
     explainCache.current = {};
     setState(INITIAL);
   }, [state.imageUrl]);

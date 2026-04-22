@@ -6,6 +6,9 @@ export interface ClassifyResponse {
   nouns: string[];
   /** The prompt that was actually sent to the VLM for classification. */
   prompt: string;
+  downsample_ratio?: number;
+  original_size?: [number, number];
+  processed_size?: [number, number];
 }
 
 export interface GroundedObject {
@@ -17,6 +20,12 @@ export interface GroundResponse {
   objects: GroundedObject[];
   /** The prompt used for grounding / bounding-box detection. */
   prompt?: string;
+  bbox_space?: "processed" | "original";
+  bbox_image_size?: [number, number] | null;
+  original_size?: [number, number] | null;
+  processed_size?: [number, number] | null;
+  downsample_ratio?: number | null;
+  sync_contract_version?: number;
 }
 
 export interface PrototypeInfo {
