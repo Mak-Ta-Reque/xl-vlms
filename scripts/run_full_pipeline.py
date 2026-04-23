@@ -80,7 +80,15 @@ class PipelineConfig:
         self.patch_size = self._get_int("PATCH_SIZE", 200)
         self.min_images_per_tag = self._get_int("MIN_IMAGES_PER_TAG", 10)
         self.max_images_per_tag = self._get_int("MAX_IMAGES_PER_TAG", 128)
-        self.object_detector = self._get_str("OBJECT_DETECTOR", "sam3")  # 'langsam' or 'sam3'
+        self.crop_mode = self._get_str("CROP_MODE", "random").strip().lower()
+        if self.crop_mode in {"random", "sliding_window"}:
+            self.object_detector = "none"
+        elif self.crop_mode in {"sam3", "langsam"}:
+            self.object_detector = self.crop_mode
+        else:
+            raise ValueError(
+                "Invalid CROP_MODE. Use one of: random, sliding_window, langsam, sam3"
+            )
         self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 2)
         self.mask_blur_radius = self._get_int("MASK_BLUR_RADIUS", 15)
         self.mask_blur_radius_bg = self._get_int("MASK_BLUR_RADIUS_BG", self.mask_blur_radius)
@@ -117,7 +125,8 @@ class PipelineConfig:
         
         # Decomposition methods
         self.decomp_methods = self._get_str("DECOMP_METHODS", "snmf").split(",")
-        self.num_concepts = self._get_int("NUM_CONCEPTS", 2)
+        self.decomp_components = self._get_int("DECOMP_COMPONENTS", 2)
+        self.num_concept = self._get_int("NUM_CONCEPT", -1)  # -1 = use all tags, else top N tags by crop count
         self.dataset_size = self._get_int("BAG_SIZE", 100)
         self.delete_intermediate_files = self._get_int("DELETE_INTERMEDIATE_FILES", 0) == 1
         
@@ -200,6 +209,11 @@ def setup_logging(logs_dir: Path) -> logging.Logger:
     
     logger = logging.getLogger("xl-vlms-pipeline")
     logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+
+    # Avoid duplicate output when setup_logging is called multiple times.
+    if logger.handlers:
+        logger.handlers.clear()
     
     # Console handler
     console = logging.StreamHandler()
@@ -394,11 +408,50 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
     """
     
     features_path = config.features_dir / "features"
+    debug_save_enabled = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "0") == "1"
     if features_path.exists() and any(features_path.glob("*.pth")):
-        logger.info(f"Skip Feature Generation (found features under {features_path})")
-        return
+        if debug_save_enabled:
+            logger.info(
+                f"Debug mode enabled (DEBUG_SAVE_VLM_INPUTS=1): forcing Step 3 rerun even though features exist under {features_path}"
+            )
+        else:
+            logger.info(f"Skip Feature Generation (found features under {features_path})")
+            return
     
     logger.info("START: Generate Features")
+    
+    # Filter crops.json based on NUM_CONCEPT if needed
+    annotation_file = config.crops_json
+    temporary_filtered_crops = None
+    if config.num_concept > 0:
+        logger.info(f"Filtering crops.json to top {config.num_concept} tags by crop count...")
+        
+        import json
+        with open(config.crops_json, 'r') as f:
+            crops_data = json.load(f)
+        
+        # Count crops per tag (top-level key)
+        tag_counts = {tag: len(crops) for tag, crops in crops_data.items()}
+        
+        # Sort tags by crop count descending and select top NUM_CONCEPT
+        sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+        selected_tags = [tag for tag, count in sorted_tags[:config.num_concept]]
+        
+        logger.info(f"Tag counts: {tag_counts}")
+        logger.info(f"Selected top {len(selected_tags)} tags: {selected_tags}")
+        
+        # Filter crops.json to only include selected tags
+        filtered_crops = {tag: crops_data[tag] for tag in selected_tags if tag in crops_data}
+        
+        # Save filtered crops.json to inference directory as a temporary file
+        filtered_crops_json = config.crops_json.parent / "crops_filtered.json"
+        filtered_crops_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(filtered_crops_json, 'w') as f:
+            json.dump(filtered_crops, f, indent=2)
+        
+        annotation_file = filtered_crops_json
+        temporary_filtered_crops = filtered_crops_json
+        logger.info(f"Filtered crops.json saved to {filtered_crops_json}")
     
     features_args = [
         str(ROOT_DIR / "src" / "save_features.py"),
@@ -406,7 +459,7 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--dataset_name", "json_crop_map",
         "--dataset_size", str(config.dataset_size),
         "--data_dir", str(config.input_dir),
-        "--annotation_file", str(config.crops_json),
+        "--annotation_file", str(annotation_file),
         "--split", "train",
         "--hook_names", "save_hidden_states_mean",
         "--modules_to_hook", config.layer_path,
@@ -418,7 +471,12 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--exact_match_modules_to_hook",
     ]
     
-    _run_python_subprocess(features_args, logger=logger)
+    try:
+        _run_python_subprocess(features_args, logger=logger)
+    finally:
+        if temporary_filtered_crops is not None and temporary_filtered_crops.exists():
+            temporary_filtered_crops.unlink()
+            logger.info(f"Deleted temporary filtered crops file: {temporary_filtered_crops}")
     
     logger.info("DONE: Generate Features")
 
@@ -453,7 +511,7 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
             "--analysis_name", f"{base_analysis_name}_{method}",
             "--features_path", str(config.features_dir / "features"),
             "--module_to_decompose", config.layer_path,
-            "--num_concepts", str(config.num_concepts),
+            "--num_concepts", str(config.decomp_components),
             "--decomposition_method", method,
             "--save_dir", str(intermediate_dir),
         ]
@@ -554,54 +612,86 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
         concept_path = config.decomp_dir / method / f"combined_concept_{method}_raw.pth"
         in_json = config.explain_dir / method / "vlm_explanations.json"
         out_dir = config.eval_dir / method
-        
-        if out_dir.exists() and any(out_dir.glob("*.csv")):
-            logger.info(f"Skip Eval (Token) - {method} (CSVs exist)")
-            continue
-        
+
         out_dir.mkdir(parents=True, exist_ok=True)
         
         for rank in range(0, config.top_n):
+            rank_idx = rank + 1
+            insertion_csv = out_dir / f"c_insertion_token_rank{rank_idx}.csv"
+            deletion_csv = out_dir / f"c_deletion_token_rank{rank_idx}.csv"
+
             # Insertion eval
-            logger.info(f"START: Eval Insert (rank={rank+1}, {method})")
-            
-            insert_args = [
-                str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
-                "--results_json", str(in_json),
-                "--concept_path", str(concept_path),
-                "--model_name", config.vlm_model,
-                "--layer_path", config.layer_path,
-                "--mode", "token",
-                "--num_points", str(config.num_points),
-                "--out_dir", str(out_dir),
-                "--device", config.device,
-                "--rank", str(rank+1),
-                "--insertion",
-            ]
-            
-            _run_python_subprocess(insert_args, logger=logger)
-            
-            logger.info(f"DONE: Eval Insert (rank={rank+1}, {method})")
+            if insertion_csv.exists():
+                logger.info(f"Skip Eval Insert (rank={rank_idx}, {method})")
+            else:
+                logger.info(f"START: Eval Insert (rank={rank_idx}, {method})")
+
+                insert_args = [
+                    str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
+                    "--results_json", str(in_json),
+                    "--concept_path", str(concept_path),
+                    "--model_name", config.vlm_model,
+                    "--layer_path", config.layer_path,
+                    "--mode", "token",
+                    "--num_points", str(config.num_points),
+                    "--out_dir", str(out_dir),
+                    "--device", config.device,
+                    "--rank", str(rank_idx),
+                    "--insertion",
+                ]
+
+                _run_python_subprocess(insert_args, logger=logger)
+
+                logger.info(f"DONE: Eval Insert (rank={rank_idx}, {method})")
             
             # Deletion eval
-            logger.info(f"START: Eval Delete (rank={rank+1}, {method})")
-            
-            delete_args = [
-                str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
-                "--results_json", str(in_json),
-                "--concept_path", str(concept_path),
-                "--model_name", config.vlm_model,
-                "--layer_path", config.layer_path,
-                "--mode", "token",
-                "--num_points", str(config.num_points),
-                "--out_dir", str(out_dir),
-                "--device", config.device,
-                "--rank", str(rank+1),
-            ]
-            
-            _run_python_subprocess(delete_args, logger=logger)
-            
-            logger.info(f"DONE: Eval Delete (rank={rank+1}, {method})")
+            if deletion_csv.exists():
+                logger.info(f"Skip Eval Delete (rank={rank_idx}, {method})")
+            else:
+                logger.info(f"START: Eval Delete (rank={rank_idx}, {method})")
+
+                delete_args = [
+                    str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
+                    "--results_json", str(in_json),
+                    "--concept_path", str(concept_path),
+                    "--model_name", config.vlm_model,
+                    "--layer_path", config.layer_path,
+                    "--mode", "token",
+                    "--num_points", str(config.num_points),
+                    "--out_dir", str(out_dir),
+                    "--device", config.device,
+                    "--rank", str(rank_idx),
+                ]
+
+                _run_python_subprocess(delete_args, logger=logger)
+
+                logger.info(f"DONE: Eval Delete (rank={rank_idx}, {method})")
+
+        # Top-k semantic table (BERT/CLIP) + random activation baseline
+        logger.info(f"START: Eval BERT/CLIP Top-K Table ({method})")
+        clip_bert_args = [
+            str(ROOT_DIR / "eval" / "clip_bert_score_eval.py"),
+            "--json_path", str(in_json),
+            "--concept_path", str(concept_path),
+            "--max_k", str(config.top_n),
+            "--seed", str(config.seed),
+            "--out_dir", str(out_dir),
+            "--output_prefix", "clip_bert_topk",
+        ]
+        _run_python_subprocess(clip_bert_args, logger=logger)
+        logger.info(f"DONE: Eval BERT/CLIP Top-K Table ({method})")
+
+        # AUC summary table from concept insertion/deletion curves for ranks 1..TOP_N
+        logger.info(f"START: Eval AUC Table ({method})")
+        auc_args = [
+            str(ROOT_DIR / "eval" / "concept_curve_auc_eval.py"),
+            "--out_dir", str(out_dir),
+            "--top_n", str(config.top_n),
+            "--mode", "token",
+            "--output_prefix", "concept_curve_auc_token",
+        ]
+        _run_python_subprocess(auc_args, logger=logger)
+        logger.info(f"DONE: Eval AUC Table ({method})")
 
 
 def step_7_plots(config: PipelineConfig, logger: logging.Logger):
@@ -747,6 +837,7 @@ def main():
     os.environ["MASK_CONTEXT_PIXELS"] = str(config.mask_context_pixels)
     os.environ["MASK_BOUNDARY_PIXELS"] = str(config.mask_boundary_pixels)
     os.environ["POSITIVE_NEGATIVE_SEGMENT"] = str(config.positive_negative_segment)
+    os.environ["OUTPUT_DIR"] = str(config.output_dir)
     os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "1")
     
     # Create directories and setup logging

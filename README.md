@@ -81,6 +81,7 @@ This type of explanation is crucial for **debugging model behavior**, **understa
    - Using pip:
      ```bash
      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+     # pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
      pip install tqdm git+https://github.com/bckim92/language-evaluation.git psutil spacy timm accelerate
      python -m spacy download en_core_web_sm
      
@@ -98,7 +99,7 @@ This type of explanation is crucial for **debugging model behavior**, **understa
      python -c "import language_evaluation; language_evaluation.download('coco')"
 
      pip install -U git+https://github.com/luca-medeiros/lang-segment-anything.git
-
+     pip install pycocotools  
      pip install matplotlib
      pip install streamlit
      ```

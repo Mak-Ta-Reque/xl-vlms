@@ -12,7 +12,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-import metrics
 from datasets.constants import WORDS
 
 __all__ = [
@@ -882,11 +881,13 @@ def hooks_postprocessing(
             hook_name=hook_name,
         )
     elif "vqav2_accuracy" in hook_name:
+        import metrics
         hook_postprocessing_function = metrics.get_metric(
             metric_name="vqav2_accuracy", args=args
         )
 
     elif "captioning_metrics" in hook_name:
+        import metrics
         hook_postprocessing_function = metrics.get_metric(
             metric_name="captioning_metrics", args=args
         )

@@ -8,6 +8,11 @@ def setup_logger(log_file=None, level=logging.INFO):
     # Create a custom logger
     logger = logging.getLogger("train_test_logger")
     logger.setLevel(level)
+    logger.propagate = False
+
+    # Prevent duplicate logs when setup_logger is called multiple times.
+    if logger.handlers:
+        logger.handlers.clear()
 
     # Create handlers
     console_handler = logging.StreamHandler()  # Log to console
@@ -41,11 +46,6 @@ def log_args(args, logger):
         logger.info(f"{arg}: {value}")
 
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def log_num_transformer_layers(model: nn.Module, model_name: str = "model") -> int:

@@ -301,15 +301,14 @@ class JSONDataset(ImageTextDataset):
                             )
                             response = ""
 
-                            # --- Mask-centric path (only RLE masks) ---
+                            # --- Mask-centric path (RLE masks preferred, bbox fallback allowed) ---
                             masks_rle_list = meta.get("masks_rle", None)
                             if masks_rle_list and isinstance(masks_rle_list, list) and len(masks_rle_list) > 0:
                                 # Use masks_rle as the primary data source
                                 for i, mask_entry in enumerate(masks_rle_list):
                                     rle = mask_entry.get("rle", None) if isinstance(mask_entry, dict) else None
+                                    bbox = mask_entry.get("bbox", None) if isinstance(mask_entry, dict) else None
                                     is_concept = mask_entry.get("is_concept", False) if isinstance(mask_entry, dict) else False
-                                    if rle is None:
-                                        continue  # skip entries with no mask
                                     img_id = f"{os.path.splitext(os.path.basename(rel_path))[0]}_mask_{i}"
                                     item = {
                                         "img_id": img_id,
@@ -320,9 +319,17 @@ class JSONDataset(ImageTextDataset):
                                         "image_size": image_size,
                                         "patch_size": patch_size,
                                         "concept": top_key,
-                                        "seg_mask_rle": rle,
                                         "is_concept": is_concept,
                                     }
+                                    if rle is not None:
+                                        item["seg_mask_rle"] = rle
+                                    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                                        try:
+                                            item["bbox"] = [int(v) for v in bbox]
+                                        except Exception:
+                                            pass
+                                    if rle is None and "bbox" not in item:
+                                        continue
                                     concept_data.append(item)
                     if self.dataset_size > 0 and len(concept_data) > self.dataset_size:
                         random.shuffle(concept_data)

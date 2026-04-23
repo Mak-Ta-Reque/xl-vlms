@@ -3,7 +3,6 @@ import itertools
 import json
 from typing import Any, Callable, Dict, List
 
-import language_evaluation
 import torch
 
 from metrics.utils import (get_number_predictions_with_token_of_interest,
@@ -23,6 +22,8 @@ def compute_captioning_metrics(
     logger: Callable = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
+    import language_evaluation
+    
     for idx in range(len(data["targets"])):
         for i in range(len(data["targets"][idx])):
             data["targets"][idx][i] = data["targets"][idx][i].split("$$")

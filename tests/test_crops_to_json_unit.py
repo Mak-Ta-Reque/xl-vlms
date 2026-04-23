@@ -32,6 +32,8 @@ from preprocessing.crops_to_json import (
     _compute_virtual_resize,
     _centered_square_box_around,
     _crop_detection_to_patch,
+    _greedy_filter_candidates_by_clip_similarity,
+    _sliding_window_bboxes_for_image,
 )
 
 
@@ -358,6 +360,32 @@ class TestCropDetectionToPatch(unittest.TestCase):
         # Patch should be 100x100
         x1, y1, x2, y2 = patch
         self.assertEqual(x2 - x1, 100)
+
+
+class TestClipRandomCropFilter(unittest.TestCase):
+    """Test CLIP-based greedy filtering for random crops."""
+
+    def test_filters_similar_embeddings(self):
+        candidate_pairs = [
+            ([0, 0, 10, 10], None),
+            ([20, 20, 10, 10], None),
+            ([40, 40, 10, 10], None),
+        ]
+        candidate_embeddings = [
+            [1.0, 0.0],
+            [0.96, 0.28],
+            [0.0, 1.0],
+        ]
+        kept_pairs, kept_embeddings = _greedy_filter_candidates_by_clip_similarity(
+            candidate_pairs,
+            candidate_embeddings,
+            similarity_threshold=0.5,
+        )
+
+        self.assertEqual(len(kept_pairs), 2)
+        self.assertEqual(kept_pairs[0][0], [0, 0, 10, 10])
+        self.assertEqual(kept_pairs[1][0], [40, 40, 10, 10])
+        self.assertEqual(len(kept_embeddings), 2)
         self.assertEqual(y2 - y1, 100)
         
         # Patch should be within bounds
@@ -383,6 +411,59 @@ class TestDeterminism(unittest.TestCase):
         
         self.assertEqual(crops1, crops2, "Same seed should produce same crops")
         self.assertNotEqual(crops1, crops3, "Different seeds should produce different crops")
+
+    class TestSlidingWindowBboxes(unittest.TestCase):
+        """Test sliding window bbox generation."""
+
+        def test_generates_bboxes_coverage(self):
+            """Sliding window should generate bboxes covering the image."""
+            image_size = (400, 400)
+            bboxes = _sliding_window_bboxes_for_image(
+                image_size,
+                window_size_ratio_range=(0.15, 0.55),
+                stride_ratio=0.3,
+            )
+        
+            self.assertGreater(len(bboxes), 0, "Should generate at least one bbox")
+        
+            # All bboxes should be [x, y, w, h] format
+            for bbox in bboxes:
+                self.assertEqual(len(bbox), 4)
+                x, y, w, h = bbox
+                # Should be within image bounds
+                self.assertGreaterEqual(x, 0)
+                self.assertGreaterEqual(y, 0)
+                self.assertLessEqual(x + w, image_size[0])
+                self.assertLessEqual(y + h, image_size[1])
+    
+        def test_window_size_within_range(self):
+            """Window sizes should be within specified range."""
+            image_size = (800, 600)
+            area = image_size[0] * image_size[1]
+            min_ratio, max_ratio = 0.15, 0.55
+            min_area = min_ratio * area
+            max_area = max_ratio * area
+        
+            bboxes = _sliding_window_bboxes_for_image(
+                image_size,
+                window_size_ratio_range=(min_ratio, max_ratio),
+                stride_ratio=0.3,
+            )
+        
+            for bbox in bboxes:
+                x, y, w, h = bbox
+                bbox_area = w * h
+                # Allow some tolerance for rounding
+                self.assertGreaterEqual(bbox_area, min_area * 0.8)
+                self.assertLessEqual(bbox_area, max_area * 1.2)
+    
+        def test_small_image_fallback(self):
+            """Very small images should return at least one bbox."""
+            image_size = (10, 10)
+            bboxes = _sliding_window_bboxes_for_image(image_size)
+            self.assertGreater(len(bboxes), 0)
+            # First bbox should cover the whole image
+            self.assertEqual(bboxes[0], [0, 0, 10, 10])
 
 
 if __name__ == "__main__":

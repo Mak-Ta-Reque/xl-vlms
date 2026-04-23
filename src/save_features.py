@@ -4,7 +4,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from datasets import get_dataset_loader
 from helpers.arguments import get_arguments
@@ -128,6 +128,7 @@ def inference(
             texts = [t.replace("[concept]", toi_str) if isinstance(t, str) else t for t in texts]
         item["text"] = texts
         image_paths = item["image"] if isinstance(item["image"], list) else [item["image"]]
+        img_ids = item.get("img_id", None)
         crop_locations = item.get("bbox", None)
         image_sizes = item.get("image_size", None)
         seg_mask_rles = item.get("seg_mask_rle", None)
@@ -147,14 +148,9 @@ def inference(
         _blur_radius_bg = int(os.environ.get("MASK_BLUR_RADIUS_BG", str(_blur_radius)))
         _inpainting_method_bg = os.environ.get("INPAINTING_METHOD_BG", _inpainting_method)
 
-        # Debug: save VLM input images (blurred full + final crop) to disk
-        _debug_save = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "0") == "1"
+        # Debug overlays are generated after crops.json is written in preprocessing/crops_to_json.py.
+        _debug_save = False
         _debug_dir = None
-        if _debug_save:
-            _debug_dir = os.path.join(
-                os.environ.get("OUTPUT_DIR", "outputs"), "debug_vlm_inputs"
-            )
-            os.makedirs(_debug_dir, exist_ok=True)
 
         # Build per-sample inputs. If bboxes provided, crop and pass PIL Image; else pass paths.
         per_sample_inputs: List[Dict[str, Any]] = []
@@ -183,7 +179,17 @@ def inference(
             if isinstance(sizes, (list, tuple)) and len(sizes) == n_imgs:
                 return list(sizes)
             return [None] * n_imgs
+
+        def _ensure_per_image_str_list(values, n_imgs):
+            if values is None:
+                return [None] * n_imgs
+            if isinstance(values, str):
+                return [values] * n_imgs
+            if isinstance(values, (list, tuple)) and len(values) == n_imgs:
+                return [None if v is None else str(v) for v in values]
+            return [None] * n_imgs
         
+        per_image_img_ids = _ensure_per_image_str_list(img_ids, len(image_paths))
         per_image_bboxes = _ensure_per_image_bbox_list(crop_locations, len(image_paths))
         per_image_sizes = _ensure_per_image_size_list(image_sizes, len(image_paths))
 
@@ -237,10 +243,13 @@ def inference(
 
         for idx in range(len(image_paths)):
             img_ref = image_paths[idx]
+            sample_id = per_image_img_ids[idx] or f"batch{i}_idx{idx}"
+            sample_id = os.path.basename(str(sample_id)).replace(os.sep, "_")
             bbox = per_image_bboxes[idx]
             mask_rle = per_image_mask_rles[idx]
             _is_concept = per_image_is_concept[idx]
             _ps = per_image_patch_sizes[idx]
+            debug_overlay_bbox = None
 
             # ================================================================
             # MASK-CENTRIC PATH (preferred): use segmentation mask directly
@@ -264,6 +273,7 @@ def inference(
                 if logger and idx == 0:
                     logger.info(f"[mask-centric] batch {i}, idx {idx}: is_concept={_is_concept}, mask_rle keys={list(mask_rle.keys())}, blur={_eff_blur}, method={_eff_method}, ctx={_context_pixels}, boundary={_boundary_pixels}, patch={_ps}, debug={_debug_save}")
                 img = Image.open(img_ref).convert("RGB") if not isinstance(img_ref, Image.Image) else img_ref
+                source_size = img.size
 
                 # Resize to virtual size if specified
                 target_size = per_image_sizes[idx]
@@ -277,6 +287,8 @@ def inference(
                         pass
 
                 W, H = img.size
+                resize_scale_x = (W / float(source_size[0])) if source_size and source_size[0] else 1.0
+                resize_scale_y = (H / float(source_size[1])) if source_size and source_size[1] else 1.0
 
                 try:
                     from mask_utils import decode_mask_rle
@@ -311,6 +323,7 @@ def inference(
                     cy1 = _clip(my1 - _crop_pad, 0, H)
                     cx2 = _clip(mx2 + _crop_pad, 0, W)
                     cy2 = _clip(my2 + _crop_pad, 0, H)
+                    debug_overlay_bbox = (int(cx1), int(cy1), int(cx2), int(cy2))
 
                     # Step 4: Crop image and mask to expanded bbox
                     crop_img = img.crop((cx1, cy1, cx2, cy2))
@@ -379,19 +392,25 @@ def inference(
                         logger.warning(f"[mask-centric] Mask decode FAILED for idx {idx}: {_mask_exc}")
                     vlm_img = img
 
-                # Step 8: Debug save — VLM input crop + binary mask
+                # Step 8: Debug save — crop rectangle overlay + binary mask
                 if _debug_save and _debug_dir:
                     try:
-                        _img_name = os.path.splitext(os.path.basename(
-                            img_ref if isinstance(img_ref, str) else f"batch{i}_idx{idx}"
-                        ))[0]
                         _tag = getattr(args, "token_of_interest", "unknown")
                         _tag_dir = os.path.join(_debug_dir, str(_tag))
                         os.makedirs(_tag_dir, exist_ok=True)
                         # Label: fg (concept) vs bg (background) for clarity
                         _role = "fg" if _is_concept else "bg"
-                        vlm_img.save(os.path.join(
-                            _tag_dir, f"{_img_name}_{_role}_vlm_input.jpg"
+                        overlay = img.copy()
+                        draw = ImageDraw.Draw(overlay)
+                        if debug_overlay_bbox is not None:
+                            bx1, by1, bx2, by2 = debug_overlay_bbox
+                            line_w = max(2, min(6, int(round(min(W, H) * 0.004))))
+                            draw.rectangle([bx1, by1, bx2, by2], outline=(255, 0, 0), width=line_w)
+                            _bbox_suffix = f"{bx1}_{by1}_{bx2}_{by2}"
+                        else:
+                            _bbox_suffix = "nobox"
+                        overlay.save(os.path.join(
+                            _tag_dir, f"{sample_id}_{idx}_{_role}_{_bbox_suffix}_crop_overlay.jpg"
                         ), quality=90)
                         # Save the raw binary mask (cropped region) so we can inspect it
                         try:
@@ -399,14 +418,14 @@ def inference(
                                 crop_mask.astype("uint8") * 255, mode="L"
                             )
                             mask_vis.save(os.path.join(
-                                _tag_dir, f"{_img_name}_{_role}_mask_binary.png"
+                                _tag_dir, f"{sample_id}_{idx}_{_role}_{_bbox_suffix}_mask_binary.png"
                             ))
                         except Exception:
                             pass
                         # Save a metadata text file with masking info
                         try:
                             with open(os.path.join(
-                                _tag_dir, f"{_img_name}_{_role}_mask_method.txt"
+                                _tag_dir, f"{sample_id}_{idx}_{_role}_{_bbox_suffix}_mask_method.txt"
                             ), "w") as _mf:
                                 _mf.write(f"method={_eff_method}\n")
                                 _mf.write(f"blur_radius={_eff_blur}\n")
@@ -414,6 +433,10 @@ def inference(
                                 _mf.write(f"boundary_pixels={_boundary_pixels}\n")
                                 _mf.write(f"is_concept={_is_concept}\n")
                                 _mf.write(f"role={_role}\n")
+                                _mf.write(f"source_size={source_size}\n")
+                                _mf.write(f"resized_size={(W, H)}\n")
+                                _mf.write(f"resize_scale_x={resize_scale_x:.6f}\n")
+                                _mf.write(f"resize_scale_y={resize_scale_y:.6f}\n")
                         except Exception:
                             pass
                     except Exception:
@@ -433,6 +456,7 @@ def inference(
             # ================================================================
             elif bbox is not None:
                 img = Image.open(img_ref).convert("RGB") if not isinstance(img_ref, Image.Image) else img_ref
+                source_size = img.size
 
                 target_size = per_image_sizes[idx]
                 if isinstance(target_size, (list, tuple)) and len(target_size) >= 2:
@@ -445,11 +469,14 @@ def inference(
                         pass
 
                 W, H = img.size
+                resize_scale_x = (W / float(source_size[0])) if source_size and source_size[0] else 1.0
+                resize_scale_y = (H / float(source_size[1])) if source_size and source_size[1] else 1.0
                 x1, y1, x2, y2 = bbox
                 x1 = int(_clip(x1, 0, W - 1))
                 y1 = int(_clip(y1, 0, H - 1))
                 x2 = int(_clip(x2, x1 + 1, W))
                 y2 = int(_clip(y2, y1 + 1, H))
+                debug_overlay_bbox = (x1, y1, x2, y2)
                 crop_img = img.crop((x1, y1, x2, y2))
 
                 if _ps is not None and _ps > 0:
@@ -466,15 +493,28 @@ def inference(
 
                 if _debug_save and _debug_dir:
                     try:
-                        _img_name = os.path.splitext(os.path.basename(
-                            img_ref if isinstance(img_ref, str) else f"batch{i}_idx{idx}"
-                        ))[0]
                         _tag = getattr(args, "token_of_interest", "unknown")
                         _tag_dir = os.path.join(_debug_dir, str(_tag))
                         os.makedirs(_tag_dir, exist_ok=True)
-                        crop_img.save(os.path.join(
-                            _tag_dir, f"{_img_name}_crop_vlm_input.jpg"
+                        overlay = img.copy()
+                        draw = ImageDraw.Draw(overlay)
+                        bx1, by1, bx2, by2 = debug_overlay_bbox
+                        line_w = max(2, min(6, int(round(min(W, H) * 0.004))))
+                        draw.rectangle([bx1, by1, bx2, by2], outline=(255, 0, 0), width=line_w)
+                        overlay.save(os.path.join(
+                            _tag_dir, f"{sample_id}_{idx}_{bx1}_{by1}_{bx2}_{by2}_crop_overlay.jpg"
                         ), quality=90)
+                        try:
+                            with open(os.path.join(
+                                _tag_dir, f"{sample_id}_{idx}_{bx1}_{by1}_{bx2}_{by2}_crop_overlay.txt"
+                            ), "w") as _mf:
+                                _mf.write(f"source_size={source_size}\n")
+                                _mf.write(f"resized_size={(W, H)}\n")
+                                _mf.write(f"resize_scale_x={resize_scale_x:.6f}\n")
+                                _mf.write(f"resize_scale_y={resize_scale_y:.6f}\n")
+                                _mf.write(f"bbox={(bx1, by1, bx2, by2)}\n")
+                        except Exception:
+                            pass
                     except Exception:
                         pass
 
