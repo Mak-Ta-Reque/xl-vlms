@@ -7,6 +7,16 @@ from collections import Counter
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.linalg import inv
 import random
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    project_root = Path(__file__).resolve().parents[1]
+    load_dotenv(dotenv_path=project_root / '.env', override=False)
 def zca_whiten(X):
 
     X_centered = X - np.mean(X, axis=0)
@@ -62,23 +72,50 @@ def count_conditioned_items(sublist):
     return sum(is_negative_prediction(s) for s in sublist)
 
 
-def eligible_indices_by_threshold(lists):
+def parse_clean_example_ratio(default=0.8):
     """
-    Given a list of lists of predictions, return indices where ALL predictions
-    are positive (none match the negative conditions).
+    Read CLEAN_EXAMPLE_RATIO from environment and validate range [0, 1].
+    """
+    raw = os.getenv('CLEAN_EXAMPLE_RATIO', str(default))
+    try:
+        ratio = float(raw)
+    except (TypeError, ValueError):
+        print(f"WARNING: Invalid CLEAN_EXAMPLE_RATIO='{raw}'. Using default {default}.")
+        return default
 
-    Only includes an index if every single prediction in lists[idx] is positive.
+    if ratio < 0.0 or ratio > 1.0:
+        print(f"WARNING: CLEAN_EXAMPLE_RATIO={ratio} out of range [0, 1]. Using default {default}.")
+        return default
+
+    return ratio
+
+
+def eligible_indices_by_threshold(lists, clean_example_ratio=0.8):
+    """
+    Given a list of lists of predictions, return indices where the proportion
+    of positive predictions is >= clean_example_ratio.
+
+    A prediction is positive when it does not match negative conditions.
     Returns list of eligible indices (can be empty if no concept qualifies).
     """
     if not lists:
         return []
 
-    return [i for i, preds in enumerate(lists) if has_all_positive_predictions(preds)]
+    eligible = []
+    for i, preds in enumerate(lists):
+        if not preds:
+            continue
+        positive_count = sum(not is_negative_prediction(p) for p in preds)
+        positive_ratio = positive_count / len(preds)
+        if positive_ratio >= clean_example_ratio:
+            eligible.append(i)
+
+    return eligible
 
 
 
 
-def combine_concepts(input_dir):
+def combine_concepts(input_dir, clean_example_ratio=0.8):
     pth_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.pth')])
 
     combined_data = {
@@ -117,8 +154,8 @@ def combine_concepts(input_dir):
         n_concepts_in_file = len(image_grounding_predictions) if image_grounding_predictions else 0
         total_concepts_seen += n_concepts_in_file
 
-        # Only include concepts where ALL predictions are positive
-        eligible = eligible_indices_by_threshold(image_grounding_predictions)
+        # Include concepts with positive ratio above threshold
+        eligible = eligible_indices_by_threshold(image_grounding_predictions, clean_example_ratio)
         n_skipped = n_concepts_in_file - len(eligible)
 
         # Log per-file details
@@ -126,15 +163,18 @@ def combine_concepts(input_dir):
         for c_idx in range(n_concepts_in_file):
             preds = image_grounding_predictions[c_idx] if image_grounding_predictions else []
             neg_items = [p for p in preds if is_negative_prediction(p)]
+            pos_ratio = 0.0
+            if preds:
+                pos_ratio = sum(not is_negative_prediction(p) for p in preds) / len(preds)
             status = "INCLUDED" if c_idx in eligible else "SKIPPED"
             if neg_items:
-                print(f"    concept {c_idx}: {status} -- negative predictions: {neg_items}")
+                print(f"    concept {c_idx}: {status} -- positive_ratio={pos_ratio:.2f}, negative predictions: {neg_items}")
             else:
-                print(f"    concept {c_idx}: {status} -- all positive")
+                print(f"    concept {c_idx}: {status} -- positive_ratio={pos_ratio:.2f}")
 
         total_concepts_skipped += n_skipped
 
-        # Skip this file if no concept has all-positive predictions
+        # Skip this file if no concept passes the configured threshold
         if len(eligible) < 1:
             files_fully_skipped += 1
             print(f"    >> FILE SKIPPED (0/{n_concepts_in_file} concepts eligible)")
@@ -165,14 +205,14 @@ def combine_concepts(input_dir):
     print(f"  Files fully skipped:    {files_fully_skipped}")
     print(f"  Total concepts seen:    {total_concepts_seen}")
     print(f"  Concepts included:      {total_concepts_included}")
-    print(f"  Concepts skipped:       {total_concepts_skipped}  (had negative predictions)")
+    print(f"  Concepts skipped:       {total_concepts_skipped}  (below positive-ratio threshold {clean_example_ratio:.2f})")
     if total_concepts_seen > 0:
         pct = 100 * total_concepts_skipped / total_concepts_seen
         print(f"  Skip rate:              {pct:.1f}%")
     print(f"{'='*60}\n")
 
     if not concepts:
-        print("WARNING: No concepts with all-positive predictions found in any file.")
+        print(f"WARNING: No concepts met CLEAN_EXAMPLE_RATIO threshold ({clean_example_ratio:.2f}) in any file.")
         combined_data['concepts'] = torch.empty(0)
         combined_data['activations'] = []
         return combined_data
@@ -216,7 +256,7 @@ def laplacian_smoothing(X, alpha=0.5):
 
     return X_smoothed
 
-def combine_concepts_(input_dir):
+def combine_concepts_(input_dir, clean_example_ratio=0.8):
     pth_files = [f for f in os.listdir(input_dir) if f.endswith('.pth')]
 
     # First pass: collect all strings from image_grounding_paths to compute global frequency
@@ -253,7 +293,7 @@ def combine_concepts_(input_dir):
         image_grounding_path = all_image_groundings[i]
 
         # Determine eligible indices per threshold rule
-        eligible = eligible_indices_by_threshold(image_grounding_path)
+        eligible = eligible_indices_by_threshold(image_grounding_path, clean_example_ratio)
 
         # Fallback: original selection based on most_common_string
         if not eligible:
@@ -338,7 +378,10 @@ def main(args):
         if f.endswith('.pth')
     ]
     
-    combined_data = combine_concepts(args.input_dir)
+    clean_example_ratio = parse_clean_example_ratio(default=0.8)
+    print(f"Using CLEAN_EXAMPLE_RATIO={clean_example_ratio:.2f}")
+
+    combined_data = combine_concepts(args.input_dir, clean_example_ratio=clean_example_ratio)
     base_output = args.output_path.rsplit('.', 1)[0]
 
     # Save raw combined concepts

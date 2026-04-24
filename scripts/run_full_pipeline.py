@@ -134,6 +134,7 @@ class PipelineConfig:
         # Explainer/Eval
         self.layer_path = self._get_str("LAYER_PATH", "model.language_model.norm")
         self.top_n = self._get_int("TOP_N", 5)
+        self.num_most_activating_samples = self._get_int("NUM_MOST_ACTIVATING_SAMPLES", 10)
         self.num_points = self._get_int("NUM_POINTS", 70)
         self.expl_prompt_mode = self._get_str("EXPL_PROMPT_MODE", "unsupervised")
         self.expl_label = self._get_str("EXPL_LABEL", "")
@@ -623,6 +624,7 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
             "--module_to_decompose", config.layer_path,
             "--num_concepts", str(config.decomp_components),
             "--decomposition_method", method,
+            "--num_most_activating_samples", str(config.num_most_activating_samples),
             "--save_dir", str(intermediate_dir),
         ]
         
@@ -999,6 +1001,7 @@ def main():
     logger.info(f"         ctx={config.mask_context_pixels} boundary_px={config.mask_boundary_pixels} pos_neg_segment={config.positive_negative_segment}")
     logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
+    logger.info(f"Grounding:  num_most_activating_samples={config.num_most_activating_samples}")
     logger.info(f"Plots Y:    [{config.plot_ymin}, {config.plot_ymax}]")
     logger.info("=" * 60)
     
