@@ -36,7 +36,11 @@ import torch
 import torch._dynamo
 from tqdm import tqdm
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModelForCausalLM
+from transformers import AutoProcessor, AutoModelForCausalLM
+try:
+    from transformers import AutoModelForImageTextToText as _AutoVisionTextModel
+except ImportError:
+    from transformers import AutoModelForVision2Seq as _AutoVisionTextModel
 from transformers.generation.logits_process import LogitsProcessor
 
 # Configure torch dynamo settings
@@ -92,11 +96,11 @@ def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed:
     """
     Get image files from the dataset directory, including files in the root
     and in immediate subfolders. Optionally sample up to image_budget images
-    per subfolder (root-level images are not sampled).
+    from the full collected set.
 
     Args:
         dataset_path: Path to the dataset directory
-        image_budget: If provided and >0, randomly sample up to this many images per subfolder
+        image_budget: If provided and >0, randomly sample up to this many images total
         seed: Random seed for reproducible per-subfolder sampling
     Returns:
         List of tuples containing (root_path, subfolder, image_name)
@@ -107,7 +111,7 @@ def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed:
     if not dataset_path.exists():
         raise ValueError(f"Dataset path does not exist: {dataset_path}")
 
-    # Include images directly in root directory (not sampled)
+    # Include images directly in root directory
     for image_file in dataset_path.iterdir():
         if image_file.is_file() and image_file.suffix.lower() in IMAGE_EXTENSIONS:
             image_files.append((
@@ -118,25 +122,24 @@ def get_image_files(dataset_path: str, image_budget: Optional[int] = None, seed:
 
     rng = random.Random(seed)
 
-    # Iterate through subdirectories with optional sampling
+    # Iterate through subdirectories and collect images
     for subfolder in dataset_path.iterdir():
         if subfolder.is_dir():
             subfolder_name = subfolder.name
-            subfolder_images: List[Tuple[str, str, str]] = []
             for image_file in subfolder.iterdir():
                 if image_file.is_file() and image_file.suffix.lower() in IMAGE_EXTENSIONS:
-                    subfolder_images.append((
+                    image_files.append((
                         str(dataset_path),
                         subfolder_name,
                         image_file.name
                     ))
-            # Apply per-subfolder sampling if requested
-            if image_budget is not None and image_budget > 0 and len(subfolder_images) > image_budget:
-                rng.shuffle(subfolder_images)
-                subfolder_images = subfolder_images[:image_budget]
-            image_files.extend(subfolder_images)
 
-    logger.info(f"Collected {len(image_files)} images (per-subfolder budget={image_budget})")
+    # Apply global sampling if requested
+    if image_budget is not None and image_budget > 0 and len(image_files) > image_budget:
+        rng.shuffle(image_files)
+        image_files = image_files[:image_budget]
+
+    logger.info(f"Collected {len(image_files)} images (budget={image_budget})")
     return image_files
 
 
@@ -269,7 +272,7 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
         if 'qwen' in model_name.lower():
             # Prefer bfloat16 to reduce overflow/NaNs when supported
             preferred_dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
-            model = AutoModelForVision2Seq.from_pretrained(
+            model = _AutoVisionTextModel.from_pretrained(
                 model_name,
                 cache_dir=hf_cache_dir,
                 token=loading_kwargs['token'] if 'token' in loading_kwargs else None,
@@ -300,7 +303,7 @@ def load_huggingface_model(model_name: str, trust_remote_code: bool = True, hf_t
         else:
             # Generic approach - try Vision2Seq first, then CausalLM
             try:
-                model = AutoModelForVision2Seq.from_pretrained(
+                model = _AutoVisionTextModel.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16,
                     **_dm_kwargs,

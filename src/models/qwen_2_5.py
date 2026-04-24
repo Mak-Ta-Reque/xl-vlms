@@ -1,7 +1,14 @@
 from typing import Any, Callable, Dict, List
 
 import torch
-from transformers import AutoProcessor, AutoModelForVision2Seq
+from transformers import AutoProcessor
+
+try:
+    # Newer Transformers exposes this class name for vision-language generation.
+    from transformers import AutoModelForImageTextToText as _QwenVisionAutoModel
+except ImportError:
+    # Older Transformers used AutoModelForVision2Seq.
+    from transformers import AutoModelForVision2Seq as _QwenVisionAutoModel
 
 from qwen_vl_utils import process_vision_info
 from .image_text_model import ImageTextModel
@@ -22,7 +29,7 @@ class Qwen2_5VL(ImageTextModel):
                 load_kwargs["device_map"] = self.device_config.device_map
             if self.device_config.max_memory is not None:
                 load_kwargs["max_memory"] = self.device_config.max_memory
-        self.model_ = AutoModelForVision2Seq.from_pretrained(
+        self.model_ = _QwenVisionAutoModel.from_pretrained(
             self.model_name_or_path, **load_kwargs
         ).eval()
         if not _use_device_map and self.device_config is not None:

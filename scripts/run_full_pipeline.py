@@ -25,6 +25,7 @@ import argparse
 import subprocess
 import shutil
 import logging
+import json
 import gc
 from pathlib import Path
 from datetime import datetime
@@ -120,7 +121,7 @@ class PipelineConfig:
         # Keep for backward compatibility / debugging; not used as a fixed resize target.
         self.image_size_height = self._get_int("IMAGE_SIZE_HEIGHT", 512)
         self.image_size = (self.image_size_width, self.image_size_height)
-        self.image_budget = self._get_int("IMAGE_BUDGET", 100)# reduce for test , use 200 -> for a better run
+        self.image_budget = self._get_int("IMAGE_BUDGET", 300)# reduce for test , use 200 -> for a better run
         self.box_threshold = self._get_float("BOX_THRESHOLD", 0.5)
         
         # Decomposition methods
@@ -175,6 +176,7 @@ class PipelineConfig:
     def _setup_derived_paths(self):
         """Setup derived paths based on output directory."""
         self.concept_map_json = self.output_dir / "inference" / "concepts_to_images.json"
+        self.active_concept_map_json = self.concept_map_json
         self.crops_json = self.output_dir / "inference" / "crops.json"
         self.objects_csv = self.output_dir / "inference" / "objects.csv"
         self.features_dir = self.output_dir
@@ -285,6 +287,113 @@ def _run_python_subprocess(script_args: List[str], env_overrides: dict = None,
         )
 
 
+def _delete_downstream_outputs(config: PipelineConfig, step_num: int, logger: logging.Logger) -> None:
+    """Delete output files of all downstream steps to force re-computation.
+    
+    When a step is re-computed, delete outputs of all subsequent steps so they
+    will also re-compute to adapt to the changes.
+    """
+    downstream_deletions = []
+    
+    if step_num <= 1:
+        # If step 1 reruns, delete everything after it
+        downstream_deletions = [
+            (config.crops_json, "Crops JSON"),
+            (config.features_dir / "features", "Features"),
+            (config.decomp_dir, "Decomposed concepts"),
+            (config.explain_dir, "Explanations"),
+            (config.eval_dir, "Evaluations"),
+            (config.plots_dir, "Plots"),
+        ]
+    elif step_num <= 2:
+        # If step 2 reruns, delete outputs from step 3 onwards
+        downstream_deletions = [
+            (config.features_dir / "features", "Features"),
+            (config.decomp_dir, "Decomposed concepts"),
+            (config.explain_dir, "Explanations"),
+            (config.eval_dir, "Evaluations"),
+            (config.plots_dir, "Plots"),
+        ]
+    elif step_num <= 3:
+        # If step 3 reruns, delete outputs from step 4 onwards
+        downstream_deletions = [
+            (config.decomp_dir, "Decomposed concepts"),
+            (config.explain_dir, "Explanations"),
+            (config.eval_dir, "Evaluations"),
+            (config.plots_dir, "Plots"),
+        ]
+    elif step_num <= 4:
+        # If step 4 reruns, delete outputs from step 5 onwards
+        downstream_deletions = [
+            (config.explain_dir, "Explanations"),
+            (config.eval_dir, "Evaluations"),
+            (config.plots_dir, "Plots"),
+        ]
+    elif step_num <= 5:
+        # If step 5 reruns, delete outputs from step 6 onwards
+        downstream_deletions = [
+            (config.eval_dir, "Evaluations"),
+            (config.plots_dir, "Plots"),
+        ]
+    elif step_num <= 6:
+        # If step 6 reruns, delete outputs from step 7 (plots)
+        downstream_deletions = [
+            (config.plots_dir, "Plots"),
+        ]
+    # Step 7 has no downstream dependencies
+    
+    if downstream_deletions:
+        logger.info(f"Step {step_num} was re-computed; cascade deleting downstream outputs...")
+        for path, label in downstream_deletions:
+            if path.exists():
+                try:
+                    if path.is_dir():
+                        shutil.rmtree(path, ignore_errors=True)
+                    else:
+                        path.unlink()
+                    logger.info(f"  Deleted: {label} ({path})")
+                except Exception as e:
+                    logger.warning(f"  Could not delete {label}: {e}")
+
+
+def _ensure_top_concept_map(concept_map_json: Path, num_concept: int, logger: logging.Logger) -> Path:
+    """Create and return a filtered concept map containing the top-N concepts."""
+    if num_concept <= 0:
+        return concept_map_json
+
+    filtered_path = concept_map_json.with_name(
+        f"{concept_map_json.stem}_top{num_concept}{concept_map_json.suffix}"
+    )
+    if filtered_path.exists():
+        return filtered_path
+
+    if not concept_map_json.exists():
+        raise FileNotFoundError(f"Concept map not found: {concept_map_json}")
+
+    with open(concept_map_json, "r", encoding="utf-8") as handle:
+        concept_mapping = json.load(handle)
+
+    if not isinstance(concept_mapping, dict):
+        raise ValueError(f"Expected a JSON object in {concept_map_json}")
+
+    sorted_concepts = sorted(
+        concept_mapping.items(),
+        key=lambda item: (-len(item[1]), item[0]),
+    )
+    selected_concepts = sorted_concepts[: min(num_concept, len(sorted_concepts))]
+    filtered_mapping = {tag: images for tag, images in selected_concepts}
+
+    filtered_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(filtered_path, "w", encoding="utf-8") as handle:
+        json.dump(filtered_mapping, handle, indent=2, ensure_ascii=False)
+
+    logger.info(
+        f"Filtered concept map saved to {filtered_path} using top {len(filtered_mapping)} of {len(concept_mapping)} tags"
+    )
+    logger.info(f"Selected tags: {[tag for tag, _ in selected_concepts]}")
+    return filtered_path
+
+
 # =============================================================================
 # Pipeline Steps
 # =============================================================================
@@ -308,59 +417,78 @@ def create_directories(config: PipelineConfig, logger: logging.Logger):
 def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
     """Step 1: Dataset inference -> concept map."""
     
-    # Check if already done
-    if config.objects_csv.exists() and config.concept_map_json.exists():
-        logger.info(f"Skip Dataset Inference (found {config.objects_csv} and {config.concept_map_json})")
-        return
-    
     config.objects_csv.parent.mkdir(parents=True, exist_ok=True)
     
-    # Import and run dataset_inference
-    logger.info("START: Dataset Inference")
+    # Check if both CSV and concept map exist before skipping
+    csv_exists = config.objects_csv.exists()
+    concept_map_exists = config.concept_map_json.exists()
     
-    sys.path.insert(0, str(ROOT_DIR / "inference"))
-    from inference.dataset_inference import main as dataset_inference_main
+    if csv_exists and concept_map_exists:
+        logger.info(f"Skip Step 1 (found {config.objects_csv} and {config.concept_map_json})")
+        return
     
-    # Prepare arguments as if from command line
-    inference_args = [
-        "--dataset_path", str(config.input_dir),
-        "--model_name", config.vlm_model,
-        "--output_csv", str(config.objects_csv),
-        "--prompt", config.prompt,
-        "--batch_size", str(config.batch_size),
-        "--image_size_width", str(config.image_size_width),
-        "--image_budget", str(config.image_budget),
-        "--device", config.device,
-        "--trust_remote_code",
-    ]
+    # Step will re-compute; cascade delete downstream outputs
+    _delete_downstream_outputs(config, 1, logger)
     
-    # Parse args and run
-    original_argv = sys.argv
-    sys.argv = ["dataset_inference.py"] + inference_args
-    try:
-        dataset_inference_main()
-    finally:
-        sys.argv = original_argv
-    
-    logger.info("DONE: Dataset Inference")
+    if not csv_exists:
+        # Import and run dataset_inference
+        logger.info("START: Dataset Inference")
+        
+        sys.path.insert(0, str(ROOT_DIR / "inference"))
+        from inference.dataset_inference import main as dataset_inference_main
+        
+        # Prepare arguments as if from command line
+        inference_args = [
+            "--dataset_path", str(config.input_dir),
+            "--model_name", config.vlm_model,
+            "--output_csv", str(config.objects_csv),
+            "--prompt", config.prompt,
+            "--batch_size", str(config.batch_size),
+            "--image_size_width", str(config.image_size_width),
+            "--image_budget", str(config.image_budget),
+            "--device", config.device,
+            "--trust_remote_code",
+        ]
+        
+        # Parse args and run
+        original_argv = sys.argv
+        sys.argv = ["dataset_inference.py"] + inference_args
+        try:
+            dataset_inference_main()
+        finally:
+            sys.argv = original_argv
+        
+        logger.info("DONE: Dataset Inference")
+    else:
+        logger.info(f"Reusing existing CSV: {config.objects_csv}")
     
     # Build concept map
-    logger.info("START: Build Concept Map")
-    
-    from concept_image_mapping import main as concept_mapping_main
-    
-    mapping_args = [
-        "--input", str(config.objects_csv),
-        "--output", str(config.concept_map_json),
-    ]
-    
-    sys.argv = ["concept_image_mapping.py"] + mapping_args
-    try:
-        concept_mapping_main()
-    finally:
-        sys.argv = original_argv
-    
-    logger.info("DONE: Build Concept Map")
+    if not concept_map_exists:
+        logger.info("START: Build Concept Map")
+        
+        from concept_image_mapping import main as concept_mapping_main
+        
+        mapping_args = [
+            "--input", str(config.objects_csv),
+            "--output", str(config.concept_map_json),
+        ]
+        
+        original_argv = sys.argv
+        sys.argv = ["concept_image_mapping.py"] + mapping_args
+        try:
+            concept_mapping_main()
+        finally:
+            sys.argv = original_argv
+        
+        logger.info("DONE: Build Concept Map")
+    else:
+        logger.info(f"Reusing existing concept map: {config.concept_map_json}")
+
+    config.active_concept_map_json = _ensure_top_concept_map(
+        config.concept_map_json,
+        config.num_concept,
+        logger,
+    )
 
 
 def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
@@ -370,16 +498,23 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
     """
     
     if config.crops_json.exists():
-        logger.info(f"Skip Crops JSON (found {config.crops_json})")
+        logger.info(f"Skip Step 2 (found {config.crops_json})")
         return
     
-    config.crops_json.parent.mkdir(parents=True, exist_ok=True)
+    # Step will re-compute; cascade delete downstream outputs
+    _delete_downstream_outputs(config, 2, logger)
     
     logger.info("START: Crops JSON")
+    config.crops_json.parent.mkdir(parents=True, exist_ok=True)
+    concept_map_json = _ensure_top_concept_map(
+        config.concept_map_json,
+        config.num_concept,
+        logger,
+    )
     
     crops_args = [
         str(ROOT_DIR / "preprocessing" / "crops_to_json.py"),
-        "--mapping_json", str(config.concept_map_json),
+        "--mapping_json", str(concept_map_json),
         "--image_root", str(config.input_dir),
         "--output_json", str(config.crops_json),
         "--detector", config.object_detector,
@@ -414,44 +549,19 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
             logger.info(
                 f"Debug mode enabled (DEBUG_SAVE_VLM_INPUTS=1): forcing Step 3 rerun even though features exist under {features_path}"
             )
+            # Cascade delete downstream outputs
+            _delete_downstream_outputs(config, 3, logger)
         else:
-            logger.info(f"Skip Feature Generation (found features under {features_path})")
+            logger.info(f"Skip Step 3 (found features under {features_path})")
             return
+    else:
+        # Step will re-compute; cascade delete downstream outputs
+        _delete_downstream_outputs(config, 3, logger)
     
     logger.info("START: Generate Features")
-    
-    # Filter crops.json based on NUM_CONCEPT if needed
     annotation_file = config.crops_json
-    temporary_filtered_crops = None
     if config.num_concept > 0:
-        logger.info(f"Filtering crops.json to top {config.num_concept} tags by crop count...")
-        
-        import json
-        with open(config.crops_json, 'r') as f:
-            crops_data = json.load(f)
-        
-        # Count crops per tag (top-level key)
-        tag_counts = {tag: len(crops) for tag, crops in crops_data.items()}
-        
-        # Sort tags by crop count descending and select top NUM_CONCEPT
-        sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
-        selected_tags = [tag for tag, count in sorted_tags[:config.num_concept]]
-        
-        logger.info(f"Tag counts: {tag_counts}")
-        logger.info(f"Selected top {len(selected_tags)} tags: {selected_tags}")
-        
-        # Filter crops.json to only include selected tags
-        filtered_crops = {tag: crops_data[tag] for tag in selected_tags if tag in crops_data}
-        
-        # Save filtered crops.json to inference directory as a temporary file
-        filtered_crops_json = config.crops_json.parent / "crops_filtered.json"
-        filtered_crops_json.parent.mkdir(parents=True, exist_ok=True)
-        with open(filtered_crops_json, 'w') as f:
-            json.dump(filtered_crops, f, indent=2)
-        
-        annotation_file = filtered_crops_json
-        temporary_filtered_crops = filtered_crops_json
-        logger.info(f"Filtered crops.json saved to {filtered_crops_json}")
+        logger.info(f"Using top {config.num_concept} concepts from the filtered concept map for feature generation")
     
     features_args = [
         str(ROOT_DIR / "src" / "save_features.py"),
@@ -471,12 +581,7 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--exact_match_modules_to_hook",
     ]
     
-    try:
-        _run_python_subprocess(features_args, logger=logger)
-    finally:
-        if temporary_filtered_crops is not None and temporary_filtered_crops.exists():
-            temporary_filtered_crops.unlink()
-            logger.info(f"Deleted temporary filtered crops file: {temporary_filtered_crops}")
+    _run_python_subprocess(features_args, logger=logger)
     
     logger.info("DONE: Generate Features")
 
@@ -488,6 +593,8 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
     since loading the model's lm_head requires significant VRAM.
     """
     
+    step_4_recomputed = False  # Track if any method was re-computed
+    
     for method in config.decomp_methods:
         method = method.strip()
         method_dir = config.decomp_dir / method
@@ -496,6 +603,9 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
         if out_raw.exists():
             logger.info(f"Skip Decompose ({method}) (found {out_raw})")
             continue
+        
+        # Mark that step 4 is being re-computed for this method
+        step_4_recomputed = True
         
         method_dir.mkdir(parents=True, exist_ok=True)
         
@@ -558,6 +668,10 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
         # Cleanup intermediate directory
         if intermediate_dir.exists():
             shutil.rmtree(intermediate_dir, ignore_errors=True)
+    
+    # If any method was re-computed, cascade delete downstream outputs
+    if step_4_recomputed:
+        _delete_downstream_outputs(config, 4, logger)
 
 
 def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
@@ -565,6 +679,8 @@ def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
     
     Runs as a subprocess — loads VLM model for explanation generation.
     """
+    
+    step_5_recomputed = False  # Track if any method was re-computed
     
     for method in config.decomp_methods:
         method = method.strip()
@@ -575,6 +691,9 @@ def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
         if out_json.exists():
             logger.info(f"Skip Explainer ({method}) (found {out_json})")
             continue
+        
+        # Mark that step 5 is being re-computed for this method
+        step_5_recomputed = True
         
         out_dir.mkdir(parents=True, exist_ok=True)
         
@@ -599,6 +718,10 @@ def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
         _run_python_subprocess(explainer_args, logger=logger)
         
         logger.info(f"DONE: Explainer ({method})")
+    
+    # If any method was re-computed, cascade delete downstream outputs
+    if step_5_recomputed:
+        _delete_downstream_outputs(config, 5, logger)
 
 
 def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger):
@@ -606,6 +729,8 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
     
     Each eval run is a subprocess — loads VLM model for token evaluation.
     """
+    
+    step_6_recomputed = False  # Track if any eval was re-computed
     
     for method in config.decomp_methods:
         method = method.strip()
@@ -624,6 +749,7 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
             if insertion_csv.exists():
                 logger.info(f"Skip Eval Insert (rank={rank_idx}, {method})")
             else:
+                step_6_recomputed = True
                 logger.info(f"START: Eval Insert (rank={rank_idx}, {method})")
 
                 insert_args = [
@@ -648,6 +774,7 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
             if deletion_csv.exists():
                 logger.info(f"Skip Eval Delete (rank={rank_idx}, {method})")
             else:
+                step_6_recomputed = True
                 logger.info(f"START: Eval Delete (rank={rank_idx}, {method})")
 
                 delete_args = [
@@ -692,6 +819,10 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
         ]
         _run_python_subprocess(auc_args, logger=logger)
         logger.info(f"DONE: Eval AUC Table ({method})")
+    
+    # If any eval was re-computed, cascade delete downstream outputs (plots)
+    if step_6_recomputed:
+        _delete_downstream_outputs(config, 6, logger)
 
 
 def step_7_plots(config: PipelineConfig, logger: logging.Logger):
@@ -705,8 +836,13 @@ def step_7_plots(config: PipelineConfig, logger: logging.Logger):
         for method in config.decomp_methods:
             method = method.strip()
             plot_dir = config.eval_dir / method
+            plot_output = plot_dir / f"{method}_concept_token_curves.png"
             
             if plot_dir.exists() and any(plot_dir.glob("c_*_token_rank*.csv")):
+                if plot_output.exists():
+                    logger.info(f"Skip Plot Token ({method}) (found {plot_output})")
+                    continue
+                
                 logger.info(f"START: Plot Token ({method})")
                 
                 # Import and run plot script
@@ -736,31 +872,35 @@ def step_7_plots(config: PipelineConfig, logger: logging.Logger):
     
     # Summary plots
     summary_script = ROOT_DIR / "scripts" / "plot_eval_summary_across_methods.py"
+    summary_output = config.plots_dir / "summary_comparison.png"
     
     if summary_script.exists():
-        logger.info("START: Plot Summary Across Methods")
-        
-        try:
-            from scripts.plot_eval_summary_across_methods import main as summary_main
+        if summary_output.exists():
+            logger.info(f"Skip Plot Summary (found {summary_output})")
+        else:
+            logger.info("START: Plot Summary Across Methods")
             
-            summary_args = [
-                "--eval_dir", str(config.eval_dir),
-                "--out_dir", str(config.plots_dir),
-                "--methods", ",".join(config.decomp_methods),
-                "--ymin", str(config.plot_ymin),
-                "--ymax", str(config.plot_ymax),
-            ]
-            
-            original_argv = sys.argv
-            sys.argv = ["plot_eval_summary_across_methods.py"] + summary_args
             try:
-                summary_main()
-            finally:
-                sys.argv = original_argv
-            
-            logger.info("DONE: Plot Summary Across Methods")
-        except ImportError:
-            logger.warning("Could not import summary plot script; skipping overlay plots.")
+                from scripts.plot_eval_summary_across_methods import main as summary_main
+                
+                summary_args = [
+                    "--eval_dir", str(config.eval_dir),
+                    "--out_dir", str(config.plots_dir),
+                    "--methods", ",".join(config.decomp_methods),
+                    "--ymin", str(config.plot_ymin),
+                    "--ymax", str(config.plot_ymax),
+                ]
+                
+                original_argv = sys.argv
+                sys.argv = ["plot_eval_summary_across_methods.py"] + summary_args
+                try:
+                    summary_main()
+                finally:
+                    sys.argv = original_argv
+                
+                logger.info("DONE: Plot Summary Across Methods")
+            except ImportError:
+                logger.warning("Could not import summary plot script; skipping overlay plots.")
     else:
         logger.warning("Summary plotter not found; skipping overlay plots.")
 

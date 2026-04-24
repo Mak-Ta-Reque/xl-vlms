@@ -41,6 +41,7 @@ def is_negative_prediction(s):
         or low.startswith('unk')
         or low.startswith('thing')
         or low.startswith('nc')
+        or low.startswith('no ')
     )
 
 

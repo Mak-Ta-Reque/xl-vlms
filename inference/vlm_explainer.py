@@ -35,7 +35,11 @@ import random
 import re
 import torch
 import torch.nn.functional as F
-from transformers import AutoProcessor, AutoModelForCausalLM, AutoModelForVision2Seq
+from transformers import AutoProcessor, AutoModelForCausalLM
+try:
+    from transformers import AutoModelForImageTextToText as _AutoVisionTextModel
+except ImportError:
+    from transformers import AutoModelForVision2Seq as _AutoVisionTextModel
 from transformers.utils import logging as hf_logging
 # Route HF logs through Python logging and keep them quiet by default
 hf_logging.set_verbosity_error()
