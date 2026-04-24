@@ -631,7 +631,7 @@ class VLMConceptExplainer:
                             'image_grounding_masks': img_gmasks,
                         })
                     # Store token embedding temporarily for potential projection later (not returned in response)
-                    token_embedding = acts_j[t_idx].detach().cpu().numpy()  # Keep as numpy for projection
+                    token_embedding = acts_j[t_idx].detach().to(dtype=torch.float32).cpu().numpy()  # Keep as numpy for projection
                     per_token_concepts.append({
                         'token_index': t_idx,
                         'token_id': new_ids[t_idx],
@@ -859,7 +859,8 @@ def main():
         elif isinstance(obj, (np.integer, np.floating)):
             return obj.item()
         elif isinstance(obj, torch.Tensor):
-            return obj.detach().cpu().numpy().tolist()
+            # NumPy does not support torch.bfloat16; cast tensors to float32 first.
+            return obj.detach().to(dtype=torch.float32).cpu().numpy().tolist()
         elif hasattr(obj, 'tolist'):  # Generic fallback for array-like objects
             return obj.tolist()
         else:

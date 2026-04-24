@@ -979,6 +979,7 @@ def main():
     os.environ["POSITIVE_NEGATIVE_SEGMENT"] = str(config.positive_negative_segment)
     os.environ["OUTPUT_DIR"] = str(config.output_dir)
     os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "1")
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     
     # Create directories and setup logging
     create_directories(config, logging.getLogger())
