@@ -28,6 +28,7 @@ os.environ["TORCH_COMPILE_DISABLE"] = "1"
 import csv
 import argparse
 import logging
+import gc
 from pathlib import Path
 from typing import List, Tuple, Optional
 import random
@@ -60,6 +61,20 @@ except ImportError:
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_gpu(logger_obj: Optional[logging.Logger] = None) -> None:
+    """Best-effort GPU memory cleanup for long pipeline runs."""
+    gc.collect()
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            if logger_obj is not None:
+                logger_obj.info("GPU cleanup done in dataset_inference")
+    except Exception as e:
+        if logger_obj is not None:
+            logger_obj.warning(f"GPU cleanup in dataset_inference failed: {e}")
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
@@ -599,68 +614,96 @@ def process_dataset(
         ]
         logger.info(f"Remaining files to process: {len(image_files)}")
     
-    # Load the model and processor
-    model, processor = load_huggingface_model(model_name, trust_remote_code, hf_token, device_str=device_str)
-    
-    # Prepare CSV file (no 'subfolder'; using 'image_relpath')
-    fieldnames = ['root_path', 'image_relpath', 'image_name', 'predicted_text', 'prompt_used']
-    mode = 'a' if resume and os.path.exists(output_csv) else 'w'
+    model = None
+    processor = None
+    try:
+        # Load the model and processor
+        model, processor = load_huggingface_model(model_name, trust_remote_code, hf_token, device_str=device_str)
+        
+        # Prepare CSV file (no 'subfolder'; using 'image_relpath')
+        fieldnames = ['root_path', 'image_relpath', 'image_name', 'predicted_text', 'prompt_used']
+        mode = 'a' if resume and os.path.exists(output_csv) else 'w'
 
-    def batch(iterable, n=1):
-        l = len(iterable)
-        for ndx in range(0, l, n):
-            yield iterable[ndx:min(ndx + n, l)]
+        def batch(iterable, n=1):
+            l = len(iterable)
+            for ndx in range(0, l, n):
+                yield iterable[ndx:min(ndx + n, l)]
 
-    with open(output_csv, mode, newline='', encoding='utf-8') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        if mode == 'w':
-            writer.writeheader()
+        with open(output_csv, mode, newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if mode == 'w':
+                writer.writeheader()
 
-        for image_batch in tqdm(list(batch(image_files, batch_size)), desc="Processing batches"):
-            batch_images = []
-            batch_prompts = []
-            batch_paths = []  # (root_path, image_relpath, image_name)
-            for root_path, subfolder, image_name in image_batch:
-                image_relpath = os.path.join(subfolder, image_name) if subfolder else image_name
-                image_path = os.path.join(root_path, image_relpath)
-                try:
-                    image = Image.open(image_path).convert('RGB')
-                    if image_size_width:
-                        image = resize_image_by_width(image, image_size_width)
-                    elif image_size:
-                        image = resize_image(image, image_size)
-                except Exception as e:
-                    logger.error(f"Error loading image {image_path}: {e}")
-                    image = None
-                batch_images.append(image)
-                batch_prompts.append(prompt)
-                batch_paths.append((root_path, image_relpath, image_name))
+            for image_batch in tqdm(list(batch(image_files, batch_size)), desc="Processing batches"):
+                batch_images = []
+                batch_prompts = []
+                batch_paths = []  # (root_path, image_relpath, image_name)
+                for root_path, subfolder, image_name in image_batch:
+                    image_relpath = os.path.join(subfolder, image_name) if subfolder else image_name
+                    image_path = os.path.join(root_path, image_relpath)
+                    try:
+                        image = Image.open(image_path).convert('RGB')
+                        if image_size_width:
+                            image = resize_image_by_width(image, image_size_width)
+                        elif image_size:
+                            image = resize_image(image, image_size)
+                    except Exception as e:
+                        logger.error(f"Error loading image {image_path}: {e}")
+                        image = None
+                    batch_images.append(image)
+                    batch_prompts.append(prompt)
+                    batch_paths.append((root_path, image_relpath, image_name))
 
-            # Remove None images
-            valid_indices = [i for i, img in enumerate(batch_images) if img is not None]
-            valid_images = [batch_images[i] for i in valid_indices]
-            valid_prompts = [batch_prompts[i] for i in valid_indices]
-            valid_paths = [batch_paths[i] for i in valid_indices]
+                # Remove None images
+                valid_indices = [i for i, img in enumerate(batch_images) if img is not None]
+                valid_images = [batch_images[i] for i in valid_indices]
+                valid_prompts = [batch_prompts[i] for i in valid_indices]
+                valid_paths = [batch_paths[i] for i in valid_indices]
 
-            if not valid_images:
-                continue
+                if not valid_images:
+                    continue
 
-            # Prepare batch inputs
-            if 'qwen' in model_name.lower():
-                messages = [
-                    [{"role": "user", "content": [
-                        {"type": "image", "image": img},
-                        {"type": "text", "text": pr}
-                    ]}] for img, pr in zip(valid_images, valid_prompts)
-                ]
-                if hasattr(processor, 'apply_chat_template'):
-                    text_prompts = [processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True) for m in messages]
-                    inputs = processor(
-                        text=text_prompts,
-                        images=valid_images,
+                # Prepare batch inputs
+                if 'qwen' in model_name.lower():
+                    messages = [
+                        [{"role": "user", "content": [
+                            {"type": "image", "image": img},
+                            {"type": "text", "text": pr}
+                        ]}] for img, pr in zip(valid_images, valid_prompts)
+                    ]
+                    if hasattr(processor, 'apply_chat_template'):
+                        text_prompts = [processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True) for m in messages]
+                        inputs = processor(
+                            text=text_prompts,
+                            images=valid_images,
+                            return_tensors="pt",
+                            padding=True,
+                            padding_side="left"
+                        )
+                    else:
+                        inputs = processor(
+                            text=valid_prompts,
+                            images=valid_images,
+                            return_tensors="pt",
+                            padding=True,
+                            padding_side="left"
+                        )
+                elif 'gemma' in model_name.lower():
+                    messages = [
+                        [
+                            {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
+                            {"role": "user", "content": [
+                                {"type": "image", "image": img},
+                                {"type": "text", "text": pr}
+                            ]}
+                        ] for img, pr in zip(valid_images, valid_prompts)
+                    ]
+                    inputs = processor.apply_chat_template(
+                        messages,
+                        add_generation_prompt=True,
+                        tokenize=True,
+                        return_dict=True,
                         return_tensors="pt",
-                        padding=True,
-                        padding_side="left"
                     )
                 else:
                     inputs = processor(
@@ -670,78 +713,64 @@ def process_dataset(
                         padding=True,
                         padding_side="left"
                     )
-            elif 'gemma' in model_name.lower():
-                messages = [
-                    [
-                        {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
-                        {"role": "user", "content": [
-                            {"type": "image", "image": img},
-                            {"type": "text", "text": pr}
-                        ]}
-                    ] for img, pr in zip(valid_images, valid_prompts)
-                ]
-                inputs = processor.apply_chat_template(
-                    messages,
-                    add_generation_prompt=True,
-                    tokenize=True,
-                    return_dict=True,
-                    return_tensors="pt",
-                )
-            else:
-                inputs = processor(
-                    text=valid_prompts,
-                    images=valid_images,
-                    return_tensors="pt",
-                    padding=True,
-                    padding_side="left"
-                )
 
-            device = next(model.parameters()).device
-            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+                device = next(model.parameters()).device
+                inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
 
-            with torch.no_grad():
-                if 'gemma' in model_name.lower():
-                    input_len = inputs["input_ids"].shape[-1]
-                    outputs = model.generate(
-                        **inputs,
-                        max_new_tokens=100,
-                        do_sample=True,
-                        pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
-                    )
-                    new_tokens = [out[input_len:] for out in outputs]
-                    generated_texts = [processor.decode(nt, skip_special_tokens=True).strip() for nt in new_tokens]
-                else:
-                    logits_processor = [SafeNanLogitsProcessor()]
-                    safe_temperature = max(1e-4, 0.7)
-                    outputs = model.generate(
-                        **inputs,
-                        max_new_tokens=150,
-                        do_sample=True,
-                        temperature=safe_temperature,
-                        logits_processor=logits_processor,
-                        pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
-                    )
-                    if hasattr(processor, 'tokenizer'):
-                        tokenizer = processor.tokenizer
+                with torch.no_grad():
+                    if 'gemma' in model_name.lower():
+                        input_len = inputs["input_ids"].shape[-1]
+                        outputs = model.generate(
+                            **inputs,
+                            max_new_tokens=100,
+                            do_sample=True,
+                            pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
+                        )
+                        new_tokens = [out[input_len:] for out in outputs]
+                        generated_texts = [processor.decode(nt, skip_special_tokens=True).strip() for nt in new_tokens]
                     else:
-                        tokenizer = processor
-                    if 'input_ids' in inputs:
-                        generated_texts = [tokenizer.decode(out[inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip() for out in outputs]
-                    else:
-                        generated_texts = [tokenizer.decode(out, skip_special_tokens=True).strip() for out in outputs]
+                        logits_processor = [SafeNanLogitsProcessor()]
+                        safe_temperature = max(1e-4, 0.7)
+                        outputs = model.generate(
+                            **inputs,
+                            max_new_tokens=150,
+                            do_sample=True,
+                            temperature=safe_temperature,
+                            logits_processor=logits_processor,
+                            pad_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None
+                        )
+                        if hasattr(processor, 'tokenizer'):
+                            tokenizer = processor.tokenizer
+                        else:
+                            tokenizer = processor
+                        if 'input_ids' in inputs:
+                            generated_texts = [tokenizer.decode(out[inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip() for out in outputs]
+                        else:
+                            generated_texts = [tokenizer.decode(out, skip_special_tokens=True).strip() for out in outputs]
 
-            # Write results for each image in batch
-            for (root_path, image_relpath, image_name), predicted_text in zip(valid_paths, generated_texts):
-                writer.writerow({
-                    'root_path': root_path,
-                    'image_relpath': image_relpath,
-                    'image_name': image_name,
-                    'predicted_text': predicted_text,
-                    'prompt_used': prompt
-                })
-            csvfile.flush()
+                # Write results for each image in batch
+                for (root_path, image_relpath, image_name), predicted_text in zip(valid_paths, generated_texts):
+                    writer.writerow({
+                        'root_path': root_path,
+                        'image_relpath': image_relpath,
+                        'image_name': image_name,
+                        'predicted_text': predicted_text,
+                        'prompt_used': prompt
+                    })
+                csvfile.flush()
 
-    logger.info(f"Processing complete! Results saved to {output_csv}")
+        logger.info(f"Processing complete! Results saved to {output_csv}")
+    finally:
+        # Release model/processors and free CUDA memory before returning to caller.
+        try:
+            del model
+        except Exception:
+            pass
+        try:
+            del processor
+        except Exception:
+            pass
+        _cleanup_gpu(logger)
 
 
 def main():
