@@ -36,6 +36,7 @@ import json
 import os
 import random
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -176,9 +177,9 @@ def _load_langsam(device: Optional[str] = None):
 
 
 def _load_sam3(device: Optional[str] = None, confidence_threshold: float = 0.5):
-    global _SAM3_MODEL
-    if _SAM3_MODEL is not None:
-        return _SAM3_MODEL
+   # global _SAM3_MODEL
+   # if _SAM3_MODEL is not None:
+   #     return _SAM3_MODEL
     _ensure_repo_root_on_sys_path()
     from src.sam3_utils import load_sam3
     _SAM3_MODEL = load_sam3(device=device, confidence_threshold=confidence_threshold)
@@ -597,6 +598,7 @@ def detect_concept_masks(
     model,
     batch_size: int = 2,
     concept_masks_per_image: int = 5,
+    return_scores: bool = False,
 ) -> List[List[Tuple[List[int], Any]]]:
     """Run text-prompted detection for *tag* and return top masks per image.
 
@@ -612,22 +614,57 @@ def detect_concept_masks(
             model, images, tag=tag, batch_size=batch_size,
             topn=max(concept_masks_per_image, 5),
         )
+        if return_scores:
+            pairs_per_img = [
+                [(bbox, mask, float(_mask_area(mask))) for bbox, mask in pairs]
+                for pairs in pairs_per_img
+            ]
     elif detector == "sam3":
         _ensure_repo_root_on_sys_path()
         from src.sam3_utils import predict_bboxes_and_masks_for_tag_sam3_batched
+        if hasattr(model, "setdefault"):
+            model.setdefault("minimum_keep", concept_masks_per_image)
+        else:
+            try:
+                model["minimum_keep"] = concept_masks_per_image
+            except Exception:
+                pass
         pairs_per_img = predict_bboxes_and_masks_for_tag_sam3_batched(
             model, images, tag=tag, batch_size=batch_size,
-            topn=max(concept_masks_per_image, 5),
+            topn=max(concept_masks_per_image, 1),
+            return_scores=return_scores,
         )
     else:
         raise ValueError(f"Unknown detector: {detector}")
 
-    # Keep only top-K by area
+    # Keep only top-K by area unless the caller requested scores for adaptive selection.
+    if return_scores:
+        return pairs_per_img
+
     result = []
     for pairs in pairs_per_img:
         sorted_pairs = sorted(pairs, key=lambda p: _mask_area(p[1]), reverse=True)
         result.append(sorted_pairs[:concept_masks_per_image])
     return result
+
+
+def _adaptive_concept_keep_count(scores: List[float]) -> Tuple[int, Optional[float]]:
+    """Pick a concept-mask count from a simple histogram over detection scores."""
+    import numpy as np
+
+    scores = [float(score) for score in scores if score is not None]
+    if not scores:
+        return 0, None
+    if len(scores) == 1:
+        return 1, scores[0]
+
+    values = np.asarray(scores, dtype=float)
+    bin_count = min(10, max(3, int(np.sqrt(len(values)))))
+    hist, edges = np.histogram(values, bins=bin_count)
+    peak_idx = int(np.argmax(hist))
+    threshold = float(edges[peak_idx])
+    keep_count = int(np.sum(values >= threshold))
+    return max(1, keep_count), threshold
 
 
 # ---------------------------------------------------------------------------
@@ -689,14 +726,19 @@ def _build_masks_for_image(
 ) -> Tuple[List[Tuple[List[int], Any]], int]:
     """Merge concept + auto masks, subtract concept from auto, enforce limits.
 
+    The concept side is always collapsed into a single union mask.  The
+    ``concept_masks_per_image`` value controls how many detected concept
+    instances are allowed to contribute to that union, not how many concept
+    masks are written out.
+
     When text-prompted concept detection returns nothing (common for
     abstract concepts like colours, textures, or "outdoor"), the largest
     auto mask is **promoted** to concept so that every image always has
     at least one ``is_concept=True`` mask (when ``concept_masks_per_image > 0``).
 
     Returns:
-        ``(final_pairs, n_concept)`` where the first *n_concept* entries
-        are concept masks (``is_concept=True``).
+        ``(final_pairs, n_concept)`` where the first *n_concept* entry is the
+        unioned concept mask (``is_concept=True``).
     """
     import numpy as np
 
@@ -721,7 +763,39 @@ def _build_masks_for_image(
     auto_pairs = normalised_auto
 
     # --- concept masks (always first) ---
-    kept_concept: List[Tuple[List[int], Any]] = concept_pairs[:concept_masks_per_image]
+    if concept_masks_per_image > 0:
+        concept_candidates = concept_pairs[:concept_masks_per_image]
+    else:
+        concept_candidates = []
+
+    concept_union = None
+    for _, cm in concept_candidates:
+        if cm is None:
+            continue
+        if concept_union is None:
+            concept_union = cm.copy()
+        else:
+            if concept_union.shape != cm.shape:
+                from PIL import Image as _Img
+                h, w = concept_union.shape
+                cm_r = np.array(
+                    _Img.fromarray(cm.astype(np.uint8) * 255).resize((w, h), _Img.NEAREST)
+                ) > 127
+                concept_union = concept_union | cm_r
+            else:
+                concept_union = concept_union | cm
+
+    kept_concept: List[Tuple[List[int], Any]] = []
+    if concept_union is not None:
+        ys, xs = np.where(concept_union)
+        if len(ys) > 0:
+            bbox_union = [
+                int(xs.min()),
+                int(ys.min()),
+                int(xs.max() - xs.min() + 1),
+                int(ys.max() - ys.min() + 1),
+            ]
+            kept_concept = [(bbox_union, concept_union)]
     n_concept = len(kept_concept)
 
     # --- Fallback: promote largest auto mask(s) when concept detection missed ---
@@ -738,23 +812,6 @@ def _build_masks_for_image(
         # Remove promoted masks from auto_pairs so they aren't duplicated
         promoted_ids = set(id(m) for _, m in kept_concept)
         auto_pairs = [(bb, m) for bb, m in auto_pairs if id(m) not in promoted_ids]
-
-    # Union of concept masks for subtraction
-    concept_union = None
-    for _, cm in kept_concept:
-        if cm is not None:
-            if concept_union is None:
-                concept_union = cm.copy()
-            else:
-                if concept_union.shape != cm.shape:
-                    from PIL import Image as _Img
-                    h, w = concept_union.shape
-                    cm_r = np.array(
-                        _Img.fromarray(cm.astype(np.uint8) * 255).resize((w, h), _Img.NEAREST)
-                    ) > 127
-                    concept_union = concept_union | cm_r
-                else:
-                    concept_union = concept_union | cm
 
     # --- auto masks (subtract ALL previously placed masks so they are non-overlapping) ---
     # Start the running union from concept masks; each accepted auto mask is added too.
@@ -1055,20 +1112,21 @@ def process_mapping(
         crop_mode = "random"
 
     # --- Override masks_per_image for binary segmentation mode ---
-    # In pos/neg mode the output is always 2 masks: 1 fg (union of all
-    # instances) + 1 bg (inverse).  concept_masks_per_image stays 1
-    # (= "1 foreground segment"); a separate _detect_topn controls how
-    # many instances we fetch from the detector so the union can merge
-    # all of them.
-    _detect_topn: int = concept_masks_per_image     # default: same as output
+    # In pos/neg mode the output is always 2 masks: 1 fg (union of the
+    # requested concept detections) + 1 bg (inverse).  The requested
+    # concept count still controls how many detections we fetch and union.
+    _detect_topn: int = max(concept_masks_per_image, 1)
+    adaptive_concept_masks = concept_masks_per_image < 0
+    if adaptive_concept_masks:
+        _detect_topn = max(masks_per_image * 2, 20)
     if positive_negative_segment:
         masks_per_image = 2
-        concept_masks_per_image = 1
-        _detect_topn = 10   # fetch up to 10 instances for union
+        if not adaptive_concept_masks:
+            _detect_topn = max(concept_masks_per_image, 1)
         print(f"[positive_negative_segment] Binary fg/bg mode: "
               f"masks_per_image forced to {masks_per_image}, "
               f"concept_masks_per_image={concept_masks_per_image} "
-              f"(detect_topn={_detect_topn}, all instances will be unioned)")
+              f"(detect_topn={_detect_topn}, concept detections will be unioned)")
 
     mapping = load_mapping(mapping_json)
 
@@ -1079,6 +1137,10 @@ def process_mapping(
         model = _load_langsam(device=device)
     elif detector == "sam3":
         model = _load_sam3(device=device, confidence_threshold=confidence_threshold)
+        try:
+            model["minimum_keep"] = concept_masks_per_image
+        except Exception:
+            pass
     else:
         raise ValueError(f"Unknown detector: {detector}. Use 'none', 'langsam' or 'sam3'.")
 
@@ -1086,16 +1148,8 @@ def process_mapping(
     if detector_none:
         clip_model, clip_preprocess, clip_device = _load_clip_model(device=device)
 
-    # --- Resume from existing JSON if present ---
+    # Start fresh each run — no resume support for a clean, faster pipeline
     result: Dict[str, dict] = {}
-    if os.path.isfile(output_json):
-        try:
-            with open(output_json) as f:
-                loaded = json.load(f)
-            if isinstance(loaded, dict):
-                result = loaded
-        except Exception:
-            pass
 
     # --- Filter valid tags ---
     valid_tags: List[Tuple[str, List[str]]] = []
@@ -1121,6 +1175,44 @@ def process_mapping(
                     disable=not (show_progress and TQDM_AVAILABLE),
                     file=sys.stderr, leave=True) if TQDM_AVAILABLE else None
 
+    # Progress / ETA tracking
+    start_time = time.time()
+    processed_images = 0
+    status_log_path = os.path.join(os.path.dirname(output_json) or ".", "crop_status.log")
+    status_write_every = int(os.environ.get("STATUS_WRITE_EVERY", "10"))
+
+    def _write_status(force: bool = False, current_tag: Optional[str] = None):
+        nonlocal processed_images
+        if not force and (status_write_every <= 0 or (processed_images % status_write_every) != 0):
+            return
+        elapsed = time.time() - start_time
+        rate = (processed_images / elapsed) if elapsed > 0 else 0.0
+        remaining = max(0, total_images - processed_images)
+        eta = (remaining / rate) if rate > 0 else None
+        eta_s = f"{int(eta)}s" if eta is not None else "N/A"
+        tag_str = (current_tag[:20] if current_tag else "")
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} processed={processed_images}/{total_images} " \
+               f"elapsed={elapsed:.1f}s rate={rate:.2f}img/s eta={eta_s} tag={tag_str}"
+        try:
+            if pbar:
+                try:
+                    pbar.set_postfix(eta=eta_s)
+                except Exception:
+                    pass
+                try:
+                    tqdm.write(line)
+                except Exception:
+                    print(line)
+            else:
+                print(line)
+        except Exception:
+            print(line)
+        try:
+            with open(status_log_path, "a") as sf:
+                sf.write(line + "\n")
+        except Exception:
+            pass
+
     for tag_idx, (tag, rels) in enumerate(valid_tags):
         if tag_pbar:
             tag_pbar.set_postfix(current=tag[:20], remaining=len(valid_tags) - tag_idx)
@@ -1145,6 +1237,8 @@ def process_mapping(
                 if has_concept or concept_masks_per_image == 0:
                     if pbar:
                         pbar.update(1)
+                    processed_images += 1
+                    _write_status(current_tag=tag)
                     continue
                 # Stale entry without concept masks → re-process
                 del tag_bucket[rel]
@@ -1179,6 +1273,7 @@ def process_mapping(
                         pil_images, tag=tag, detector=detector, model=model,
                         batch_size=batch_size,
                         concept_masks_per_image=_detect_topn,
+                        return_scores=adaptive_concept_masks,
                     )
                 except Exception as e:
                     print(f"Warning: concept detection failed for tag='{tag}': {e}")
@@ -1220,11 +1315,12 @@ def process_mapping(
                     if pbar:
                         pbar.update(1)
                         pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=0, mode=crop_mode)
+                    processed_images += 1
+                    _write_status(current_tag=tag)
 
             elif positive_negative_segment:
-                # Binary mode: no auto masks needed.  For each image,
-                # union all concept instances into one mask, then create
-                # an inverted copy as the "background" mask.
+                # Binary mode: union all concept instances into one mask,
+                # then create an inverted copy as the "background" mask.
                 # Dilation/erosion via MASK_BOUNDARY_PIXELS is applied
                 # later at inference time (save_features.py) so the
                 # stored masks stay canonical.
@@ -1232,7 +1328,20 @@ def process_mapping(
                 auto_per_img = [[] for _ in pil_images]  # unused
 
                 for i, (rel, _) in enumerate(chunk):
-                    cp = concept_per_img[i] if i < len(concept_per_img) else []
+                    cp_raw = concept_per_img[i] if i < len(concept_per_img) else []
+                    if adaptive_concept_masks:
+                        cp_scores = [score for _, _, score in cp_raw if score is not None]
+                        keep_count, threshold = _adaptive_concept_keep_count(cp_scores)
+                        if threshold is None:
+                            cp = []
+                        else:
+                            cp = [
+                                (bbox, mask)
+                                for bbox, mask, score in cp_raw
+                                if score is None or score >= threshold
+                            ][:keep_count]
+                    else:
+                        cp = cp_raw[:max(concept_masks_per_image, 0)]
 
                     if len(cp) == 0:
                         # No concept mask detected — record empty
@@ -1243,6 +1352,8 @@ def process_mapping(
                         if pbar:
                             pbar.update(1)
                             pbar.set_postfix(tag=tag[:12], masks=0, concept=0, mode="pos_neg")
+                        processed_images += 1
+                        _write_status(current_tag=tag)
                         continue
 
                     # --- Union all detected concept instances into one mask ---
@@ -1269,6 +1380,8 @@ def process_mapping(
                         )
                         if pbar:
                             pbar.update(1)
+                        processed_images += 1
+                        _write_status(current_tag=tag)
                         continue
 
                     mask_fg = union_mask
@@ -1282,6 +1395,8 @@ def process_mapping(
                         )
                         if pbar:
                             pbar.update(1)
+                        processed_images += 1
+                        _write_status(current_tag=tag)
                         continue
                     bbox_fg = [
                         int(xs_fg.min()), int(ys_fg.min()),
@@ -1314,9 +1429,11 @@ def process_mapping(
                     if pbar:
                         pbar.update(1)
                         pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=n_concept, mode="pos_neg")
+                    processed_images += 1
+                    _write_status(current_tag=tag)
             else:
                 # --- Standard multi-mask mode ---
-                auto_topn = max(masks_per_image * 2, 20)  # fetch extra, will be filtered
+                auto_topn = max(masks_per_image - 1, 1)  # one slot is reserved for the unioned tag mask
                 try:
                     auto_per_img = detect_auto_masks(
                         pil_images, detector=detector, model=model,
@@ -1330,13 +1447,26 @@ def process_mapping(
 
                 # --- 3. Combine, subtract, record ---
                 for i, (rel, _) in enumerate(chunk):
-                    cp = concept_per_img[i] if i < len(concept_per_img) else []
+                    cp_raw = concept_per_img[i] if i < len(concept_per_img) else []
+                    if adaptive_concept_masks:
+                        cp_scores = [score for _, _, score in cp_raw if score is not None]
+                        keep_count, threshold = _adaptive_concept_keep_count(cp_scores)
+                        if threshold is None:
+                            cp = []
+                        else:
+                            cp = [
+                                (bbox, mask)
+                                for bbox, mask, score in cp_raw
+                                if score is None or score >= threshold
+                            ][:keep_count]
+                    else:
+                        cp = cp_raw[:max(concept_masks_per_image, 0)]
                     ap = auto_per_img[i] if i < len(auto_per_img) else []
 
                     pairs, n_concept = _build_masks_for_image(
                         cp, ap,
                         masks_per_image=masks_per_image,
-                        concept_masks_per_image=concept_masks_per_image,
+                        concept_masks_per_image=len(cp),
                     )
 
                     _record_for_image(
@@ -1346,25 +1476,31 @@ def process_mapping(
                     if pbar:
                         pbar.update(1)
                         pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=n_concept)
+                    processed_images += 1
+                    _write_status(current_tag=tag)
 
-            # Free chunk images + results before next chunk
-            del pil_images, concept_per_img
+            # Free chunk-local references before the next chunk.
+            pil_images = []
+            concept_per_img = []
             try:
-                del auto_per_img
+                auto_per_img = []
             except NameError:
                 pass
             _cleanup_gpu()
 
-        # Flush after each tag
-        _atomic_write_json(output_json, result)
+        # Do not flush after each tag (no resume support) — continue accumulating
 
         if tag_pbar:
             tag_pbar.update(1)
+        _write_status(force=True, current_tag=tag)
 
     if pbar:
         pbar.close()
     if tag_pbar:
         tag_pbar.close()
+
+    # Write final output once (no per-tag flush/resume support)
+    _atomic_write_json(output_json, result)
 
     if os.environ.get("DEBUG_SAVE_VLM_INPUTS", "0") == "1":
         debug_dir = os.path.join(os.path.dirname(output_json), "debug_crop_overlays")
@@ -1410,7 +1546,7 @@ def main():
     parser.add_argument("--device", type=str, default=None,
                         help="Device: cpu, cuda, or cuda:N")
     parser.add_argument("--confidence_threshold", type=float, default=0.5,
-                        help="Detection confidence threshold")
+                        help="Detection confidence threshold; use -1 for adaptive midpoint cutoff")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed")
     parser.add_argument("--verbose", action="store_true")

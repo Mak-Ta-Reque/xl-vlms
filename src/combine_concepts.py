@@ -319,8 +319,22 @@ def combine_concepts_(input_dir, clean_example_ratio=0.8):
 
 
 def apply_normalization(concepts, method):
-    if concepts.shape[1] < 2:
-        raise ValueError("Concepts must have at least 2 features for normalization.")
+    if isinstance(concepts, torch.Tensor):
+        if concepts.numel() == 0:
+            return concepts
+        if concepts.ndim < 2:
+            return concepts
+        feature_dim = concepts.shape[1]
+    else:
+        concepts = np.asarray(concepts)
+        if concepts.size == 0:
+            return concepts
+        if concepts.ndim < 2:
+            return concepts
+        feature_dim = concepts.shape[1]
+
+    if feature_dim < 2:
+        return concepts
     concepts_np = concepts.cpu().numpy() if isinstance(concepts, torch.Tensor) else concepts
 
     positive_threshold = 0.01

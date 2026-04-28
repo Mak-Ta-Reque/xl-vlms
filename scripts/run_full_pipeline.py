@@ -122,7 +122,7 @@ class PipelineConfig:
         self.image_size_height = self._get_int("IMAGE_SIZE_HEIGHT", 512)
         self.image_size = (self.image_size_width, self.image_size_height)
         self.image_budget = self._get_int("IMAGE_BUDGET", 300)# reduce for test , use 200 -> for a better run
-        self.box_threshold = self._get_float("BOX_THRESHOLD", 0.5)
+        self.segmentation_confidence = self._get_float("SEGMENTATION_CONFIDENCE", 0.5)
         
         # Decomposition methods
         self.decomp_methods = self._get_str("DECOMP_METHODS", "snmf").split(",")
@@ -528,7 +528,7 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         "--image_size_width", str(config.image_size_width),
         "--device", config.device,
         "--seed", str(config.seed),
-        "--confidence_threshold", str(config.box_threshold),
+        "--confidence_threshold", str(config.segmentation_confidence),
         "--positive_negative_segment", str(config.positive_negative_segment),
     ]
     

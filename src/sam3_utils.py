@@ -135,10 +135,15 @@ def load_sam3(
 
     # Check if batch processing APIs are available
     batch_supported = _check_sam3_batch_available()
-    
+
+    adaptive_threshold = confidence_threshold < 0
+    detection_threshold = 0.0 if adaptive_threshold else confidence_threshold
+
     result = {
         "model": model,
-        "confidence_threshold": confidence_threshold,
+        "confidence_threshold": detection_threshold,
+        "requested_confidence_threshold": confidence_threshold,
+        "adaptive_threshold": adaptive_threshold,
         "device": target_device,
         "batch_supported": batch_supported,
         "transform": None,
@@ -169,7 +174,7 @@ def load_sam3(
             use_original_sizes_box=True,
             use_original_sizes_mask=True,
             convert_mask_to_rle=False,
-            detection_threshold=confidence_threshold,
+            detection_threshold=detection_threshold,
             to_cpu=False,
         )
 
@@ -203,6 +208,43 @@ def _to_numpy(a) -> np.ndarray:
             t = t.float()
         return t.cpu().numpy()
     return np.array(a)
+
+
+def _adaptive_score_threshold(scores) -> Optional[float]:
+    """Return the midpoint between the highest and lowest scores."""
+    if scores is None:
+        return None
+    scores_np = _to_numpy(scores).flatten()
+    if len(scores_np) == 0:
+        return None
+    return float((float(np.max(scores_np)) + float(np.min(scores_np))) / 2.0)
+
+
+def _filter_scored_pairs_by_threshold(
+    scored_pairs: List[tuple],
+    adaptive_threshold: Optional[float],
+    minimum_keep: int = 0,
+    keep_scores: bool = False,
+) -> List[tuple]:
+    if adaptive_threshold is None:
+        filtered = [
+            (bbox, mask, score) if keep_scores else (bbox, mask)
+            for bbox, mask, score in scored_pairs
+        ]
+    else:
+        filtered = [
+            (bbox, mask, score) if keep_scores else (bbox, mask)
+            for bbox, mask, score in scored_pairs
+            if score is None or score >= adaptive_threshold
+        ]
+
+    min_keep = max(0, int(minimum_keep or 0))
+    if min_keep > 0 and len(filtered) < min_keep:
+        return [
+            (bbox, mask, score) if keep_scores else (bbox, mask)
+            for bbox, mask, score in scored_pairs[:min_keep]
+        ]
+    return filtered
 
 
 def _binarize_mask(mask: np.ndarray, threshold: float = 0.5) -> np.ndarray:
@@ -288,6 +330,7 @@ def _bboxes_from_masks(
 def _extract_bboxes_and_masks_from_inference_state(
     inference_state: dict,
     image_size: Tuple[int, int],
+    include_scores: bool = False,
 ) -> List[tuple]:
     """
     Extract (bbox_xywh, binary_mask) tuples from SAM3 inference_state.
@@ -334,7 +377,13 @@ def _extract_bboxes_and_masks_from_inference_state(
             m = None
             if masks_np is not None and i < len(masks_np):
                 m = _binarize_mask(masks_np[i])
-            pairs.append(([x, y, w, h], m))
+            score = None
+            if scores_np is not None and i < len(scores_np):
+                score = float(scores_np[i])
+            if include_scores:
+                pairs.append(([x, y, w, h], m, score))
+            else:
+                pairs.append(([x, y, w, h], m))
 
     return pairs
 
@@ -402,6 +451,7 @@ def _extract_bboxes_and_masks_from_postprocessed_result(
     result: Dict[str, Any],
     image_size: Tuple[int, int],
     topn: int = 10,
+    include_scores: bool = False,
 ) -> List[tuple]:
     """
     Extract (bbox_xywh, binary_mask) tuples from postprocessed SAM3 result.
@@ -449,7 +499,13 @@ def _extract_bboxes_and_masks_from_postprocessed_result(
             m = None
             if masks_np is not None and i < len(masks_np):
                 m = _binarize_mask(masks_np[i])
-            pairs.append(([x, y, w, h], m))
+            score = None
+            if scores_np is not None and i < len(scores_np):
+                score = float(scores_np[i])
+            if include_scores:
+                pairs.append(([x, y, w, h], m, score))
+            else:
+                pairs.append(([x, y, w, h], m))
 
     return pairs
 
@@ -469,6 +525,7 @@ def predict_bboxes_and_masks_for_tag_sam3(
     images: Union[str, Image.Image, np.ndarray, Sequence[Union[str, Image.Image, np.ndarray]]],
     tag: str,
     topn: int = 10,
+    return_scores: bool = False,
 ) -> List[List[tuple]]:
     """
     Predict (bbox, mask) pairs for a tag over a list of images using SAM3.
@@ -491,10 +548,12 @@ def predict_bboxes_and_masks_for_tag_sam3(
     images_pil = [_to_pil(im) for im in images]
 
     if not model_dict.get("batch_supported", False):
-        return _predict_bboxes_and_masks_per_image(model_dict, images_pil, tag, topn)
+        return _predict_bboxes_and_masks_per_image(
+            model_dict, images_pil, tag, topn, return_scores=return_scores
+        )
 
     return _predict_bboxes_and_masks_batched_internal(
-        model_dict, images_pil, tag, topn, batch_size=len(images_pil)
+        model_dict, images_pil, tag, topn, batch_size=len(images_pil), return_scores=return_scores
     )
 
 
@@ -514,12 +573,15 @@ def _predict_bboxes_and_masks_per_image(
     images_pil: List[Image.Image],
     tag: str,
     topn: int,
+    return_scores: bool = False,
 ) -> List[List[tuple]]:
     """Fallback per-image processing returning (bbox, mask) pairs."""
     from sam3.model.sam3_image_processor import Sam3Processor
 
     model = model_dict["model"]
     confidence_threshold = model_dict.get("confidence_threshold", 0.5)
+    adaptive_threshold_enabled = bool(model_dict.get("adaptive_threshold", False))
+    minimum_keep = model_dict.get("minimum_keep", 0)
 
     all_pairs: List[List[tuple]] = []
 
@@ -534,9 +596,21 @@ def _predict_bboxes_and_masks_per_image(
                 inference_state = processor.set_text_prompt(state=inference_state, prompt=tag)
 
                 width, height = img.size
-                pairs = _extract_bboxes_and_masks_from_inference_state(
-                    inference_state, (width, height)
+                scored_pairs = _extract_bboxes_and_masks_from_inference_state(
+                    inference_state, (width, height), include_scores=True
                 )
+
+                if adaptive_threshold_enabled:
+                    scores = [score for _, _, score in scored_pairs if score is not None]
+                    adaptive_threshold = _adaptive_score_threshold(scores)
+                    pairs = _filter_scored_pairs_by_threshold(
+                        scored_pairs, adaptive_threshold, minimum_keep=minimum_keep
+                    )
+                else:
+                    pairs = [
+                        (bbox, mask, score) if return_scores else (bbox, mask)
+                        for bbox, mask, score in scored_pairs
+                    ]
 
                 if topn > 0:
                     pairs = pairs[:topn]
@@ -577,6 +651,7 @@ def _predict_bboxes_and_masks_batched_internal(
     topn: int,
     batch_size: int,
     debug: bool = False,
+    return_scores: bool = False,
 ) -> List[List[tuple]]:
     """
     True batched inference returning (bbox, mask) pairs.
@@ -589,6 +664,8 @@ def _predict_bboxes_and_masks_batched_internal(
     collate_fn = model_dict["collate_fn"]
     copy_to_device_fn = model_dict["copy_to_device_fn"]
     device = model_dict.get("device", torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+    adaptive_threshold_enabled = bool(model_dict.get("adaptive_threshold", False))
+    minimum_keep = model_dict.get("minimum_keep", 0)
 
     all_pairs: List[List[tuple]] = [[] for _ in range(len(images_pil))]
     image_sizes = [img.size for img in images_pil]
@@ -638,9 +715,25 @@ def _predict_bboxes_and_masks_batched_internal(
                   global_idx = query_id_to_batch_idx[query_id]
                   local_idx = global_idx - batch_start
                   img_size = batch_sizes[local_idx]
-                  pairs = _extract_bboxes_and_masks_from_postprocessed_result(
-                      result, img_size, topn
+                  scored_pairs = _extract_bboxes_and_masks_from_postprocessed_result(
+                      result, img_size, topn, include_scores=True
                   )
+                  if adaptive_threshold_enabled:
+                      scores = [score for _, _, score in scored_pairs if score is not None]
+                      adaptive_threshold = _adaptive_score_threshold(scores)
+                      pairs = _filter_scored_pairs_by_threshold(
+                          scored_pairs, adaptive_threshold, minimum_keep=minimum_keep,
+                          keep_scores=return_scores
+                      )
+                  else:
+                      pairs = [
+                          (bbox, mask, score) if return_scores else (bbox, mask)
+                          for bbox, mask, score in scored_pairs
+                      ]
+
+                  if topn > 0:
+                      pairs = pairs[:topn]
+
                   all_pairs[global_idx] = pairs
                   if debug:
                       print(f"[DEBUG]   Query {query_id} -> image {global_idx}: {len(pairs)} detections")
@@ -686,9 +779,18 @@ def _predict_bboxes_and_masks_batched_internal(
                   )
 
                   width, height = img.size
-                  pairs = _extract_bboxes_and_masks_from_inference_state(
-                      inference_state, (width, height)
+                  scored_pairs = _extract_bboxes_and_masks_from_inference_state(
+                      inference_state, (width, height), include_scores=True
                   )
+                  if adaptive_threshold_enabled:
+                      scores = [score for _, _, score in scored_pairs if score is not None]
+                      adaptive_threshold = _adaptive_score_threshold(scores)
+                      pairs = _filter_scored_pairs_by_threshold(scored_pairs, adaptive_threshold)
+                  else:
+                      pairs = [
+                          (bbox, mask, score) if return_scores else (bbox, mask)
+                          for bbox, mask, score in scored_pairs
+                      ]
                   if topn > 0:
                       pairs = pairs[:topn]
                   all_pairs[batch_start + i] = pairs
@@ -727,6 +829,7 @@ def predict_bboxes_and_masks_for_tag_sam3_batched(
     batch_size: int = 8,
     topn: int = 10,
     debug: bool = False,
+    return_scores: bool = False,
 ) -> List[List[tuple]]:
     """
     Batched prediction returning (bbox, mask) pairs using SAM3.
@@ -745,7 +848,7 @@ def predict_bboxes_and_masks_for_tag_sam3_batched(
     images_pil = [_to_pil(im) for im in images]
 
     return _predict_bboxes_and_masks_batched_internal(
-        model_dict, images_pil, tag, topn, batch_size, debug=debug
+        model_dict, images_pil, tag, topn, batch_size, debug=debug, return_scores=return_scores
     )
 
 
@@ -861,6 +964,8 @@ def _predict_nontag_masks_multitag(
 
     model = model_dict["model"]
     confidence_threshold = model_dict.get("confidence_threshold", 0.5)
+    adaptive_threshold_enabled = bool(model_dict.get("adaptive_threshold", False))
+    minimum_keep = model_dict.get("minimum_keep", 0)
 
     import gc
 
@@ -878,9 +983,17 @@ def _predict_nontag_masks_multitag(
                     try:
                         processor.reset_all_prompts(state)
                         state = processor.set_text_prompt(state=state, prompt=tag)
-                        pairs = _extract_bboxes_and_masks_from_inference_state(
-                            state, (width, height),
+                        scored_pairs = _extract_bboxes_and_masks_from_inference_state(
+                            state, (width, height), include_scores=True,
                         )
+                        if adaptive_threshold_enabled:
+                            scores = [score for _, _, score in scored_pairs if score is not None]
+                            adaptive_threshold = _adaptive_score_threshold(scores)
+                            pairs = _filter_scored_pairs_by_threshold(
+                                scored_pairs, adaptive_threshold, minimum_keep=minimum_keep
+                            )
+                        else:
+                            pairs = [(bbox, mask) for bbox, mask, _score in scored_pairs]
                         for bbox, mask in pairs:
                             if mask is not None:
                                 area = int(mask.sum()) if hasattr(mask, 'sum') else 0
