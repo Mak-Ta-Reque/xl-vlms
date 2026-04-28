@@ -36,7 +36,8 @@ def _compute_auc(payload: Optional[Dict[str, Any]]) -> Optional[float]:
     if x.size < 2:
         return float(y[0]) if x.size == 1 else None
 
-    auc = float(np.trapezoid(y, x))
+    trapezoid = getattr(np, "trapezoid", np.trapz)
+    auc = float(trapezoid(y, x))
     return auc
 
 
