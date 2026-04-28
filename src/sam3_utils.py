@@ -92,10 +92,10 @@ def load_sam3(
     Raises:
         ImportError: If sam3 package is not installed.
     """
-    if not _check_sam3_available():
-        raise ImportError(
-            "sam3 package is required. Install via: pip install 'git+https://github.com/facebookresearch/sam3.git'"
-        )
+    #if not _check_sam3_available():
+    #    raise ImportError(
+    #        "sam3 package is required. Install via: pip install 'git+https://github.com/facebookresearch/sam3.git'"
+    #    )
 
     import sam3
     from sam3 import build_sam3_image_model
@@ -740,14 +740,9 @@ def predict_bboxes_and_masks_for_tag_sam3_batched(
         model_dict = {
             "model": model,
             "confidence_threshold": confidence_threshold,
-            "batch_supported": False,
         }
 
     images_pil = [_to_pil(im) for im in images]
-
-    if not model_dict.get("batch_supported", False):
-        print(f"SAM3 batch APIs not available. Processing {len(images)} images one at a time.")
-        return _predict_bboxes_and_masks_per_image(model_dict, images_pil, tag, topn)
 
     return _predict_bboxes_and_masks_batched_internal(
         model_dict, images_pil, tag, topn, batch_size, debug=debug

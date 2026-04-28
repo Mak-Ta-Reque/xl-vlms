@@ -1128,6 +1128,7 @@ def process_mapping(
 
         # Resolve absolute paths and filter already-done
         todo: List[Tuple[str, str]] = []  # (rel, abs)
+        # This block of code is for creating segmentation if there is a re-run in new data, if there are concepts exist in old data then it will not create segmentation for that image but if concept is not exist in old data then it will create segmentation for that image.
         for rel in rels:
             abs_p = os.path.join(image_root, rel)
             if not os.path.isfile(abs_p):
