@@ -31,10 +31,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 
+import inflect
+
 # Add project root to path for imports
 SCRIPT_DIR = Path(__file__).parent.resolve()
 ROOT_DIR = SCRIPT_DIR.parent.resolve()
 sys.path.insert(0, str(ROOT_DIR))
+p = inflect.engine()
 
 # Try to import dotenv for loading .env file
 try:
@@ -91,25 +94,14 @@ class PipelineConfig:
                 "Invalid CROP_MODE. Use one of: random, sliding_window, langsam, sam3"
             )
         self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 2)
-        self.mask_blur_radius = self._get_int("MASK_BLUR_RADIUS", 15)
-        self.mask_blur_radius_bg = self._get_int("MASK_BLUR_RADIUS_BG", self.mask_blur_radius)
         self.mask_context_pixels = self._get_int("MASK_CONTEXT_PIXELS", 0)
-        self.mask_boundary_pixels = self._get_int("MASK_BOUNDARY_PIXELS", 0)
         # Positive/Negative binary segmentation (1=fg/bg only, 0=multi-mask)
-        _pns = os.environ.get(
-            "POSITIVE_NEGATIVE_SEGMENT",
-            os.environ.get("POSITIVE_NEGATVE_SEGMENT", "0"),
+        self.positive_negative_segment = int(
+            os.environ.get(
+                "POSITIVE_NEGATIVE_SEGMENT",
+                os.environ.get("POSITIVE_NEGATVE_SEGMENT", "0"),
+            )
         )
-        self.positive_negative_segment = int(_pns)
-        # Background masking method: 'gaussian_blur', 'ns', 'telea', 'noisy_linear', 'blackout'
-        self.inpainting_method = os.environ.get(
-            "INPAINTING_METHOD",
-            os.environ.get("IMPAINING_METHOD", "gaussian_blur"),
-        )
-        self.inpainting_method_bg = os.environ.get(
-            "INPAINTING_METHOD_BG", self.inpainting_method,
-        )
-        
         # Inference prompt and image preprocessing
         self.prompt = self._get_str(
             "PROMPT",
@@ -128,6 +120,7 @@ class PipelineConfig:
         self.decomp_methods = self._get_str("DECOMP_METHODS", "snmf").split(",")
         self.decomp_components = self._get_int("DECOMP_COMPONENTS", 2)
         self.num_concept = self._get_int("NUM_CONCEPT", -1)  # -1 = use all tags, else top N tags by crop count
+        self.concepts_vocab = self._get_path("CONCEPTS_VOCAB", ROOT_DIR / "src" / "assets" / "vocab.txt")
         self.dataset_size = self._get_int("BAG_SIZE", 100)
         self.delete_intermediate_files = self._get_int("DELETE_INTERMEDIATE_FILES", 0) == 1
         
@@ -166,7 +159,7 @@ class PipelineConfig:
         if value is None or value == "":
             return default
         return float(value)
-    
+
     def _get_path(self, key: str, default: Path) -> Path:
         value = os.environ.get(key)
         if value is None or value == "":
@@ -357,16 +350,36 @@ def _delete_downstream_outputs(config: PipelineConfig, step_num: int, logger: lo
                     logger.warning(f"  Could not delete {label}: {e}")
 
 
-def _ensure_top_concept_map(concept_map_json: Path, num_concept: int, logger: logging.Logger) -> Path:
-    """Create and return a filtered concept map containing the top-N concepts."""
+def _load_concept_vocab(vocab_path: Path) -> Optional[set]:
+    if not vocab_path.exists():
+        return None
+    vocab = set()
+    with open(vocab_path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            concept = line.strip()
+            if not concept or concept.startswith("#"):
+                continue
+            vocab.add(_normalize_concept_name(concept))
+    return vocab
+
+
+def _normalize_concept_name(name: str) -> str:
+    """Normalize concept names for case-insensitive singular/plural matching."""
+    value = name.strip().casefold()
+    if not value:
+        return value
+    return " ".join(p.singular_noun(word) or word for word in value.split())
+
+
+def _ensure_top_concept_map(
+    concept_map_json: Path,
+    num_concept: int,
+    logger: logging.Logger,
+    concepts_vocab: Optional[Path] = None,
+) -> Path:
+    """Create and return a filtered concept map containing vocab-filtered top-N concepts."""
     if num_concept <= 0:
         return concept_map_json
-
-    filtered_path = concept_map_json.with_name(
-        f"{concept_map_json.stem}_top{num_concept}{concept_map_json.suffix}"
-    )
-    if filtered_path.exists():
-        return filtered_path
 
     if not concept_map_json.exists():
         raise FileNotFoundError(f"Concept map not found: {concept_map_json}")
@@ -377,22 +390,60 @@ def _ensure_top_concept_map(concept_map_json: Path, num_concept: int, logger: lo
     if not isinstance(concept_mapping, dict):
         raise ValueError(f"Expected a JSON object in {concept_map_json}")
 
+    vocab = None
+    if concepts_vocab is not None:
+        vocab = _load_concept_vocab(concepts_vocab)
+        if vocab is None:
+            logger.warning(f"Concept vocab not found: {concepts_vocab}. Falling back to all concepts.")
+        else:
+            logger.info(f"Loaded {len(vocab)} concept names from {concepts_vocab}")
+
+    filtered_candidates = concept_mapping.items()
+    if vocab is not None:
+        filtered_candidates = [
+            (tag, images)
+            for tag, images in concept_mapping.items()
+            if _normalize_concept_name(tag) in vocab
+        ]
+        logger.info(
+            f"Vocab filter kept {len(filtered_candidates)} of {len(concept_mapping)} concepts from {concept_map_json}"
+        )
+
     sorted_concepts = sorted(
-        concept_mapping.items(),
+        filtered_candidates,
         key=lambda item: (-len(item[1]), item[0]),
     )
     selected_concepts = sorted_concepts[: min(num_concept, len(sorted_concepts))]
     filtered_mapping = {tag: images for tag, images in selected_concepts}
+
+    vocab_suffix = ""
+    if concepts_vocab is not None:
+        vocab_suffix = f"_{concepts_vocab.stem}"
+    filtered_path = concept_map_json.with_name(
+        f"{concept_map_json.stem}{vocab_suffix}_top{len(filtered_mapping)}{concept_map_json.suffix}"
+    )
+    if filtered_path.exists():
+        return filtered_path
 
     filtered_path.parent.mkdir(parents=True, exist_ok=True)
     with open(filtered_path, "w", encoding="utf-8") as handle:
         json.dump(filtered_mapping, handle, indent=2, ensure_ascii=False)
 
     logger.info(
-        f"Filtered concept map saved to {filtered_path} using top {len(filtered_mapping)} of {len(concept_mapping)} tags"
+        f"Filtered concept map saved to {filtered_path} using top {len(filtered_mapping)} of {len(sorted_concepts)} candidate tags"
     )
     logger.info(f"Selected tags: {[tag for tag, _ in selected_concepts]}")
     return filtered_path
+
+
+def _count_concepts_in_json(concept_map_json: Path) -> int:
+    if not concept_map_json.exists():
+        return 0
+    with open(concept_map_json, "r", encoding="utf-8") as handle:
+        concept_mapping = json.load(handle)
+    if isinstance(concept_mapping, dict):
+        return len(concept_mapping)
+    return 0
 
 
 # =============================================================================
@@ -489,6 +540,7 @@ def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
         config.concept_map_json,
         config.num_concept,
         logger,
+        concepts_vocab=config.concepts_vocab,
     )
 
 
@@ -511,6 +563,7 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         config.concept_map_json,
         config.num_concept,
         logger,
+        concepts_vocab=config.concepts_vocab,
     )
     
     crops_args = [
@@ -561,8 +614,9 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
     
     logger.info("START: Generate Features")
     annotation_file = config.crops_json
-    if config.num_concept > 0:
-        logger.info(f"Using top {config.num_concept} concepts from the filtered concept map for feature generation")
+    selected_concept_count = _count_concepts_in_json(config.active_concept_map_json)
+    if selected_concept_count > 0:
+        logger.info(f"Using top {selected_concept_count} concepts from the filtered concept map for feature generation")
     
     features_args = [
         str(ROOT_DIR / "src" / "save_features.py"),
@@ -972,13 +1026,9 @@ def main():
     os.environ["HF_HOME"] = str(config.hf_home)
     # Do NOT override CUDA_VISIBLE_DEVICES — device placement is handled by
     # device_utils.parse_device_config() using the DEVICE env var.
-    os.environ["MASK_BLUR_RADIUS"] = str(config.mask_blur_radius)
-    os.environ["MASK_BLUR_RADIUS_BG"] = str(config.mask_blur_radius_bg)
-    os.environ["INPAINTING_METHOD"] = config.inpainting_method
-    os.environ["INPAINTING_METHOD_BG"] = config.inpainting_method_bg
-    os.environ["MASK_CONTEXT_PIXELS"] = str(config.mask_context_pixels)
-    os.environ["MASK_BOUNDARY_PIXELS"] = str(config.mask_boundary_pixels)
+    os.environ["DETECTION_BATCH_SIZE"] = str(config.detection_batch_size)
     os.environ["POSITIVE_NEGATIVE_SEGMENT"] = str(config.positive_negative_segment)
+    os.environ["MASK_CONTEXT_PIXELS"] = str(config.mask_context_pixels)
     os.environ["OUTPUT_DIR"] = str(config.output_dir)
     os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "1")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -997,8 +1047,7 @@ def main():
     logger.info(f"Model:      {config.vlm_model} | Batch: {config.batch_size} | Seed: {config.seed} | Device: {config.device}")
     logger.info(f"Decompose:  {', '.join(config.decomp_methods)}")
     logger.info(f"Crops: detector={config.object_detector} masks={config.masks_per_image} concept={config.concept_masks_per_image} patch={config.patch_size} min={config.min_images_per_tag} max={config.max_images_per_tag}")
-    logger.info(f"Masking: fg_method={config.inpainting_method} fg_blur={config.mask_blur_radius} bg_method={config.inpainting_method_bg} bg_blur={config.mask_blur_radius_bg}")
-    logger.info(f"         ctx={config.mask_context_pixels} boundary_px={config.mask_boundary_pixels} pos_neg_segment={config.positive_negative_segment}")
+    logger.info(f"Masking: ctx={config.mask_context_pixels} pos_neg_segment={config.positive_negative_segment}")
     logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
     logger.info(f"Grounding:  num_most_activating_samples={config.num_most_activating_samples}")

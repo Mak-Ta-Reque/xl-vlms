@@ -1,9 +1,3 @@
-beaver
-brown_bear
-cat
-dog
-horse
-hotdog
-rabbit
-tiger
-zebra
+sunglass
+mountain
+houses

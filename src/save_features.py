@@ -93,6 +93,61 @@ def _apply_background_masking(
         )
         return Image.composite(crop_img, blurred, crop_mask_pil)
 
+
+def _apply_boundary_smoothing(
+    image: Image.Image,
+    mask_np,  # bool ndarray (H, W)
+    boundary_pixels: int,
+) -> Image.Image:
+    """Smooth the mask-edge band to reduce silhouette leakage."""
+    if boundary_pixels <= 0:
+        return image
+
+    import numpy as np
+    from PIL import ImageFilter
+    from scipy.ndimage import binary_dilation, binary_erosion
+
+    struct = np.ones((2 * boundary_pixels + 1, 2 * boundary_pixels + 1), dtype=bool)
+    outer = binary_dilation(mask_np, structure=struct, iterations=1)
+    inner = binary_erosion(mask_np, structure=struct, iterations=1)
+    boundary_band = np.logical_and(outer, np.logical_not(inner))
+    if not boundary_band.any():
+        return image
+
+    src = np.array(image, dtype=np.float32)
+    blurred = np.array(
+        image.filter(ImageFilter.GaussianBlur(radius=max(1, boundary_pixels // 2))),
+        dtype=np.float32,
+    )
+
+    alpha = np.zeros(mask_np.shape, dtype=np.float32)
+    alpha[boundary_band] = 1.0
+    alpha = np.expand_dims(alpha, axis=-1)
+
+    out = src * (1.0 - alpha) + blurred * alpha
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+
+
+def _run_inpainting_step(
+    crop_img: Image.Image,
+    crop_mask_np,  # bool ndarray (H, W)
+    method: str,
+    blur_radius: int,
+    boundary_pixels: int,
+) -> Image.Image:
+    """Single inpainting entry point used by save_features mask pipeline."""
+    if blur_radius > 0 or method != "gaussian_blur":
+        vlm_img = _apply_background_masking(
+            crop_img,
+            crop_mask_np,
+            method=method,
+            blur_radius=blur_radius,
+        )
+    else:
+        vlm_img = crop_img
+
+    return _apply_boundary_smoothing(vlm_img, crop_mask_np, boundary_pixels)
+
 @torch.no_grad()
 def inference(
     loader: Callable,
@@ -138,15 +193,8 @@ def inference(
         # Load blur radius from env (default from .env MASK_BLUR_RADIUS)
         _blur_radius = int(os.environ.get("MASK_BLUR_RADIUS", "10"))
 
-        # Background masking method: 'gaussian_blur', 'ns', 'telea', 'noisy_linear', 'blackout'
-        _inpainting_method = os.environ.get(
-            "INPAINTING_METHOD",
-            os.environ.get("IMPAINING_METHOD", "gaussian_blur"),
-        )
-
-        # BG-specific overrides (used when mask is_concept == False)
-        _blur_radius_bg = int(os.environ.get("MASK_BLUR_RADIUS_BG", str(_blur_radius)))
-        _inpainting_method_bg = os.environ.get("INPAINTING_METHOD_BG", _inpainting_method)
+        # Shared masking method for FG and BG views.
+        _inpainting_method = os.environ.get("INPAINTING_METHOD", "gaussian_blur")
 
         # Debug overlays are generated after crops.json is written in preprocessing/crops_to_json.py.
         _debug_save = False
@@ -232,14 +280,9 @@ def inference(
 
         per_image_patch_sizes = _ensure_per_image_patch_size(patch_sizes, len(image_paths))
 
-        # Context pixels beyond the mask boundary to keep for spatial context
+        # Shared context/boundary pixels for both FG and BG views.
         _context_pixels = int(os.environ.get("MASK_CONTEXT_PIXELS", "0"))
-
-        # Mask boundary pixels: dilate FG mask / erode BG mask by N pixels
-        # at inference time.  Applied on the cropped mask region so the
-        # morphological op only touches pixels inside the image, never
-        # fabricates pixels beyond the image boundary.
-        _boundary_pixels = int(os.environ.get("MASK_BOUNDARY_PIXELS", "50"))
+        _boundary_pixels = _context_pixels
 
         for idx in range(len(image_paths)):
             img_ref = image_paths[idx]
@@ -267,8 +310,8 @@ def inference(
             # ================================================================
             if mask_rle is not None and isinstance(mask_rle, dict):
                 # Select masking parameters based on fg / bg role
-                _eff_blur     = _blur_radius        if _is_concept else _blur_radius_bg
-                _eff_method   = _inpainting_method  if _is_concept else _inpainting_method_bg
+                _eff_blur     = _blur_radius
+                _eff_method   = _inpainting_method
 
                 if logger and idx == 0:
                     logger.info(f"[mask-centric] batch {i}, idx {idx}: is_concept={_is_concept}, mask_rle keys={list(mask_rle.keys())}, blur={_eff_blur}, method={_eff_method}, ctx={_context_pixels}, boundary={_boundary_pixels}, patch={_ps}, debug={_debug_save}")
@@ -293,7 +336,6 @@ def inference(
                 try:
                     from mask_utils import decode_mask_rle
                     import numpy as np
-                    from PIL import ImageFilter
 
                     mask_np = decode_mask_rle(mask_rle)  # bool (H, W)
                     # Mask polarity is already normalised in
@@ -329,7 +371,7 @@ def inference(
                     crop_img = img.crop((cx1, cy1, cx2, cy2))
                     crop_mask = mask_np[cy1:cy2, cx1:cx2]
 
-                    # Step 4b: Apply MASK_BOUNDARY_PIXELS morphological op.
+                    # Step 4b: Apply the shared boundary-width adjustment.
                     # FG (is_concept=True)  → dilate: expand the sharp
                     #     foreground region so a ring of real surrounding
                     #     pixels is kept — gives the VLM spatial context.
@@ -338,8 +380,8 @@ def inference(
                     #     near the object edge are removed — prevents
                     #     the object silhouette from leaking into the
                     #     background view.
-                    # Operates on the *cropped* mask so it only uses
-                    # pixels that exist inside the image.
+                    # The same width is also used to randomize pixels
+                    # around the final mask edge to weaken boundary leakage.
                     if _boundary_pixels > 0:
                         _struct = np.ones(
                             (2 * _boundary_pixels + 1,
@@ -359,16 +401,14 @@ def inference(
                             if eroded is not None and eroded.any():
                                 crop_mask = eroded.astype(bool)
 
-                    # Step 5: Mask outside the segment within the crop
-                    # using the role-appropriate method & radius.
-                    if _eff_blur > 0 or _eff_method != "gaussian_blur":
-                        vlm_img = _apply_background_masking(
-                            crop_img, crop_mask,
-                            method=_eff_method,
-                            blur_radius=_eff_blur,
-                        )
-                    else:
-                        vlm_img = crop_img
+                    # Step 5: Run the standalone inpainting step.
+                    vlm_img = _run_inpainting_step(
+                        crop_img,
+                        crop_mask,
+                        method=_eff_method,
+                        blur_radius=_eff_blur,
+                        boundary_pixels=_boundary_pixels,
+                    )
 
                     # Step 6: Resize to patch_size keeping aspect ratio,
                     # pad remaining space with white pixels.
