@@ -43,3 +43,4 @@ dtd
 models/
 yolo11x-seg.pt
 /api/temp_images
+data/tank
