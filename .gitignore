@@ -44,3 +44,4 @@ models/
 yolo11x-seg.pt
 /api/temp_images
 data/tank
+data/coco_cc0_plus

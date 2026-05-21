@@ -61,6 +61,7 @@ null_prompt = ""
  # Respond with one of these two options only."
 stict_prompt = "Identify the pattern in the image as either '[concept]' or 'No [concept]' ? Respond with one of these two options only."
 p7 = "Classify the image as either [concept] or No [concept] based on its content. Return only the predicted label."
+grounding_class= "Classify the image as either [concept] or No [concept] based on its content. Answer with only one of these two options."
 multiple_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'Something else'. Respond with only one of these two options."
 
 
@@ -76,6 +77,7 @@ TASK_PROMPTS = {
     "cgdl": {
         "ShortVQA":p2 ,
         "ShortCaptioning":p7,
+        "ShortCaptioningGrounding":grounding_class,
         "List of item":multiple_choice_prompt ,
         "Repeat the text": "Write the given text only"
     },

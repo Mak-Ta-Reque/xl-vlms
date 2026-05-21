@@ -243,32 +243,49 @@ def _greedy_filter_candidates_by_clip_similarity(
     similarity_threshold: float = 0.5,
     existing_embeddings: Optional[List[List[float]]] = None,
 ):
+    import numpy as np
+
     kept_pairs: List[Tuple[List[int], Any]] = []
     kept_embeddings: List[List[float]] = []
 
-    def _to_vector(vec):
+    def _to_numpy_1d(vec) -> np.ndarray:
+        """Convert tensor / list / ndarray to a 1-D float32 numpy vector."""
         if hasattr(vec, "detach"):
-            vec = vec.detach().cpu().tolist()
-        if hasattr(vec, "tolist"):
-            vec = vec.tolist()
-        return [float(v) for v in vec]
+            vec = vec.detach().cpu().numpy()
+        elif not isinstance(vec, np.ndarray):
+            vec = np.asarray(vec, dtype=np.float32)
+        return vec.astype(np.float32).ravel()
 
-    def _dot(a, b):
-        return sum(x * y for x, y in zip(a, b))
+    # Shuffle candidates so the greedy pass does not always favour the first
+    # crop in arrival order (e.g. top-left in sliding-window, or generation
+    # order in random mode).  After shuffling, greedy selection is unbiased.
+    n = len(candidate_pairs)
+    if n > 1:
+        perm = np.random.permutation(n)
+        candidate_pairs = [candidate_pairs[i] for i in perm]
+        # candidate_embeddings may be a tensor or ndarray — both support indexing
+        candidate_embeddings = candidate_embeddings[perm]
 
-    seen_embeddings: List[List[float]] = []
+    # Build a matrix of already-accepted embeddings: shape (N_seen, D).
+    # Embeddings are L2-normalised upstream, so mat @ vec == cosine similarities.
+    seen_rows: List[np.ndarray] = []
     if existing_embeddings:
-        seen_embeddings.extend(existing_embeddings)
+        for e in existing_embeddings:
+            seen_rows.append(_to_numpy_1d(e))
 
     for (bbox, mask), emb in zip(candidate_pairs, candidate_embeddings):
-        emb_np = _to_vector(emb)
-        if seen_embeddings:
-            max_similarity = max(_dot(prev_emb, emb_np) for prev_emb in seen_embeddings)
-            if max_similarity >= similarity_threshold:
+        emb_vec = _to_numpy_1d(emb)
+
+        if seen_rows:
+            # Stack once per candidate: (N_seen, D) @ (D,) → (N_seen,) cosine sims
+            seen_mat = np.stack(seen_rows, axis=0)          # (N_seen, D)
+            sims = seen_mat @ emb_vec                        # (N_seen,) — fast BLAS
+            if float(sims.max()) >= similarity_threshold:
                 continue
+
         kept_pairs.append((bbox, mask))
-        kept_embeddings.append(emb_np)
-        seen_embeddings.append(emb_np)
+        kept_embeddings.append(emb_vec.tolist())
+        seen_rows.append(emb_vec)
 
     return kept_pairs, kept_embeddings
 
@@ -1100,6 +1117,8 @@ def process_mapping(
     """
     if seed is not None:
         random.seed(seed)
+        import numpy as np
+        np.random.seed(seed)
     detector_none = detector == "none"
     store_rle = os.environ.get("RLE", "1") != "0"
     clip_similarity_threshold = float(os.environ.get("CLIP_SIMILARITY_THRESHOLD", "0.5"))

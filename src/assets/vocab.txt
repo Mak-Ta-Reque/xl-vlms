@@ -1,3 +1,18 @@
-sunglass
-mountain
-houses
+turret
+main gun
+gun barrel
+hull
+armor
+tracks
+wheels
+engine
+transmission
+suspension
+machine gun
+hatch
+periscope
+ammo storage
+fuel tank
+exhaust
+smoke launcher
+fire control system
