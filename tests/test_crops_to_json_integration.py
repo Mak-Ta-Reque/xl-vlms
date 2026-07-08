@@ -449,7 +449,7 @@ class TestDetectorModes(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
     @patch('preprocessing.crops_to_json.run_detector_batched')
-    @patch('preprocessing.crops_to_json._load_sam3_model')
+    @patch('preprocessing.crops_to_json._load_sam3')
     def test_sam3_detector_called(self, mock_load_sam3, mock_detector):
         """Test that SAM3 detector is called correctly."""
         from preprocessing.crops_to_json import process_folder_structure_to_json
@@ -504,9 +504,115 @@ class TestDetectorModes(unittest.TestCase):
         
         # Verify detector was called
         self.assertTrue(mock_detector.called)
+
+
+class TestSemanticSegmentsSam3Mode(unittest.TestCase):
+    """Test SAM3 semantic segmentation mode with and without fg/bg pairing."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp(prefix="crops_semantic_test_")
+        self.input_dir = os.path.join(self.temp_dir, "images")
+        self.mapping_json = os.path.join(self.temp_dir, "mapping.json")
+        self.output_json = os.path.join(self.temp_dir, "crops.json")
+
+        create_test_mapping_json(
+            self.mapping_json,
+            self.input_dir,
+            {"apple": 1},
+            img_size=(400, 300),
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    @patch("preprocessing.crops_to_json.detect_concept_masks")
+    @patch("preprocessing.crops_to_json.detect_auto_masks")
+    @patch("preprocessing.crops_to_json._load_sam3")
+    def test_pos_neg_zero_uses_auto_masks_only(self, mock_load_sam3, mock_auto_masks, mock_concept_masks):
+        from preprocessing.crops_to_json import process_mapping
+
+        import numpy as np
+
+        mock_load_sam3.return_value = MagicMock()
+        mask_one = np.zeros((300, 400), dtype=bool)
+        mask_one[20:80, 10:60] = True
+        mask_two = np.zeros((300, 400), dtype=bool)
+        mask_two[140:200, 220:300] = True
+        mock_auto_masks.return_value = [[
+            ([10, 20, 50, 60], mask_one),
+            ([220, 140, 80, 60], mask_two),
+        ]]
+
+        with patch.dict(os.environ, {"CROP_MODE": "semanticsegments_sam3", "POSITIVE_NEGATIVE_SEGMENT": "0", "RLE": "1"}, clear=False):
+            process_mapping(
+                mapping_json=self.mapping_json,
+                image_root=self.input_dir,
+                output_json=self.output_json,
+                detector="sam3",
+                batch_size=1,
+                masks_per_image=0,
+                concept_masks_per_image=1,
+                min_images_per_tag=1,
+                image_size_width=400,
+                patch_size=100,
+                show_progress=False,
+            )
+
+        self.assertTrue(mock_auto_masks.called)
+        self.assertFalse(mock_concept_masks.called)
+
+        with open(self.output_json) as handle:
+            result = json.load(handle)
+
+        masks = result["apple"]["apple/img_000.png"]["masks_rle"]
+        self.assertEqual(len(masks), 2)
+        self.assertTrue(all(not entry["is_concept"] for entry in masks))
+
+    @patch("preprocessing.crops_to_json.detect_concept_masks")
+    @patch("preprocessing.crops_to_json._load_sam3")
+    def test_pos_neg_one_keeps_combined_tag_path(self, mock_load_sam3, mock_concept_masks):
+        from preprocessing.crops_to_json import process_mapping
+
+        import numpy as np
+
+        mock_load_sam3.return_value = MagicMock()
+
+        mask_one = np.zeros((300, 400), dtype=bool)
+        mask_one[20:80, 10:60] = True
+        mask_two = np.zeros((300, 400), dtype=bool)
+        mask_two[140:200, 220:300] = True
+
+        def fixed_concept_masks(images, tag, detector, model, batch_size=2, concept_masks_per_image=1, return_scores=False):
+            return [[([10, 20, 50, 60], mask_one), ([220, 140, 80, 60], mask_two)] for _ in images]
+
+        mock_concept_masks.side_effect = fixed_concept_masks
+
+        with patch.dict(os.environ, {"CROP_MODE": "semanticsegments_sam3", "POSITIVE_NEGATIVE_SEGMENT": "1", "RLE": "1"}, clear=False):
+            process_mapping(
+                mapping_json=self.mapping_json,
+                image_root=self.input_dir,
+                output_json=self.output_json,
+                detector="sam3",
+                batch_size=1,
+                masks_per_image=2,
+                concept_masks_per_image=2,
+                min_images_per_tag=1,
+                image_size_width=400,
+                patch_size=100,
+                positive_negative_segment=True,
+                show_progress=False,
+            )
+
+        with open(self.output_json) as handle:
+            result = json.load(handle)
+
+        masks = result["apple"]["apple/img_000.png"]["masks_rle"]
+        self.assertEqual(len(masks), 2)
+        self.assertTrue(masks[0]["is_concept"])
+        self.assertFalse(masks[1]["is_concept"])
     
     @patch('preprocessing.crops_to_json.run_detector_batched')
-    @patch('preprocessing.crops_to_json._load_sam3_model')
+    @patch('preprocessing.crops_to_json._load_sam3')
     def test_detections_first_then_random_fill(self, mock_load_sam3, mock_detector):
         """Test that detection patches are created before random fill."""
         from preprocessing.crops_to_json import concept_process_json_mapping_to_json
@@ -571,7 +677,7 @@ class TestMultibatchBehavior(unittest.TestCase):
         """Clean up temporary directory."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
-    @patch('preprocessing.crops_to_json._load_sam3_model')
+    @patch('preprocessing.crops_to_json._load_sam3')
     def test_batch_size_respected(self, mock_load_sam3):
         """Test that images are sent to detector in batches."""
         from preprocessing.crops_to_json import process_folder_structure_to_json

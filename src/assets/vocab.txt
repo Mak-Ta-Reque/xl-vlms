@@ -1,18 +1,6 @@
-turret
-main gun
-gun barrel
-hull
-armor
-tracks
-wheels
-engine
-transmission
-suspension
-machine gun
-hatch
-periscope
-ammo storage
-fuel tank
-exhaust
-smoke launcher
-fire control system
+sedan
+suv
+hatchback
+street lamp
+pickup truck
+motorcycle

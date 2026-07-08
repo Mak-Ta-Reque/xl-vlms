@@ -524,6 +524,67 @@ def _mask_area(mask) -> int:
     return int(mask.sum())
 
 
+def _postprocess_semantic_sam3_masks(
+    pairs: List[Tuple[List[int], Any]],
+    image_size: Tuple[int, int],
+    masks_per_image: int,
+    *,
+    min_area_ratio: float = 0.001,
+    big_area_ratio: Optional[float] = None,
+    split_window_ratio: float = 0.10,
+    split_stride_ratio: float = 0.10,
+) -> List[Tuple[List[int], Any]]:
+    """Filter SAM3 semantic masks to remove extreme, tiny, or disconnected regions.
+
+    Keeps at most ``masks_per_image`` masks after filtering.
+    """
+    import numpy as np
+
+    if big_area_ratio is None:
+        big_area_ratio = float(os.environ.get("BIG_AREA_RATIO", "0.5"))
+
+    width, height = int(image_size[0]), int(image_size[1])
+    total_area = max(1, width * height)
+    min_area = max(1, int(round(total_area * float(min_area_ratio))))
+    big_area = max(1, int(round(total_area * float(big_area_ratio))))
+
+    filtered: List[Tuple[List[int], Any]] = []
+    for bbox, mask in pairs:
+        if mask is None:
+            continue
+        area = _mask_area(mask)
+        if area < min_area:
+            continue
+
+        if area > big_area:
+            # Oversized masks are skipped so very broad segments do not
+            # dominate the final crop JSON.
+            continue
+
+        try:
+            from scipy.ndimage import label
+
+            components, component_count = label(mask)
+            if component_count != 1:
+                continue
+        except Exception:
+            ys, xs = np.where(mask)
+            if len(ys) == 0:
+                continue
+            x1, y1 = int(xs.min()), int(ys.min())
+            x2, y2 = int(xs.max()) + 1, int(ys.max()) + 1
+            bbox_area = max(1, (x2 - x1) * (y2 - y1))
+            if area / float(bbox_area) < 0.75:
+                continue
+
+        filtered.append((bbox, mask))
+
+    filtered.sort(key=lambda item: _mask_area(item[1]), reverse=True)
+    if masks_per_image <= 0:
+        return filtered
+    return filtered[:masks_per_image]
+
+
 def _normalize_mask_polarity(mask, max_fg_ratio: float = 0.50):
     """Invert a mask if it covers more than *max_fg_ratio* of the image.
 
@@ -1125,6 +1186,11 @@ def process_mapping(
     crop_mode = os.environ.get("CROP_MODE", "random").lower()
     sliding_window_stride_ratio = float(os.environ.get("SLIDING_WINDOW_STRIDE_RATIO", "0.3"))
     random_crop_per_image = int(os.environ.get("CROP_PER_IMAGE", "0"))
+    semantic_segments_mode = crop_mode == "semanticsegments_sam3"
+
+    semantic_fg_only_mode = semantic_segments_mode and positive_negative_segment == 0
+    if semantic_segments_mode and detector != "sam3":
+        raise ValueError("CROP_MODE=semanticsegments_sam3 requires detector='sam3'.")
 
     if detector_none and crop_mode not in {"random", "sliding_window"}:
         # Detector-free mode supports CLIP-filtered random/sliding-window crops only.
@@ -1284,6 +1350,41 @@ def process_mapping(
             # --- 1. Concept masks (text-prompted, batched) ---
             # In pos/neg mode _detect_topn > concept_masks_per_image so
             # all instances are returned for the union step.
+            if semantic_fg_only_mode:
+                try:
+                    semantic_topn = max(256, masks_per_image if masks_per_image > 0 else 0)
+                    auto_per_img = detect_auto_masks(
+                        pil_images,
+                        detector="sam3",
+                        model=model,
+                        topn=semantic_topn,
+                        min_mask_area=100,
+                    )
+                except Exception as e:
+                    print(f"Warning: semantic SAM3 segmentation failed for tag='{tag}': {e}")
+                    auto_per_img = [[] for _ in pil_images]
+
+                _cleanup_gpu()
+
+                for i, (rel, _) in enumerate(chunk):
+                    pairs = auto_per_img[i] if i < len(auto_per_img) else []
+                    pairs = _postprocess_semantic_sam3_masks(
+                        pairs,
+                        sizes[i],
+                        masks_per_image,
+                    )
+                    _record_for_image(
+                        tag_bucket, rel, sizes[i], patch_size, pairs, 0,
+                        store_rle=store_rle,
+                    )
+                    if pbar:
+                        pbar.update(1)
+                        pbar.set_postfix(tag=tag[:12], masks=len(pairs), concept=0, mode="semanticsegments_sam3")
+                    processed_images += 1
+                    _write_status(current_tag=tag)
+
+                continue
+
             if detector_none:
                 concept_per_img = [[] for _ in pil_images]
             else:

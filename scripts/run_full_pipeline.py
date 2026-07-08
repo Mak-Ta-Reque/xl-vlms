@@ -37,6 +37,7 @@ import inflect
 SCRIPT_DIR = Path(__file__).parent.resolve()
 ROOT_DIR = SCRIPT_DIR.parent.resolve()
 sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "src"))
 p = inflect.engine()
 
 # Try to import dotenv for loading .env file
@@ -46,6 +47,8 @@ except ImportError:
     print("python-dotenv not installed. Installing...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "python-dotenv"])
     from dotenv import load_dotenv
+
+from src.helpers.utils import resolve_layer_path
 
 
 # =============================================================================
@@ -87,11 +90,16 @@ class PipelineConfig:
         self.crop_mode = self._get_str("CROP_MODE", "random").strip().lower()
         if self.crop_mode in {"random", "sliding_window"}:
             self.object_detector = "none"
-        elif self.crop_mode in {"sam3", "langsam"}:
+        elif self.crop_mode in {"sam3", "langsam", "semanticsegments_sam3"}:
+            # semanticsegments_sam3 uses SAM3 auto masks in step 2, but the
+            # downstream feature saver decides whether to treat them as fg-only
+            # (POSITIVE_NEGATIVE_SEGMENT=0) or to keep fg/bg pairing.
             self.object_detector = self.crop_mode
+            if self.crop_mode == "semanticsegments_sam3":
+                self.object_detector = "sam3"
         else:
             raise ValueError(
-                "Invalid CROP_MODE. Use one of: random, sliding_window, langsam, sam3"
+                "Invalid CROP_MODE. Use one of: random, sliding_window, langsam, sam3, semanticsegments_sam3"
             )
         self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 2)
         self.mask_context_pixels = self._get_int("MASK_CONTEXT_PIXELS", 0)
@@ -125,7 +133,12 @@ class PipelineConfig:
         self.delete_intermediate_files = self._get_int("DELETE_INTERMEDIATE_FILES", 0) == 1
         
         # Explainer/Eval
-        self.layer_path = self._get_str("LAYER_PATH", "model.language_model.norm")
+        self.layer_path = resolve_layer_path(
+            self._get_str("LAYER_PATH", "model.language_model.norm")
+        )
+        self.hook_names = self._get_str("HOOK_NAMES", "save_hidden_states_mean")
+        
+
         self.top_n = self._get_int("TOP_N", 5)
         self.num_most_activating_samples = self._get_int("NUM_MOST_ACTIVATING_SAMPLES", 10)
         self.num_points = self._get_int("NUM_POINTS", 70)
@@ -626,9 +639,9 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--data_dir", str(config.input_dir),
         "--annotation_file", str(annotation_file),
         "--split", "train",
-        "--hook_names", "save_hidden_states_mean",
+        "--hook_names", config.hook_names,
         "--modules_to_hook", config.layer_path,
-            "--prompt_template", config.prompt_template,
+        "--prompt_template", config.prompt_template,
         "--save_dir", str(config.features_dir),
         "--batch_size", str(config.batch_size),
         "--generation_mode",
@@ -1050,6 +1063,7 @@ def main():
     logger.info(f"Masking: ctx={config.mask_context_pixels} pos_neg_segment={config.positive_negative_segment}")
     logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
+    logger.info(f"Hooks:      {config.hook_names}")
     logger.info(f"Grounding:  num_most_activating_samples={config.num_most_activating_samples}")
     logger.info(f"Plots Y:    [{config.plot_ymin}, {config.plot_ymax}]")
     logger.info("=" * 60)

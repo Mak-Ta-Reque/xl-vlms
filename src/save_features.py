@@ -148,6 +148,13 @@ def _run_inpainting_step(
 
     return _apply_boundary_smoothing(vlm_img, crop_mask_np, boundary_pixels)
 
+
+def _semanticsegments_sam3_fg_only_mode() -> bool:
+    return (
+        os.environ.get("CROP_MODE", "").strip().lower() == "semanticsegments_sam3"
+        and int(os.environ.get("POSITIVE_NEGATIVE_SEGMENT", os.environ.get("POSITIVE_NEGATVE_SEGMENT", "0"))) == 0
+    )
+
 @torch.no_grad()
 def inference(
     loader: Callable,
@@ -195,6 +202,7 @@ def inference(
 
         # Shared masking method for FG and BG views.
         _inpainting_method = os.environ.get("INPAINTING_METHOD", "gaussian_blur")
+        _semantic_fg_only_mode = _semanticsegments_sam3_fg_only_mode()
 
         # Debug overlays are generated after crops.json is written in preprocessing/crops_to_json.py.
         _debug_save = False
@@ -264,6 +272,8 @@ def inference(
             return [False] * n_imgs
 
         per_image_is_concept = _ensure_per_image_is_concept(is_concept_flags, len(image_paths))
+        if _semantic_fg_only_mode:
+            per_image_is_concept = [True] * len(image_paths)
 
         # Per-image patch_size (scalar int or list of ints parallel to images)
         def _ensure_per_image_patch_size(ps, n_imgs):

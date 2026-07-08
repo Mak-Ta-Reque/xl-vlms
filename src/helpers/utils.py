@@ -21,6 +21,7 @@ __all__ = [
     "hooks_postprocessing",
     "set_seed",
     "setup_hooks",
+    "resolve_layer_path",
 ]
 
 
@@ -737,6 +738,15 @@ def register_hooks(
             tokenizer = tokenizer,
             mean = True,
         )
+    elif "save_hidden_states_logit_lens" == hook_name:
+        # Save the hidden states of all tokens in the sequence
+        hook_function = save_hidden_states
+        hook_return_function = partial(
+            get_hidden_states,
+            save_only_generated_tokens=args.save_only_generated_tokens,
+            tokenizer = tokenizer,
+            mean = True,
+        )
     elif "save_hidden_states_given_token_idx" == hook_name:
         # Save the hidden states at given token index
         hook_function = save_hidden_states
@@ -850,6 +860,12 @@ def register_hooks(
         warnings.warn(f"{hook_name} is not supported. No hooks attached to model.")
     if hook_function is not None:
         hooked_modules = []
+        """
+        Log all the layer of the model
+        
+        """
+        
+
         for name, module in model.named_modules():
             if fmatch(
                 name, modules_to_hook, exact_match=args.exact_match_modules_to_hook
@@ -940,3 +956,41 @@ def setup_hooks(
         hook_postprocessing_functions.append(hook_postprocessing_function)
 
     return hook_return_functions, hook_postprocessing_functions
+
+
+def resolve_layer_path(
+    raw: str,
+    base: str = "model.language_model.layers",
+) -> str:
+    """Expand LAYER_PATH shorthands into full module path strings.
+
+    Accepted formats
+    ----------------
+    model.language_model.norm   direct dotted path → returned unchanged
+    27                          single index       → <base>.27
+    1,2,3,4,5,6                 comma list         → <base>.1;<base>.2;...
+    10-20                       inclusive range    → <base>.10;<base>.11;...;<base>.20
+
+    Multiple resolved paths are joined with ";" which matches the
+    ``parse_list_of_lists`` format expected by ``--modules_to_hook``.
+    """
+    raw = raw.strip()
+
+    def _prefix(token: str) -> str:
+        return f"{base}.{token}.post_attention_layernorm" if re.fullmatch(r"\d+", token) else token
+
+    # Bare range: N-M (no commas, no dots)
+    range_match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", raw)
+    if range_match:
+        start, end = int(range_match.group(1)), int(range_match.group(2))
+        step = 1 if end >= start else -1
+        return ",".join(_prefix(str(i)) for i in range(start, end + step, step))
+
+    # Comma-separated tokens (integers or dotted paths mixed)
+    if "," in raw:
+        tokens = [t.strip() for t in raw.split(",") if t.strip()]
+        resolved = [_prefix(t) for t in tokens]
+        return resolved[0] if len(resolved) == 1 else ",".join(resolved)
+
+    # Single token (integer or direct path)
+    return _prefix(raw)

@@ -386,13 +386,6 @@ class TestClipRandomCropFilter(unittest.TestCase):
         self.assertEqual(kept_pairs[0][0], [0, 0, 10, 10])
         self.assertEqual(kept_pairs[1][0], [40, 40, 10, 10])
         self.assertEqual(len(kept_embeddings), 2)
-        self.assertEqual(y2 - y1, 100)
-        
-        # Patch should be within bounds
-        self.assertGreaterEqual(x1, 0)
-        self.assertGreaterEqual(y1, 0)
-        self.assertLessEqual(x2, 200)
-        self.assertLessEqual(y2, 200)
 
 
 class TestDeterminism(unittest.TestCase):
