@@ -739,13 +739,14 @@ def register_hooks(
             mean = True,
         )
     elif "save_hidden_states_logit_lens" == hook_name:
-        # Save the hidden states of all tokens in the sequence
+        # Keep per-position hidden states: logit lens scores every sequence
+        # position, so mean-pooling here would discard the needed information.
         hook_function = save_hidden_states
         hook_return_function = partial(
             get_hidden_states,
             save_only_generated_tokens=args.save_only_generated_tokens,
             tokenizer = tokenizer,
-            mean = True,
+            mean = False,
         )
     elif "save_hidden_states_given_token_idx" == hook_name:
         # Save the hidden states at given token index

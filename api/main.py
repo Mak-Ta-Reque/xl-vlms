@@ -1092,10 +1092,11 @@ async def run_full_pipeline_endpoint(
         print("   Resizing image to 512x512...")
         resized_image_data = resize_image_to_512x512(image_data)
         
-        image_stem = Path(file.filename).stem
+        safe_filename = Path(file.filename).name
+        image_stem = Path(safe_filename).stem
         subfolder = TRAIN_DIR / image_stem
         subfolder.mkdir(parents=True, exist_ok=True)
-        image_path = subfolder / file.filename
+        image_path = subfolder / safe_filename
         with open(image_path, "wb") as f:
             f.write(resized_image_data)
         print(f"   Image resized and saved to: {image_path}")
@@ -1242,5 +1243,5 @@ if __name__ == "__main__":
         "api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=False
     )

@@ -185,8 +185,8 @@ def inference(
         texts = item["text"] if isinstance(item["text"], list) else [item["text"]]
         # Replace placeholder [concept] with --token_of_interest value if provided
         toi = getattr(args, "token_of_interest", None)
+        toi_str = str(toi).strip() if toi is not None else ""
         if toi is not None and getattr(args, "prompt_template", None) in ["cgdl", "yn"]:
-            toi_str = str(toi).strip()
             texts = [t.replace("[concept]", toi_str) if isinstance(t, str) else t for t in texts]
         item["text"] = texts
         image_paths = item["image"] if isinstance(item["image"], list) else [item["image"]]
@@ -652,24 +652,25 @@ def inference(
         # Keep using `out` locally for subsequent computations
 
         item["concept_name"] = toi_str
-        # Compute per-sample input lengths (no attention mask): first pad or full length
-        pad_id = getattr(model_class.get_tokenizer(), "pad_token_id", 0) or 0
-        input_ids_tensor = inputs["input_ids"]
-        if input_ids_tensor.ndim == 1:
-            input_ids_tensor = input_ids_tensor.unsqueeze(0)
-        B, L = input_ids_tensor.shape
-        input_lens: List[int] = []
-        for b in range(B):
-            row = input_ids_tensor[b]
-            input_lens.append(row.shape[0])
-        # Slice generated tokens per sample
-        generated_ids = [out[b, input_lens[b]:] for b in range(out.size(0))]
-        # Debatch to plain Python lists of token ids for portability
-        model_generated_output_list = [t.tolist() if torch.is_tensor(t) else list(t) for t in generated_ids]
-        item["model_generated_output"] = model_generated_output_list
-        item["model_predictions"] = model_class.get_tokenizer( ).batch_decode(
-            model_generated_output_list, skip_special_tokens=True
-        )
+        if args.generation_mode:
+            # `out` holds generated token ids only in generation mode; in
+            # teacher-forcing mode it is logits and cannot be decoded.
+            input_ids_tensor = inputs["input_ids"]
+            if input_ids_tensor.ndim == 1:
+                input_ids_tensor = input_ids_tensor.unsqueeze(0)
+            B, L = input_ids_tensor.shape
+            input_lens: List[int] = []
+            for b in range(B):
+                row = input_ids_tensor[b]
+                input_lens.append(row.shape[0])
+            # Slice generated tokens per sample
+            generated_ids = [out[b, input_lens[b]:] for b in range(out.size(0))]
+            # Debatch to plain Python lists of token ids for portability
+            model_generated_output_list = [t.tolist() if torch.is_tensor(t) else list(t) for t in generated_ids]
+            item["model_generated_output"] = model_generated_output_list
+            item["model_predictions"] = model_class.get_tokenizer().batch_decode(
+                model_generated_output_list, skip_special_tokens=True
+            )
 
         if hook_return_functions is not None:
             for func in hook_return_functions:
@@ -745,7 +746,8 @@ def main():
     # if loader is a list run inference on each and aggregate the results and update the args accordingly
     if args.dataset_name == "json_crop_map":
         all_hook_data = {}
-        
+        base_save_filename = getattr(args, "save_filename", None)
+
         for key, ld in loader.items():
 
 
@@ -761,7 +763,10 @@ def main():
             #add args"--token_of_interest",  value as key
             #--save_filename 
             args.token_of_interest = key
-            args.save_filename = f"qwen2_patched_image_cat_token_of_interest_concept_generation_split_train_{key}"
+            if base_save_filename:
+                args.save_filename = f"{base_save_filename}_{key}"
+            else:
+                args.save_filename = f"token_of_interest_concept_split_{key}"
             hook_data = inference(
                 loader=ld,
                 model_class=model_class,

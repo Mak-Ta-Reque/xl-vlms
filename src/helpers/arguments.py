@@ -10,6 +10,16 @@ def parse_list_of_lists(arg):
     return list_of_lists
 
 
+def str2bool(arg):
+    if isinstance(arg, bool):
+        return arg
+    if arg.lower() in ("true", "1", "yes", "y"):
+        return True
+    if arg.lower() in ("false", "0", "no", "n"):
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got {arg!r}")
+
+
 def get_arguments():
     parser = argparse.ArgumentParser(description="XL-VLMs arguments parser")
 
@@ -129,7 +139,7 @@ def get_arguments():
 
     parser.add_argument("--save_filename", type=str, default="results")
 
-    parser.add_argument("--save_analysis", type=bool, default=True)
+    parser.add_argument("--save_analysis", type=str2bool, default=True)
 
     parser.add_argument(
         "--features_path",
@@ -355,9 +365,10 @@ def get_arguments():
     )
     parser.add_argument(
         "--captioning_metrics",
-        type=List[str],
+        nargs="+",
+        type=str,
         default=["CIDEr"],
-        help='The cpationing metrics to compute when "captioning_metrics" is in the hook_name (CIDEr, Bleu, etc ...).',
+        help='The captioning metrics to compute when "captioning_metrics" is in the hook_name (CIDEr, Bleu, etc ...).',
     )
     parser.add_argument(
         "--predictions_token_of_interest",

@@ -1,5 +1,6 @@
 import json
 import re
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -244,16 +245,15 @@ def score_hidden_state_with_logit_lens(
             hidden_state = norm_module(hidden_state)
         except TypeError:
             hidden_state = norm_module(hidden_state.to(device=device))
+    elif language_model is not None:
+        warnings.warn(
+            "Could not resolve the final norm module of the language model; "
+            "applying lm_head to unnormalized hidden states, logit-lens "
+            "probabilities may be unreliable."
+        )
 
     logits = lm_head(hidden_state)
     probs = torch.softmax(logits, dim=-1)
-
-    seq_len = probs.shape[1]
-    if valid_token_count is not None:
-        valid_token_count = int(valid_token_count)
-        valid_token_count = max(1, min(seq_len, valid_token_count))
-    else:
-        valid_token_count = seq_len
 
     # Use only the first `valid_token_count` positions (may be prefix of full seq)
     seq_len = probs.shape[1]
@@ -285,10 +285,11 @@ def score_hidden_state_with_logit_lens(
         # Aggregate over positions
         concept_prob = _aggregate_positions(per_pos_best_probs)
 
+        # best_position / top_tokens always refer to a single position: the
+        # last one for "last", otherwise the strongest position — even when
+        # concept_token_probability is a positional mean.
         if position_aggregation == "last":
             best_pos = int(per_pos_best_probs.shape[1] - 1)
-        elif position_aggregation == "mean":
-            best_pos = int(torch.argmax(per_pos_best_probs[0]).item())
         else:
             best_pos = int(torch.argmax(per_pos_best_probs[0]).item())
 
@@ -300,8 +301,6 @@ def score_hidden_state_with_logit_lens(
         concept_prob = _aggregate_positions(max_per_pos_probs)
         if position_aggregation == "last":
             best_pos = int(max_per_pos_probs.shape[1] - 1)
-        elif position_aggregation == "mean":
-            best_pos = int(torch.argmax(max_per_pos_probs[0]).item())
         else:
             best_pos = int(torch.argmax(max_per_pos_probs[0]).item())
         concept_token_id = int(max_per_pos_token_ids[0, best_pos].item())

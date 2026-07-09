@@ -30,3 +30,8 @@ model-kg-visualization/node_modules
 # Misc
 *.log
 *.DS_Store
+
+# Secrets — never bake into images
+.env
+.env.*
+!.env.example

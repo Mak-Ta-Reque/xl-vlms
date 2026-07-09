@@ -3,6 +3,7 @@ PTH to JSON converter for frontend data.
 Converts PyTorch .pth files to JSON format suitable for frontend consumption.
 Based on notebooks/front_end_data.ipynb
 """
+import ast
 import os
 import shutil
 import json
@@ -145,7 +146,7 @@ def process_vlm_explanations(xai_output, frontend_dir, snmf_dir=None):
                 img_grounding_str = concept.get("image_grounding_path")
                 if img_grounding_str:
                     try:
-                        img_list = eval(img_grounding_str) if isinstance(img_grounding_str, str) else img_grounding_str
+                        img_list = ast.literal_eval(img_grounding_str) if isinstance(img_grounding_str, str) else img_grounding_str
                     except Exception:
                         img_list = []
                     new_img_list = []
@@ -165,7 +166,7 @@ def process_vlm_explanations(xai_output, frontend_dir, snmf_dir=None):
             img_grounding_str = concept.get("image_grounding_path")
             if img_grounding_str:
                 try:
-                    img_list = eval(img_grounding_str) if isinstance(img_grounding_str, str) else img_grounding_str
+                    img_list = ast.literal_eval(img_grounding_str) if isinstance(img_grounding_str, str) else img_grounding_str
                 except Exception:
                     img_list = []
                 new_img_list = []

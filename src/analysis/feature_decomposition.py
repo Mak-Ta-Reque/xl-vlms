@@ -287,7 +287,7 @@ def decompose_activations(
         # Map distances to activations
         comp_activ = 1.0 / (1.0 + dists)
     elif decomposition_method == "sae":
-        from src.helpers.sae_ import SparseAutoencoder, train_sae  # modularized SAE
+        from helpers.sae_ import SparseAutoencoder, train_sae  # modularized SAE
 
         _device_str = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
         try:
