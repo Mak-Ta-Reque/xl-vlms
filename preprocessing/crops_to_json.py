@@ -197,7 +197,13 @@ def _load_clip_model(model_name: str = "ViT-B/32", device: Optional[str] = None)
 
     resolved_device = device or os.environ.get("CLIP_DEVICE")
     if resolved_device is None:
-        resolved_device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Respect the pipeline-wide DEVICE setting (.env) instead of
+        # defaulting to cuda:0.
+        try:
+            from device_utils import get_device_config
+            resolved_device = str(get_device_config(None).primary_device)
+        except Exception:
+            resolved_device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if (
         _CLIP_MODEL is not None
@@ -235,6 +241,44 @@ def _encode_clip_images(
         feats = feats / feats.norm(dim=-1, keepdim=True).clamp(min=1e-6)
         embeddings.append(feats.detach().cpu())
     return torch.cat(embeddings, dim=0)
+
+
+def _encode_clip_text(tag: str, model, device: str) -> "torch.Tensor":
+    """CLIP text embedding for a tag, L2-normalized. Used to make sliding_window
+    /random crop selection tag-aware (score candidates against the actual
+    concept phrase) instead of purely geometric/diversity-based, which
+    previously selected crops with zero regard for whether they depicted the
+    tag at all -- the root cause of most tags failing purity re-confirmation
+    for these crop modes."""
+    import clip as _clip
+    import torch
+
+    prompt = f"a photo of a {tag}"
+    with torch.no_grad():
+        tokens = _clip.tokenize([prompt]).to(device)
+        feat = model.encode_text(tokens)
+    feat = feat / feat.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+    return feat.detach().cpu()[0]
+
+
+def _select_top_by_tag_relevance(
+    candidate_images: List[Any],
+    tag_embedding,
+    model,
+    preprocess,
+    device: str,
+    keep_n: int,
+) -> List[int]:
+    """Return indices of the top `keep_n` candidate_images by CLIP text-image
+    cosine similarity to tag_embedding, descending."""
+    import numpy as np
+
+    embs = _encode_clip_images(candidate_images, model, preprocess, device)
+    if embs.numel() == 0:
+        return []
+    scores = (embs @ tag_embedding.to(embs.dtype)).numpy()
+    order = np.argsort(-scores)
+    return order[:keep_n].tolist()
 
 
 def _greedy_filter_candidates_by_clip_similarity(
@@ -361,27 +405,36 @@ def _sliding_window_bboxes_for_image(
     image_size: Tuple[int, int],
     window_size_ratio_range: Tuple[float, float] = (0.15, 0.55),
     stride_ratio: float = 0.3,
+    window_size: Optional[int] = None,
 ) -> List[Tuple[int, int, int, int]]:
     """Generate sliding window crop bboxes in ``[x, y, w, h]`` format.
-    
+
     Args:
         image_size: (width, height) of the image
-        window_size_ratio_range: (min_ratio, max_ratio) of window size relative to image area
+        window_size_ratio_range: (min_ratio, max_ratio) of window size relative
+            to image area. Ignored when ``window_size`` is given.
         stride_ratio: stride as fraction of window width (controls overlap)
-    
+        window_size: fixed, absolute window side length in pixels (square
+            window). Takes precedence over window_size_ratio_range — e.g. set
+            this to PATCH_SIZE to get small, patch-sized windows so far more
+            distinct crops fit per image instead of a few huge, image-fraction
+            windows.
+
     Returns:
         List of [x, y, w, h] bboxes covering the image systematically
     """
     width, height = image_size
     if width <= 1 or height <= 1:
         return [[0, 0, max(1, width), max(1, height)]]
-    
-    # Use midpoint of window size range for consistency
-    target_area = ((window_size_ratio_range[0] + window_size_ratio_range[1]) / 2) * (width * height)
-    aspect_ratio = 1.0  # Use square windows for sliding
-    
-    window_width = int(round((target_area * aspect_ratio) ** 0.5))
-    window_height = int(round((target_area / aspect_ratio) ** 0.5))
+
+    if window_size is not None:
+        window_width = window_height = int(window_size)
+    else:
+        # Use midpoint of window size range for consistency
+        target_area = ((window_size_ratio_range[0] + window_size_ratio_range[1]) / 2) * (width * height)
+        aspect_ratio = 1.0  # Use square windows for sliding
+        window_width = int(round((target_area * aspect_ratio) ** 0.5))
+        window_height = int(round((target_area / aspect_ratio) ** 0.5))
     window_width = max(1, min(width, window_width))
     window_height = max(1, min(height, window_height))
     
@@ -397,20 +450,31 @@ def _sliding_window_bboxes_for_image(
         bbox_set.add(key)
         bboxes.append([key[0], key[1], key[2], key[3]])
 
-    y = 0
+    y = last_y = 0
     while y + window_height <= height:
-        x = 0
+        x = last_x = 0
         while x + window_width <= width:
             _append_unique_bbox([x, y, window_width, window_height])
+            last_x = x
             x += stride
+        last_y = y
         y += stride
-    
-    # Add edge crops if there's remaining space
+
+    # Only add an extra, overlapping edge window when the strip the main
+    # grid left uncovered is more than 25% of the window size — a smaller
+    # leftover is already adequately covered by the overlap from stride, and
+    # doesn't need a whole extra, heavily-overlapping window on top.
+    edge_threshold_ratio = 0.25
     if len(bboxes) == 0:
         _append_unique_bbox([0, 0, max(1, width), max(1, height)])
     else:
+        remaining_x = width - (last_x + window_width)
+        remaining_y = height - (last_y + window_height)
+        add_right_edge = remaining_x > edge_threshold_ratio * window_width
+        add_bottom_edge = remaining_y > edge_threshold_ratio * window_height
+
         # Right edge
-        if x + window_width > width:
+        if add_right_edge:
             x_edge = max(0, width - window_width)
             y_edge = 0
             while y_edge + window_height <= height:
@@ -418,14 +482,26 @@ def _sliding_window_bboxes_for_image(
                 _append_unique_bbox(bbox)
                 y_edge += stride
         # Bottom edge
-        if y + window_height > height:
+        if add_bottom_edge:
             y_edge = max(0, height - window_height)
             x_edge = 0
             while x_edge + window_width <= width:
                 bbox = [x_edge, y_edge, window_width, window_height]
                 _append_unique_bbox(bbox)
                 x_edge += stride
-    
+        # Bottom-right corner: the right-edge loop only varies y and the
+        # bottom-edge loop only varies x, so neither ever lands on
+        # (width - window_width, height - window_height). Only needed when
+        # both dimensions have a significant leftover — otherwise the edge
+        # loop for the dimension that does gets close enough already.
+        if add_right_edge and add_bottom_edge:
+            _append_unique_bbox([
+                max(0, width - window_width),
+                max(0, height - window_height),
+                window_width,
+                window_height,
+            ])
+
     return bboxes
 
 
@@ -440,9 +516,12 @@ def _build_sliding_window_pairs_for_image(
     window_size_ratio_range: Tuple[float, float] = (0.15, 0.55),
     stride_ratio: float = 0.3,
     candidate_batch_size: int = 32,
+    window_size: Optional[int] = None,
+    tag: Optional[str] = None,
+    relevance_oversample: int = 4,
 ) -> List[Tuple[List[int], Any]]:
     """Build sliding window bbox-only crops and drop near-duplicates with CLIP.
-    
+
     Args:
         image: PIL Image
         image_size: (width, height) of image
@@ -451,43 +530,74 @@ def _build_sliding_window_pairs_for_image(
         clip_preprocess: CLIP preprocessing function
         clip_device: device for CLIP inference
         similarity_threshold: skip crops with CLIP cosine similarity >= this value
-        window_size_ratio_range: (min_ratio, max_ratio) for window size
+        window_size_ratio_range: (min_ratio, max_ratio) for window size.
+            Ignored when window_size is given.
         stride_ratio: stride as fraction of window width
         candidate_batch_size: batch size for CLIP encoding
-    
+        window_size: fixed, absolute square window side length in pixels
+            (e.g. PATCH_SIZE). Takes precedence over window_size_ratio_range.
+        tag: concept phrase (e.g. category name) to score candidates against
+            via CLIP text-image similarity. Without this, candidate windows
+            are purely geometric with a diversity-only filter and carry no
+            information about whether they actually depict the tag -- the
+            root cause of sliding_window crops failing purity
+            re-confirmation far more often than real detectors. When given,
+            windows are first ranked by relevance to the tag, and only the
+            top `count * relevance_oversample` most relevant ones go through
+            the existing diversity dedup.
+        relevance_oversample: how many top-relevance candidates (relative to
+            `count`) to keep before diversity-deduping, when `tag` is given.
+
     Returns:
         List of (bbox, None) tuples where bbox is [x, y, w, h]
     """
     if count <= 0:
         count = 1
-    
+
     # Generate all sliding window bboxes
     all_bboxes = _sliding_window_bboxes_for_image(
         image_size,
         window_size_ratio_range=window_size_ratio_range,
         stride_ratio=stride_ratio,
+        window_size=window_size,
     )
-    
+
     if len(all_bboxes) == 0:
         return [([0, 0, image_size[0], image_size[1]], None)]
-    
+
     # Take up to 'count' bboxes if fewer available, otherwise process in batches with CLIP filtering
     if len(all_bboxes) <= count:
         return [(bbox, None) for bbox in all_bboxes]
-    
+
+    if tag:
+        # Tag-aware path: score every candidate against the tag phrase, keep
+        # only the top-scoring subset, then diversity-dedup within that
+        # subset (instead of deduping across ALL geometric candidates with
+        # no regard for whether they show the tag at all).
+        candidate_images_all = [
+            image.crop((x, y, x + w, y + h)) for (x, y, w, h) in all_bboxes
+        ]
+        tag_embedding = _encode_clip_text(tag, clip_model, clip_device)
+        keep_n = min(len(all_bboxes), max(count, count * relevance_oversample))
+        top_indices = _select_top_by_tag_relevance(
+            candidate_images_all, tag_embedding, clip_model, clip_preprocess,
+            clip_device, keep_n=keep_n,
+        )
+        all_bboxes = [all_bboxes[i] for i in top_indices]
+
     # Build crops with CLIP filtering
     accepted_pairs: List[Tuple[List[int], Any]] = []
     accepted_embeddings: List[List[float]] = []
-    
+
     for batch_start_idx in range(0, len(all_bboxes), candidate_batch_size):
         batch_end_idx = min(batch_start_idx + candidate_batch_size, len(all_bboxes))
         batch_bboxes = all_bboxes[batch_start_idx:batch_end_idx]
         candidate_images = []
-        
+
         for bbox in batch_bboxes:
             x, y, w, h = bbox
             candidate_images.append(image.crop((x, y, x + w, y + h)))
-        
+
         # Encode candidates with CLIP
         candidate_embeddings = _encode_clip_images(
             candidate_images,
@@ -496,7 +606,7 @@ def _build_sliding_window_pairs_for_image(
             clip_device,
             batch_size=candidate_batch_size,
         )
-        
+
         # Filter using greedy approach
         kept_pairs_batch, kept_embeddings_batch = _greedy_filter_candidates_by_clip_similarity(
             [(bbox, None) for bbox in batch_bboxes],
@@ -504,13 +614,13 @@ def _build_sliding_window_pairs_for_image(
             similarity_threshold=similarity_threshold,
             existing_embeddings=accepted_embeddings,
         )
-        
+
         for pair, emb in zip(kept_pairs_batch, kept_embeddings_batch):
             accepted_pairs.append(pair)
             accepted_embeddings.append(emb)
             if len(accepted_pairs) >= count:
                 return accepted_pairs
-    
+
     return accepted_pairs
 
 
@@ -876,20 +986,41 @@ def _build_masks_for_image(
             kept_concept = [(bbox_union, concept_union)]
     n_concept = len(kept_concept)
 
-    # --- Fallback: promote largest auto mask(s) when concept detection missed ---
+    # --- Fallback: promote largest auto candidate(s) when concept detection missed ---
     if n_concept == 0 and concept_masks_per_image > 0 and len(auto_pairs) > 0:
-        # Sort auto masks by area (largest first) and promote top-K
-        sorted_auto = sorted(
-            [(bb, m) for bb, m in auto_pairs if m is not None and _mask_area(m) >= min_mask_area],
-            key=lambda p: _mask_area(p[1]),
-            reverse=True,
-        )
-        promote_count = min(concept_masks_per_image, len(sorted_auto))
-        kept_concept = sorted_auto[:promote_count]
+        def _candidate_size(bb, m):
+            if m is not None:
+                return _mask_area(m)
+            # Bbox-only candidates (detector="none" crop modes -- sliding_window,
+            # random -- never carry a pixel mask by construction) fall back to
+            # bbox area, so "always promote something" also works for them.
+            # Without this, every auto_pair here has m=None, the old `m is not
+            # None` filter drops all of them, and no image ever gets a
+            # concept crop for these modes.
+            return int(bb[2]) * int(bb[3])
+
+        # Track by original index, not id(m): every bbox-only candidate
+        # shares id(None), which would make the old id-based de-dup wrongly
+        # match (and drop) every candidate once any one of them is promoted.
+        indexed = [
+            (idx, bb, m) for idx, (bb, m) in enumerate(auto_pairs)
+            if _candidate_size(bb, m) >= min_mask_area
+        ]
+        indexed.sort(key=lambda item: _candidate_size(item[1], item[2]), reverse=True)
+        if indexed and indexed[0][2] is None:
+            # Bbox-only candidates aren't distinct detected object instances
+            # (just arbitrary geometric windows), so promote only the single
+            # largest one as a coarse "this represents the tag" proxy region
+            # -- not up to concept_masks_per_image of them (often large, e.g.
+            # 2000, which would tag almost every window as "concept").
+            promote_count = 1
+        else:
+            promote_count = min(concept_masks_per_image, len(indexed))
+        promoted = indexed[:promote_count]
+        kept_concept = [(bb, m) for _, bb, m in promoted]
         n_concept = len(kept_concept)
-        # Remove promoted masks from auto_pairs so they aren't duplicated
-        promoted_ids = set(id(m) for _, m in kept_concept)
-        auto_pairs = [(bb, m) for bb, m in auto_pairs if id(m) not in promoted_ids]
+        promoted_indices = {idx for idx, _, _ in promoted}
+        auto_pairs = [p for i, p in enumerate(auto_pairs) if i not in promoted_indices]
 
     # --- auto masks (subtract ALL previously placed masks so they are non-overlapping) ---
     # Start the running union from concept masks; each accepted auto mask is added too.
@@ -950,8 +1081,18 @@ def _record_for_image(
     pairs: List[Tuple[List[int], Any]],
     n_concept: int,
     store_rle: bool = True,
+    normalize_bbox: bool = True,
 ):
-    """Serialize one image's masks into the tag bucket."""
+    """Serialize one image's masks into the tag bucket.
+
+    normalize_bbox: re-center each bbox to a fixed patch_size x patch_size
+    square, discarding its real width/height. Correct (and intentional) for
+    sliding_window/random modes, which generate fixed-size geometric windows
+    by design. Must be False for real-detector modes (langsam/sam3) --
+    otherwise the genuine detected object's bounding box (which varies per
+    object, e.g. a knife vs. a cat) gets silently replaced with an arbitrary
+    centered square, corrupting the crop geometry.
+    """
     def _normalize_bbox_to_patch_size(
         bbox: List[int],
         image_wh: Tuple[int, int],
@@ -979,16 +1120,30 @@ def _record_for_image(
         ny = max(0, min(ny, ih - side_h))
         return [int(nx), int(ny), int(side_w), int(side_h)]
 
+    def _clamp_bbox_to_image(bbox: List[int], image_wh: Tuple[int, int]) -> List[int]:
+        """Clamp a real bbox to image bounds without altering its size/shape."""
+        iw, ih = int(image_wh[0]), int(image_wh[1])
+        x, y, bw, bh = [int(v) for v in bbox]
+        bw, bh = max(1, bw), max(1, bh)
+        x = max(0, min(x, max(0, iw - bw)))
+        y = max(0, min(y, max(0, ih - bh)))
+        bw = min(bw, iw - x) if iw > 0 else bw
+        bh = min(bh, ih - y) if ih > 0 else bh
+        return [x, y, max(1, bw), max(1, bh)]
+
     w, h = image_size
     masks_list = []
     for i, (bbox, mask) in enumerate(pairs):
-        normalized_bbox = _normalize_bbox_to_patch_size(
-            [int(v) for v in bbox],
-            (w, h),
-            patch_size,
-        )
+        if normalize_bbox:
+            out_bbox = _normalize_bbox_to_patch_size(
+                [int(v) for v in bbox],
+                (w, h),
+                patch_size,
+            )
+        else:
+            out_bbox = _clamp_bbox_to_image([int(v) for v in bbox], (w, h))
         mask_entry = {
-            "bbox": normalized_bbox,
+            "bbox": out_bbox,
             "is_concept": i < n_concept,
         }
         if store_rle and mask is not None:
@@ -1247,6 +1402,15 @@ def process_mapping(
             rels = random.sample(rels, max_images_per_tag)
         valid_tags.append((tag, rels))
 
+    if not valid_tags:
+        raise RuntimeError(
+            f"No concept tag survived filtering: all {len(mapping)} tags in "
+            f"'{mapping_json}' have fewer than min_images_per_tag="
+            f"{min_images_per_tag} images. Lower MIN_IMAGES_PER_TAG or process "
+            "more images in step 1 (IMAGE_BUDGET) — an empty crops.json would "
+            "make every downstream step fail."
+        )
+
     total_images = sum(len(rels) for _, rels in valid_tags)
     print(f"Processing {total_images} images across {len(valid_tags)} tags "
           f"(detector={detector}, masks_per_image={masks_per_image}, concept={concept_masks_per_image})")
@@ -1375,7 +1539,7 @@ def process_mapping(
                     )
                     _record_for_image(
                         tag_bucket, rel, sizes[i], patch_size, pairs, 0,
-                        store_rle=store_rle,
+                        store_rle=store_rle, normalize_bbox=False,
                     )
                     if pbar:
                         pbar.update(1)
@@ -1413,7 +1577,9 @@ def process_mapping(
                             clip_preprocess,
                             clip_device,
                             similarity_threshold=clip_similarity_threshold,
+                            window_size=patch_size,
                             stride_ratio=sliding_window_stride_ratio,
+                            tag=tag,
                         )
                     else:
                         pairs = _build_diverse_random_pairs_for_image(
@@ -1467,7 +1633,7 @@ def process_mapping(
                         # No concept mask detected — record empty
                         _record_for_image(
                             tag_bucket, rel, sizes[i], patch_size, [], 0,
-                            store_rle=store_rle,
+                            store_rle=store_rle, normalize_bbox=False,
                         )
                         if pbar:
                             pbar.update(1)
@@ -1496,7 +1662,7 @@ def process_mapping(
                     if union_mask is None:
                         _record_for_image(
                             tag_bucket, rel, sizes[i], patch_size, [], 0,
-                            store_rle=store_rle,
+                            store_rle=store_rle, normalize_bbox=False,
                         )
                         if pbar:
                             pbar.update(1)
@@ -1511,7 +1677,7 @@ def process_mapping(
                     if len(ys_fg) == 0:
                         _record_for_image(
                             tag_bucket, rel, sizes[i], patch_size, [], 0,
-                            store_rle=store_rle,
+                            store_rle=store_rle, normalize_bbox=False,
                         )
                         if pbar:
                             pbar.update(1)
@@ -1543,7 +1709,7 @@ def process_mapping(
 
                     _record_for_image(
                         tag_bucket, rel, sizes[i], patch_size, pairs, n_concept,
-                        store_rle=store_rle,
+                        store_rle=store_rle, normalize_bbox=False,
                     )
 
                     if pbar:
@@ -1591,6 +1757,7 @@ def process_mapping(
 
                     _record_for_image(
                         tag_bucket, rel, sizes[i], patch_size, pairs, n_concept,
+                        normalize_bbox=False,
                     )
 
                     if pbar:

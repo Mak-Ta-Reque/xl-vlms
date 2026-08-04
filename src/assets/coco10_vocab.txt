@@ -1,0 +1,10 @@
+apple
+banana
+bird
+cake
+cat
+cup
+dog
+donut
+knife
+orange

@@ -45,3 +45,17 @@ yolo11x-seg.pt
 /api/temp_images
 data/tank
 data/coco_cc0_plus
+
+# Large datasets built/downloaded locally -- regenerable via preprocessing/
+# scripts, not meant to be versioned (see CLAUDE.md: everything under this
+# repo already lives on the NVME mount, but git itself shouldn't carry
+# multi-GB dataset trees)
+data/coco10/
+data/coco10_prelarge_backup_*/
+data/imagenet10/
+
+# Scratch space used for ad-hoc artifact-publishing builds
+.scratch/
+
+# Accidentally-committed git-lfs client binary/docs (a tool, not project content)
+git-lfs-3.5.1/

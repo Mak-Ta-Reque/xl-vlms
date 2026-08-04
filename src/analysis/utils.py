@@ -33,13 +33,18 @@ def l2_distance(batch1: torch.Tensor, batch2: torch.Tensor) -> torch.Tensor:
 def get_token_of_interest_features(
     features: torch.Tensor, token_of_interest_mask: torch.Tensor = None
 ) -> torch.Tensor:
-   
+
     if token_of_interest_mask is not None:
         if isinstance(token_of_interest_mask, list):
-            if token_of_interest_mask[0].shape[-1] > 1:
-               token_of_interest_mask = [row.any() for row in token_of_interest_mask]
-            else:
-                token_of_interest_mask = torch.cat(token_of_interest_mask, dim=0)
+            # Each list entry is one batch's per-sample found/not-found mask
+            # (shape [batch_size], from extract_token_of_interest_states /
+            # extract_states_before_special_tokens) -- always one bool per
+            # sample, never a multi-position mask needing .any() collapse.
+            # (See get_matched_token_of_interest_mask below, which already
+            # does this unconditionally.) Concatenating batches, not
+            # reducing within them, is what aligns the mask 1:1 with the
+            # stacked per-sample features it indexes.
+            token_of_interest_mask = torch.cat(token_of_interest_mask, dim=0)
         features = features[token_of_interest_mask].reshape(-1, features.shape[1])
 
     return features

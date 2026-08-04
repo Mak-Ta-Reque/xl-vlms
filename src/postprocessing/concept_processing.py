@@ -220,11 +220,20 @@ def process_text_grounding(
                 combined.append(str(phrases))
         return combined
 
-    # Prepare device
+    # Prepare device — DEVICE from .env is the source of truth when no
+    # explicit device is passed (get_device_config(None) reads the env).
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        try:
+            from device_utils import get_device_config
+            device = get_device_config(None).primary_device
+        except Exception:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     elif isinstance(device, str):
-        device = torch.device(device)
+        try:
+            from device_utils import get_device_config
+            device = get_device_config(device).primary_device
+        except Exception:
+            device = torch.device(device)
 
     # Minimal args namespace expected by get_model_class
     args = argparse.Namespace(

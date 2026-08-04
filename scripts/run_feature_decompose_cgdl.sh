@@ -11,7 +11,13 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Source .env as single source of truth
 if [[ -f "$ROOT_DIR/.env" ]]; then
+  # Variables already set in the environment (e.g. by the orchestrator)
+  # take precedence over .env: snapshot exports and restore afterwards.
+  _pre_env_snapshot="$(mktemp)"
+  declare -px > "$_pre_env_snapshot"
   set -a; source "$ROOT_DIR/.env"; set +a
+  source "$_pre_env_snapshot" 2>/dev/null || true
+  rm -f "$_pre_env_snapshot"
 fi
 
 # Positional arguments with defaults (override order: CLI > ENV > hardcoded default)
@@ -54,6 +60,19 @@ n_concepts=2
 dataset_size="500000"
 normalizations=("gl")
 max_iterations=1000
+# Sparsity regularization: higher = sparser decomposition.
+# dl_alpha feeds snmf/nndl (sklearn DictionaryLearning L1 alpha, default 20).
+# sae_sparsity_lambda feeds sae/sae2 (L1 penalty on the SAE code, default 0.0005).
+# Try e.g. 1.0 on either for a much sparser decomposition.
+dl_alpha="${DL_ALPHA:-20}"
+sae_sparsity_lambda="${SAE_SPARSITY_LAMBDA:-0.0005}"
+# Optional: hard top-k activation for sae/sae2, guarantees this exact
+# zero-fraction (e.g. 0.99) instead of relying on sae_sparsity_lambda alone.
+sae_target_sparsity="${SAE_TARGET_SPARSITY:-}"
+sparsity_extra_args=()
+if [[ -n "$sae_target_sparsity" ]]; then
+    sparsity_extra_args+=(--sae_target_sparsity "$sae_target_sparsity")
+fi
 
 # Decomposition methods to run (respect orchestrator-selected method if set)
 if [[ -n "${DECOMP_METHOD:-}" ]]; then
@@ -101,7 +120,10 @@ for decomposition in "${decomposition_methods[@]}"; do
             --num_concepts "$n_concepts" \
             --decomposition_method "$decomposition" \
             --save_filename "$results_filename" \
-            --save_dir "$intermediate_dir"
+            --save_dir "$intermediate_dir" \
+            --dl_alpha "$dl_alpha" \
+            --sae_sparsity_lambda "$sae_sparsity_lambda" \
+            "${sparsity_extra_args[@]}"
 
         count=$((count + 1))
     done

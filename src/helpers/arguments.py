@@ -202,9 +202,32 @@ def get_arguments():
     )
     parser.add_argument(
         "--dl_alpha",
-        type=int,
+        type=float,
         default=20,
-        help="Max number of iterations for dictionary learning optimization.",
+        help="L1 sparsity regularization strength for SNMF/dictionary learning "
+        "(sklearn DictionaryLearning `alpha`). Higher values push the sparse "
+        "code towards more zeros / a sparser decomposition (e.g. try 1.0 for "
+        "a much sparser SNMF than the default).",
+    )
+    parser.add_argument(
+        "--sae_sparsity_lambda",
+        type=float,
+        default=0.0005,
+        help="L1 sparsity penalty weight on the SAE hidden code (sae/sae2 "
+        "decomposition methods). Higher values push activations towards more "
+        "zeros / a sparser decomposition, but plateau well short of very high "
+        "targets (e.g. 99%%) — use --sae_target_sparsity for a hard guarantee.",
+    )
+    parser.add_argument(
+        "--sae_target_sparsity",
+        type=float,
+        default=None,
+        help="Desired fraction of zero entries in the SAE code (sae/sae2), e.g. "
+        "0.99. When set, enables hard top-k activation: only the top "
+        "round((1 - target) * num_concepts) code entries per sample are kept "
+        "(rest zeroed), which guarantees the sparsity level exactly instead of "
+        "relying on --sae_sparsity_lambda to converge there. None disables it "
+        "(soft L1 penalty only, previous behavior).",
     )
     parser.add_argument(
         "--num_grounded_text_tokens",
@@ -224,7 +247,7 @@ def get_arguments():
         "--num_most_activating_samples",
         type=int,
         default=5,
-        help="Number of most activated samples.",
+        help="Number of most activated samples per concept; -1 keeps ALL samples (ordered by activation).",
     )
 
     # Generation mode
@@ -256,6 +279,22 @@ def get_arguments():
         default=False,
         action="store_true",
         help="Relaxation for finding the token of interest.",
+    )
+    parser.add_argument(
+        "--shuffle_concept_prompt",
+        default=False,
+        action="store_true",
+        help="Rebuttal P_bin_shuf control: substitute a reproducibly-sampled "
+        "different concept into the [concept] prompt placeholder instead of "
+        "the crop's true tag (concept-bank bucketing is unaffected).",
+    )
+    parser.add_argument(
+        "--shuffle_concept_vocab",
+        type=str,
+        default=None,
+        help="Comma-separated candidate concepts for --shuffle_concept_prompt "
+        "(e.g. 'apple,cat,bird'). The true tag(s) for each crop are excluded "
+        "at sample time.",
     )
     parser.add_argument(
         "--token_of_interest",

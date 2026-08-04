@@ -44,6 +44,14 @@ def load_langsam(device: Optional[str] = None, **kwargs) -> LangSAM:
     # Best-effort device control:
     # - If a specific cuda:N is requested, prefer setting the active device
     #   without breaking constructors that don't accept a 'device' kwarg.
+    # - When no device is passed, DEVICE from .env is the source of truth
+    #   (get_device_config(None) reads the env) instead of cuda:0.
+    if not device:
+        try:
+            from device_utils import get_device_config
+            device = str(get_device_config(None).primary_device)
+        except Exception:
+            device = None
     try:
         import os as _os  # local import to avoid polluting module scope
         if device:
@@ -346,7 +354,12 @@ def predict_bboxes_and_masks_for_tag_batched(
         except Exception:
             print(f"Probably batch size {batch_size} overflowed; using single image prediction.")
             for idx, im in enumerate(imgs_chunk, start=start):
-                single_res = model.predict([im], [tag])
+                try:
+                    single_res = model.predict([im], [tag])
+                except Exception as single_err:
+                    print(f"WARNING: LangSAM failed on image {idx} for tag '{tag}': {single_err}; skipping image.")
+                    all_pairs[idx] = []
+                    continue
                 img_pairs: List[tuple] = []
                 if isinstance(single_res, dict):
                     single_res = [single_res]
@@ -367,7 +380,12 @@ def predict_bboxes_and_masks_for_tag_batched(
                 all_pairs[start + off] = img_pairs
         else:
             for idx, im in enumerate(imgs_chunk, start=start):
-                single_res = model.predict([im], [tag])
+                try:
+                    single_res = model.predict([im], [tag])
+                except Exception as single_err:
+                    print(f"WARNING: LangSAM failed on image {idx} for tag '{tag}': {single_err}; skipping image.")
+                    all_pairs[idx] = []
+                    continue
                 img_pairs: List[tuple] = []
                 if isinstance(single_res, dict):
                     single_res = [single_res]

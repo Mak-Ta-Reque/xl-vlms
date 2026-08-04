@@ -42,8 +42,7 @@ run_step() {
   local logfile="$OUTPUT_DIR/logs/${name// /_}.log"
   log "START: ${name}"
   {
-    # shellcheck disable=SC2068
-    eval $@ 2>&1 | tee -a "$logfile"
+    bash -c "$*" 2>&1 | tee -a "$logfile"
   }
   log "DONE:  ${name}"
 }
@@ -59,26 +58,37 @@ SCRIPTS_DIR="$ROOT_DIR/scripts"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Source .env for DEVICE, OUTPUT_DIR, VLM_MODEL, etc.
+# Variables already set in the calling environment take precedence over .env:
+# snapshot exported vars before sourcing and restore them afterwards.
 if [[ -f "$ROOT_DIR/.env" ]]; then
+  _pre_env_snapshot="$(mktemp)"
+  declare -px > "$_pre_env_snapshot"
   set -a
   source "$ROOT_DIR/.env"
   set +a
+  source "$_pre_env_snapshot" 2>/dev/null || true
+  rm -f "$_pre_env_snapshot"
 fi
 
-INPUT_DIR="${INPUT_DIR:-/mnt/sdz/abka03_data/data/imagenet_5_class/train}"
-OUTPUT_DIR="${OUTPUT_DIR:-/mnt/sdz/abka03_data/outputs/imagenet_5_gpu1}" #run_$TIMESTAMP
+INPUT_DIR="${INPUT_DIR:-$ROOT_DIR/data/val}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/outputs/run_$TIMESTAMP}"
 DECOMP_METHODS="${DECOMP_METHODS:-snmf}" # e.g., pca,nmf,ica,svd
-HF_HOME="${HF_HOME:-/mnt/sda/abka03-data/hf_cache}"
+HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
 
 # Optional tuning knobs used by underlying scripts (if they read env vars)
+PYTHON_BIN="${PYTHON:-python}"
 VLM_MODEL="${VLM_MODEL:-"Qwen/Qwen2.5-VL-3B-Instruct"}"         # e.g., llava, llava-7b, qwen-vl, etc.
 BATCH_SIZE="${BATCH_SIZE:-10}"       # e.g., 16
-DEVICE="${DEVICE:-cuda:1}"               # e.g., cuda:0, cuda:0,2, cuda:[0,2], auto, cpu
+DEVICE="${DEVICE:-cuda:0}"               # e.g., cuda:0, cuda:0,2, cuda:[0,2], auto, cpu
 NUM_WORKERS="${NUM_WORKERS:-}"     # e.g., 8
 SEED="${SEED:-42}"
 
+# NOTE: This shell orchestrator implements the legacy PNG-crop flow and is
+# superseded by scripts/run_full_pipeline.py (JSON-coordinate flow), which is
+# the canonical entry point. Kept until the Python orchestrator fully replaces it.
+
 # Cropping controls (single source of truth)
-CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-/mnt/abka03/xlvlm_data/imagenet_1000}" # e.g., /mnt/abka03/Projects/xl-vlms/data/train
+CROP_INPUT_ROOT="${CROP_INPUT_ROOT:-$INPUT_DIR}" # e.g., $ROOT_DIR/data/train
 CONCEPT_CROPS_PER_IMAGE="${CONCEPT_CROPS_PER_IMAGE:-24}"
 PATCH_SIZE="${PATCH_SIZE:-200}"
 RESIZE="${RESIZE:-500}"
@@ -88,7 +98,7 @@ CONCEPT_MODE="${CONCEPT_MODE:-1}"
 
 # Explainer/Eval controls
 LAYER_PATH="${LAYER_PATH:-model.language_model.norm}"
-IMAGE_ROOT="${IMAGE_ROOT:-/mnt/abka03/xlvlm_data/imagenet10class/val_grids}"
+IMAGE_ROOT="${IMAGE_ROOT:-$ROOT_DIR/data/grids}"
 TOP_N="${TOP_N:-5}"
 NUM_POINTS="${NUM_POINTS:-70}"
 
@@ -128,12 +138,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! -d "$INPUT_DIR" ]]; then
+  warn "INPUT_DIR does not exist: $INPUT_DIR (set INPUT_DIR in .env or pass --input-dir)"
+  exit 1
+fi
+
 # -------------------------------
 # Prepare directories
 # -------------------------------
 mkdir -p "$OUTPUT_DIR"/logs
 mkdir -p "$OUTPUT_DIR"/inference "$OUTPUT_DIR"/crops "$OUTPUT_DIR"/features \
          "$OUTPUT_DIR"/concept "$OUTPUT_DIR"/explanations "$OUTPUT_DIR"/eval "$OUTPUT_DIR"/plots
+
+# Step-completion markers: steps that write many files incrementally are only
+# skipped when they previously ran to completion, not when partial output exists.
+STEP_MARKER_DIR="$OUTPUT_DIR/.steps"
+mkdir -p "$STEP_MARKER_DIR"
 
 CONCEPT_MAP_JSON="$OUTPUT_DIR/inference/concepts_to_images.json"
 CROPS_DIR="$OUTPUT_DIR/crops"
@@ -144,6 +164,7 @@ EVAL_DIR="$OUTPUT_DIR/eval"
 PLOTS_DIR="$OUTPUT_DIR/plots"
 
 # Export so child scripts can read them
+export ROOT_DIR
 export INPUT_DIR OUTPUT_DIR CONCEPT_MAP_JSON CROPS_DIR FEATURES_DIR DECOMP_DIR EXPLAIN_DIR EVAL_DIR PLOTS_DIR
 export VLM_MODEL BATCH_SIZE DEVICE NUM_WORKERS SEED HF_HOME
 export LAYER_PATH IMAGE_ROOT TOP_N NUM_POINTS
@@ -184,7 +205,7 @@ if [[ -s "$OBJECTS_CSV" && -s "$CONCEPT_MAP_JSON" ]]; then
 else
   if [[ -s "$OBJECTS_CSV" && ! -s "$CONCEPT_MAP_JSON" ]]; then
     run_step "Build Concept Map (resume)" \
-      "python -u \"$ROOT_DIR/concept_image_mapping.py\" --input \"$OBJECTS_CSV\" --output \"$CONCEPT_MAP_JSON\""
+      "\"$PYTHON_BIN\" -u \"$ROOT_DIR/concept_image_mapping.py\" --input \"$OBJECTS_CSV\" --output \"$CONCEPT_MAP_JSON\""
   else
     run_step "Dataset Inference" \
       "HF_HOME=\"$HF_HOME\" INPUT_DIR=\"$INPUT_DIR\" OUTPUT_DIR=\"$OUTPUT_DIR\" VLM_MODEL=\"$VLM_MODEL\" BATCH_SIZE=\"$BATCH_SIZE\" PROMPT=\"$PROMPT\" IMAGE_SIZE=\"$IMAGE_SIZE\" IMAGE_BUDGET=\"$IMAGE_BUDGET\" bash \"$SCRIPTS_DIR/run_dataset_inference.sh\""
@@ -199,8 +220,8 @@ fi
 # -------------------------------
 # 2) Crop images using the concept->images map
 # -------------------------------
-if find "$CROPS_DIR" -type f -name '*.png' -print -quit | grep -q .; then
-  log "Skip Crop Images (found crops under $CROPS_DIR)"
+if [[ -f "$STEP_MARKER_DIR/crop_images.done" ]] && find "$CROPS_DIR" -type f -name '*.png' -print -quit | grep -q .; then
+  log "Skip Crop Images (completed previously; crops under $CROPS_DIR)"
 else
   run_step "Crop Images" \
     "bash \"$SCRIPTS_DIR/run_crop_images.sh\" \
@@ -214,15 +235,17 @@ else
       --min_images_per_tag \"$MIN_IMAGES_PER_TAG\" \
       --max_images_per_tag \"$MAX_IMAGES_PER_TAG\" \
       $([[ \"$CONCEPT_MODE\" == \"0\" ]] && echo --no-concept_mode || true)"
+  touch "$STEP_MARKER_DIR/crop_images.done"
 fi
 
 # -------------------------------
 # 3) Generate concept features
 # -------------------------------
-if find "$FEATURES_DIR/features" -type f -name '*.pth' -print -quit | grep -q .; then
-  log "Skip Feature Generation (found features under $FEATURES_DIR/features)"
+if [[ -f "$STEP_MARKER_DIR/feature_gen.done" ]] && find "$FEATURES_DIR/features" -type f -name '*.pth' -print -quit | grep -q .; then
+  log "Skip Feature Generation (completed previously; features under $FEATURES_DIR/features)"
 else
   run_step "Generate Concept Features" "bash \"$SCRIPTS_DIR/run_feature_gen_cgdl.sh\" \"$VLM_MODEL\" \"$CROPS_DIR\" \"$FEATURES_DIR\" \"${HF_HOME:-}\""
+  touch "$STEP_MARKER_DIR/feature_gen.done"
 fi
 
 # -------------------------------
@@ -234,10 +257,11 @@ for method in "${DECOMP_ARRAY[@]}"; do
   mkdir -p "$DECOMP_DIR/$method"
   # Pass HF cache, model, and features dir explicitly
   concept_raw="$DECOMP_DIR/$method/combined_concept_${method}_raw.pth" #
-  if [[ -s "$concept_raw" ]]; then
-    log "Skip Decompose Features ($method) (found $concept_raw)"
+  if [[ -f "$STEP_MARKER_DIR/decompose_${method}.done" && -s "$concept_raw" ]]; then
+    log "Skip Decompose Features ($method) (completed previously; found $concept_raw)"
   else
     run_step "Decompose Features ($method)" "DECOMP_DIR=\"$DECOMP_DIR/$method\" bash \"$SCRIPTS_DIR/run_feature_decompose_cgdl.sh\" \"$HF_HOME\" \"$VLM_MODEL\" \"$FEATURES_DIR\""
+    touch "$STEP_MARKER_DIR/decompose_${method}.done"
   fi
 done
 
@@ -284,7 +308,7 @@ if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then
       continue
     fi
     if find "$plot_dir" -type f -name 'c_*_token_rank*.csv' -print -quit | grep -q .; then
-  run_step "Plot Concept Deletion (Token) - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$plot_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
+  run_step "Plot Concept Deletion (Token) - $method" "\"$PYTHON_BIN\" -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$plot_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
     else
       warn "No CSVs found in $plot_dir for plotting; skipping $method."
     fi
@@ -310,7 +334,7 @@ if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then
   mkdir -p "$dst_dir"
       # Copy CSVs to destination so the plotting script can scan them
       find "$src_dir" -maxdepth 1 -type f -name 'c_*_token_rank*.csv' -exec cp -u {} "$dst_dir" \;
-  run_step "Save Combined Plots - $method" "python -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$dst_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
+  run_step "Save Combined Plots - $method" "\"$PYTHON_BIN\" -u \"$SCRIPTS_DIR/plot_concept_deletion_eval_token.py\" --out_dir \"$dst_dir\" --ymin \"$PLOT_YMIN\" --ymax \"$PLOT_YMAX\""
     else
       warn "No CSVs found in $src_dir for plotting; skipping $method."
     fi
@@ -325,7 +349,7 @@ log "Logs: $OUTPUT_DIR/logs"
 # -------------------------------------------------
 if [[ -f "$SCRIPTS_DIR/plot_eval_summary_across_methods.py" ]]; then
   log "Generate Summary Plots Across Methods"
-  python -u "$SCRIPTS_DIR/plot_eval_summary_across_methods.py" \
+  "$PYTHON_BIN" -u "$SCRIPTS_DIR/plot_eval_summary_across_methods.py" \
   --eval_dir "$EVAL_DIR" \
   --out_dir "$PLOTS_DIR" \
     --methods "$DECOMP_METHODS" \

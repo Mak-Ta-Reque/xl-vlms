@@ -682,7 +682,9 @@ if __name__ == "__main__":
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
-    ap.add_argument('--batch_size', type=int, default=int(os.environ.get('BATCH_SIZE', '10')))
+    # Only batch_size=1 is supported (enforced below); use a dedicated env var
+    # so the pipeline-wide BATCH_SIZE knob does not leak in an invalid value.
+    ap.add_argument('--batch_size', type=int, default=int(os.environ.get('EXPL_BATCH_SIZE', '1')))
     ap.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility (default: 42)')
     ap.add_argument('--deterministic', action='store_true', help='Enable deterministic kernels (may slow down)')
     ap.add_argument('--verbose', action='store_true', help='Verbose debug logging')

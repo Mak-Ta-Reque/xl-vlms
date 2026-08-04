@@ -182,13 +182,13 @@ def _extract_image_features(images: List[Any], model: Any, device: str, preproce
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=(device == "cuda"),
+        pin_memory=(str(device).startswith("cuda")),
     )
     image_features = []
     with torch.no_grad():
         for batch in loader:
             image_tensor = batch["image"].to(device)
-            if device == "cuda":
+            if str(device).startswith("cuda"):
                 image_tensor = image_tensor.to(torch.float16)
             image_features.append(model.encode_image(image_tensor).cpu().numpy())
     return np.vstack(image_features)
@@ -244,7 +244,13 @@ def _extract_topk_predictions(result: Dict[str, Any], ks: Tuple[int, ...]) -> Di
             bbox_items: List[Any] = []
 
             for item in pred_k:
-                for tg in _to_list(item.get("text_grounding", [])):
+                # concept_name: the clean, ground-truth category tag assigned
+                # during vocab-filtering/purity-check (e.g. "apple") -- used
+                # in place of text_grounding (a noisy logit-lens readout of
+                # the concept vector, e.g. "light"/"fruit"/"lemon" for an
+                # apple concept), since it's a far more reliable label for
+                # comparing against the model's real generated word.
+                for tg in _to_list(item.get("concept_name", [])):
                     norm = _normalize_text(str(tg))
                     if norm:
                         text_items.append(norm)
@@ -286,23 +292,25 @@ def _extract_topk_predictions(result: Dict[str, Any], ks: Tuple[int, ...]) -> Di
 
 def _build_concept_bank(concept_path: Path) -> List[Dict[str, Any]]:
     concept_data = torch.load(str(concept_path), map_location="cpu")
-    text_grounding = concept_data.get("text_grounding", [])
+    # concept_names: clean ground-truth category tag per concept (see
+    # _extract_topk_predictions for why this replaced text_grounding).
+    concept_names = concept_data.get("concept_names", [])
     image_paths = concept_data.get("image_grounding_paths", [])
     image_bboxes = concept_data.get("image_grounding_bboxes", [])
 
     num_concepts = max(
-        len(text_grounding) if isinstance(text_grounding, list) else 0,
+        len(concept_names) if isinstance(concept_names, list) else 0,
         len(image_paths) if isinstance(image_paths, list) else 0,
     )
 
     bank: List[Dict[str, Any]] = []
     for i in range(num_concepts):
-        tg = text_grounding[i] if i < len(text_grounding) else []
+        cn = concept_names[i] if i < len(concept_names) else []
         ip = image_paths[i] if i < len(image_paths) else []
         ib = image_bboxes[i] if i < len(image_bboxes) else []
         bank.append(
             {
-                "text_grounding": _to_list(tg),
+                "concept_name": _to_list(cn),
                 "image_grounding_paths": _to_list(ip),
                 "image_grounding_bboxes": _to_list(ib),
             }
@@ -344,7 +352,7 @@ def _build_random_predictions(gt_token_word_map: List[str], concept_bank: List[D
 
             for ci in chosen:
                 concept_item = concept_bank[ci]
-                for tg in concept_item["text_grounding"]:
+                for tg in concept_item["concept_name"]:
                     norm = _normalize_text(str(tg))
                     if norm:
                         text_items.append(norm)
@@ -513,6 +521,20 @@ def main() -> None:
     parser.add_argument("--bert_device", default=os.environ.get("BERT_DEVICE", os.environ.get("DEVICE", "cuda")))
     parser.add_argument("--clip_device", default=os.environ.get("CLIP_DEVICE", os.environ.get("DEVICE", "cuda")))
     args = parser.parse_args()
+
+    # Normalize device specs ("auto", "cuda:0,2", "cuda:1", "1", ...) to a
+    # single torch device string via device_utils — DEVICE from .env is the
+    # source of truth for the whole pipeline.
+    try:
+        import sys
+        _src_dir = str(Path(__file__).resolve().parents[1] / "src")
+        if _src_dir not in sys.path:
+            sys.path.insert(0, _src_dir)
+        from device_utils import get_device_config
+        args.bert_device = str(get_device_config(args.bert_device).primary_device)
+        args.clip_device = str(get_device_config(args.clip_device).primary_device)
+    except Exception:
+        pass
 
     explanations_path = Path(args.json_path)
     concept_path = Path(args.concept_path)

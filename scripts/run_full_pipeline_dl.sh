@@ -219,6 +219,24 @@ for method in "${DECOMP_ARRAY[@]}"; do
 done
 
 # -------------------------------
+# 4.5) Faithfulness AUC summary (insertion/deletion, top TOP_N concepts) per method
+# -------------------------------
+for method in "${DECOMP_ARRAY[@]}"; do
+  out_dir="$EVAL_DIR/$method"
+  auc_table="$out_dir/concept_curve_auc_table.csv"
+  if [[ -s "$auc_table" ]]; then
+    log "Skip Faithfulness AUC ($method) (found $auc_table)"
+  else
+    if find "$out_dir" -maxdepth 1 -type f -name 'c_*_token_rank*.json' -print -quit | grep -q .; then
+      run_step "Faithfulness AUC ($method)" \
+        "python -u \"$ROOT_DIR/eval/concept_curve_auc_eval.py\" --out_dir \"$out_dir\" --top_n \"$TOP_N\" --mode token"
+    else
+      warn "No curve JSONs found in $out_dir for AUC summary; skipping $method."
+    fi
+  fi
+done
+
+# -------------------------------
 # 5) Plot final results (optional, per method)
 # -------------------------------
 if [[ -f "$SCRIPTS_DIR/plot_concept_deletion_eval_token.py" ]]; then

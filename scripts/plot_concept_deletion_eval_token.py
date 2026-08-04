@@ -75,6 +75,16 @@ def _collect_by_rank(out_dir: Path, prefix: str) -> Dict[int, Path]:
     return dict(sorted(by_rank.items(), key=lambda kv: kv[0]))
 
 
+def _load_y0_by_rank(out_dir: Path, prefix: str) -> Dict[int, float]:
+    by_rank = _collect_by_rank(out_dir, prefix)
+    y0s: Dict[int, float] = {}
+    for rank, path in by_rank.items():
+        _, ys = _load_curve(path)
+        if ys:
+            y0s[rank] = ys[0]
+    return y0s
+
+
 def _plot_all(
     out_dir: Path,
     prefix: str,
@@ -83,32 +93,60 @@ def _plot_all(
     outfile_stem: str,
     y_min: Optional[float] = None,
     y_max: Optional[float] = None,
+    baseline_by_rank: Optional[Dict[int, float]] = None,
 ) -> None:
     by_rank = _collect_by_rank(out_dir, prefix)
     if not by_rank:
         return
-    plt.figure(figsize=(7.0, 4.5))
+    curves = {}
     for rank, path in by_rank.items():
         xs, ys = _load_curve(path)
-        if not xs:
-            continue
-        plt.plot(xs, ys, label=f"Top-{rank}")
+        if xs:
+            curves[rank] = (xs, ys)
+    if not curves:
+        return
+    # Rank-1's concept is, by construction, the most strongly activating one
+    # for a given token -- so its curve starts from a genuinely higher
+    # baseline probability (fraction=0, nothing zeroed yet) than rank-2/3's.
+    # Pooling one shared min/max across ranks (the previous approach) lets
+    # that baseline difference dominate the shared axis, squashing rank-2/3
+    # near the bottom regardless of their own (real, meaningful) decline --
+    # and would do the same to any AUC computed on that shared scale, unfairly
+    # penalizing a rank whose concept simply carries less absolute weight
+    # rather than one that orders deletion less faithfully.
+    #
+    # Deletion's own fraction=0 point already IS the true, complete,
+    # unmasked baseline (nothing zeroed yet) -- dividing by its own y[0]
+    # correctly starts every rank at 1.0 and falls as that rank's
+    # top-activating coordinates get zeroed.
+    #
+    # Insertion's own fraction=0 point is the OPPOSITE: a blank/zeroed input
+    # (nothing inserted yet), which sits near the vocab floor -- dividing by
+    # THAT (the old behavior) makes the curve start at 1.0 and climb well
+    # above 1 as real signal gets recovered, which is mathematically
+    # consistent but reads backwards (an insertion curve should start low
+    # and rise toward the true baseline, not start at an arbitrary 1.0 and
+    # overshoot it). Fixed: for insertion, use the SAME rank's deletion
+    # curve's y[0] (the true baseline, from baseline_by_rank) as the
+    # reference instead of insertion's own -- now insertion starts near the
+    # blank/floor ratio and rises toward (but not much past) 1.0 as it
+    # recovers the true baseline, which is what "insertion" should look like.
+    plt.figure(figsize=(7.0, 4.5))
+    for rank, (xs, ys) in curves.items():
+        y0 = baseline_by_rank.get(rank) if baseline_by_rank else ys[0]
+        if not y0:
+            y0 = ys[0]
+        ys_plot = [y / y0 for y in ys] if y0 else ys
+        plt.plot(xs, ys_plot, label=f"Top-{rank}")
     # Titles and labels per request
     plt.title(title)
     plt.xlabel(xlabel)
-    plt.ylabel("f(x)")
-    # Enforce y-axis limits if provided
-    if y_min is not None and y_max is not None:
-        try:
-            plt.ylim(y_min, y_max)
-        except Exception:
-            pass
+    plt.ylabel("fraction of own starting probability")
     # Show percentage numbers instead of fractions (no custom tick list)
     ax = plt.gca()
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _pos: f"{int(round(x * 100))}"))
-    # Multiply displayed y-axis values by 1e5 (labels only)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _pos: f"{y * 1e4:.3f}"))
-    # Y-axis: default numeric formatting (no scaling/exponent)
+    # Y-axis: default numeric formatting, 0-1 relative scale (no
+    # scaling/exponent needed now that values are rescaled per curve)
     plt.grid(True, alpha=0.3)
     # Legend placement rules:
     # - Insertion plots: bottom-right
@@ -150,7 +188,8 @@ def main() -> None:
         y_max=args.ymax,
     )
 
-    # Insertion combined plot
+    # Insertion combined plot -- self-relative: each curve divided by its
+    # own fraction=0 value, no cross-referencing another curve.
     _plot_all(
         out_dir,
         prefix="c_insertion_token",

@@ -27,7 +27,13 @@ def safe_collate_dicts(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         vals = [d.get(k, None) for d in batch]
         # Infer a simple target type
         sample = next((v for v in vals if v is not None), None)
-        if isinstance(sample, str):
+        if sample is None:
+            # Every value in the batch is None for this key (e.g. patch_size
+            # when no cropping is applied) — leave as None rather than
+            # coercing to "", which breaks numeric parsing downstream
+            # (callers already handle None explicitly).
+            out[k] = vals
+        elif isinstance(sample, str):
             out[k] = [v if v is not None else "" for v in vals]
         elif isinstance(sample, list):
             out[k] = [v if v is not None else [] for v in vals]
@@ -86,6 +92,12 @@ def get_dataset_loader(
         mode=("val" if args.generation_mode else "train"),
         prompt_template=args.prompt_template,
         token_of_interest_num_samples=args.token_of_interest_num_samples,
+        shuffle_concept_prompt=getattr(args, "shuffle_concept_prompt", False),
+        shuffle_concept_vocab=(
+            [c.strip() for c in args.shuffle_concept_vocab.split(",") if c.strip()]
+            if getattr(args, "shuffle_concept_vocab", None)
+            else None
+        ),
     )
 
     loader = None

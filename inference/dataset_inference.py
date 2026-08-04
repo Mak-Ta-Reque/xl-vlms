@@ -29,6 +29,7 @@ import csv
 import argparse
 import logging
 import gc
+import sys
 from pathlib import Path
 from typing import List, Tuple, Optional
 import random
@@ -966,9 +967,11 @@ Popular models:
         )
     except KeyboardInterrupt:
         print("\n⚠️ Processing interrupted by user")
+        sys.exit(130)
     except Exception as e:
         print(f"\n❌ Error: {e}")
         logger.error(f"Processing failed: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

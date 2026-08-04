@@ -278,12 +278,19 @@ def score_hidden_state_with_logit_lens(
             return x.mean(dim=1)
         return x.max(dim=1).values
 
+    # Top-1 probability per position over the full vocabulary — used to
+    # compute the concept probability *relative* to the layer's strongest
+    # token, which is more comparable across layers than raw probability.
+    per_pos_top1_probs, _per_pos_top1_ids = torch.max(probs, dim=-1)  # (B, T)
+
     if concept_token_ids:
         concept_probs = probs[:, :, concept_token_ids]
         # (B, T, K) -> best token-id per position
         per_pos_best_probs, per_pos_best_token_idx = torch.max(concept_probs, dim=-1)
         # Aggregate over positions
         concept_prob = _aggregate_positions(per_pos_best_probs)
+        per_pos_relative = per_pos_best_probs / per_pos_top1_probs.clamp(min=1e-12)
+        relative_prob = _aggregate_positions(per_pos_relative)
 
         # best_position / top_tokens always refer to a single position: the
         # last one for "last", otherwise the strongest position — even when
@@ -299,6 +306,8 @@ def score_hidden_state_with_logit_lens(
     else:
         max_per_pos_probs, max_per_pos_token_ids = torch.max(probs, dim=-1)
         concept_prob = _aggregate_positions(max_per_pos_probs)
+        # Without concept tokens the "concept" is the top token itself.
+        relative_prob = torch.ones_like(concept_prob)
         if position_aggregation == "last":
             best_pos = int(max_per_pos_probs.shape[1] - 1)
         else:
@@ -324,6 +333,8 @@ def score_hidden_state_with_logit_lens(
         "concept_token_id": concept_token_id,
         "concept_token": _decode_token(tokenizer, concept_token_id),
         "concept_token_probability": float(concept_prob[0].item()),
+        "relative_probability": float(relative_prob[0].item()),
+        "top1_token_probability": float(per_pos_top1_probs[0, best_pos].item()),
         "best_position": int(best_pos),
         "num_positions_scored": int(valid_token_count),
         "position_aggregation": position_aggregation,
@@ -351,6 +362,8 @@ def write_layer_selection_debug(
     selected_token: str,
     selected_token_probability: float,
     logger: Optional[Any] = None,
+    score_key: str = "concept_token_probability",
+    score_label: str = "Concept token probability",
 ) -> None:
     """Write a JSON summary and a histogram for layer selection."""
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -376,14 +389,14 @@ def write_layer_selection_debug(
         return
 
     layer_names = [item["layer_name"] for item in layer_candidates]
-    scores = [float(item["concept_token_probability"]) for item in layer_candidates]
+    scores = [float(item[score_key]) for item in layer_candidates]
     colors = ["#4C78A8" if layer != selected_layer else "#F58518" for layer in layer_names]
 
     fig, ax = plt.subplots(figsize=(max(8, 0.75 * len(layer_names)), 4.5))
     ax.bar(range(len(layer_names)), scores, color=colors)
     ax.set_xticks(range(len(layer_names)))
     ax.set_xticklabels(layer_names, rotation=45, ha="right")
-    ax.set_ylabel("Concept token probability")
+    ax.set_ylabel(score_label)
     ax.set_title(f"Layer selection for {concept_text} -> {selected_token}")
     ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()

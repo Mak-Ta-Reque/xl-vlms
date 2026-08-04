@@ -6,7 +6,7 @@ import re
 import time
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -185,6 +185,18 @@ def save_hidden_states(module_name: str = "", **kwargs: Any):
     def hook(module, input, output):
         if isinstance(output, tuple):  # e.g residual streams output is a tuple
             output = output[0]
+        if isinstance(output, torch.Tensor) and output.ndim == 4:
+            # AltUp-style decoder layers (e.g. Gemma3n's
+            # Gemma3nTextDecoderLayer) return a stacked tensor of shape
+            # (altup_num_inputs, batch, seq, hidden) instead of the
+            # conventional (batch, seq, hidden) hidden state. Select the
+            # "active" prediction stream (the module's own config carries
+            # altup_active_idx) so downstream code -- which assumes 3D
+            # hidden states -- doesn't silently treat the batch/seq axes
+            # incorrectly. This matters whenever LOGIT_LENS_LAYER_SELECTION
+            # picks a raw decoder layer (not the final norm) for extraction.
+            altup_idx = getattr(getattr(module, "config", None), "altup_active_idx", 0)
+            output = output[altup_idx]
         output = output.detach().cpu()
         if module_name in HIDDEN_STATES:
             HIDDEN_STATES[module_name].append(output)
@@ -261,10 +273,28 @@ def shift_hidden_states(
     return hook
 
 
+def _encode_token_of_interest_variants(word: str, tokenizer: Callable) -> torch.Tensor:
+    """Token ids for singular/plural/capitalized/lowercase forms of `word`,
+    including the leading-whitespace-encoded variant tokenizers often use
+    mid-sentence. Shared by the global (per-tag) and per-sample (P_bin_shuf)
+    token-of-interest paths so both search for words the same way."""
+    base_forms = [word, word.capitalize(), word.lower()]
+    tokens_of_interest = set(base_forms + [form + "s" for form in base_forms])
+    idx = torch.tensor(
+        [tokenizer.encode(tok, add_special_tokens=False)[0] for tok in tokens_of_interest]
+    )
+    for suffix_form in (word, word + "s"):
+        check_token = tokenizer.encode(" " + suffix_form, add_special_tokens=False)[0]
+        if word in tokenizer.decode([check_token]):
+            idx = torch.tensor(list(idx) + [check_token])
+    return idx
+
+
 def extract_token_of_interest_states(
     tokens: torch.Tensor,
     pred_tokens: torch.Tensor,
     token_of_interest_idx: Union[int, torch.Tensor] = None,
+    token_of_interest_idx_per_sample: Optional[List[torch.Tensor]] = None,
     token_of_interest_start_token: Union[int, List[int], Tuple[int, ...], torch.Tensor] = 0,
 ) -> Tuple[torch.Tensor]:
 
@@ -327,19 +357,37 @@ def extract_token_of_interest_states(
     elif pred_tokens.shape[1] < tokens.shape[1]:
         tokens = tokens[:, -pred_tokens.shape[1] :]
 
-    assert (
-        token_of_interest_idx is not None
-    ), f"Please provide the token_of_interest_idx, got {token_of_interest_idx}"
+    if token_of_interest_idx_per_sample is not None:
+        # P_bin_shuf: each sample was asked about a different (shuffled)
+        # concept, so the word to search for in ITS OWN response differs
+        # per row -- a single shared token_of_interest_idx would search
+        # every sample for the wrong word (the crop's true tag, which the
+        # model was never actually asked about and so never says).
+        assert len(token_of_interest_idx_per_sample) == pred_tokens.shape[0], (
+            f"token_of_interest_idx_per_sample must have one entry per batch "
+            f"row, got {len(token_of_interest_idx_per_sample)} for batch size {pred_tokens.shape[0]}"
+        )
+        token_of_interest_batch_presence = torch.stack(
+            [
+                torch.isin(pred_tokens[b], idx.to(pred_tokens.device))
+                for b, idx in enumerate(token_of_interest_idx_per_sample)
+            ],
+            dim=0,
+        )  # (B, L)
+    else:
+        assert (
+            token_of_interest_idx is not None
+        ), f"Please provide the token_of_interest_idx, got {token_of_interest_idx}"
 
-    # If the token_of_interest splits into different ids, we consider the first one (while skipping eos/bos tokens)
-    if not isinstance(token_of_interest_idx, torch.Tensor):
-        token_of_interest_idx = torch.tensor([token_of_interest_idx])
-    token_of_interest_idx = token_of_interest_idx.to(pred_tokens.device)
+        # If the token_of_interest splits into different ids, we consider the first one (while skipping eos/bos tokens)
+        if not isinstance(token_of_interest_idx, torch.Tensor):
+            token_of_interest_idx = torch.tensor([token_of_interest_idx])
+        token_of_interest_idx = token_of_interest_idx.to(pred_tokens.device)
 
-    # Step 1: Find where the tokens of interest exist in the batch (B, L)
-    token_of_interest_batch_presence = torch.isin(
-        pred_tokens, token_of_interest_idx
-    )  # (B, L)
+        # Step 1: Find where the tokens of interest exist in the batch (B, L)
+        token_of_interest_batch_presence = torch.isin(
+            pred_tokens, token_of_interest_idx
+        )  # (B, L)
     # Step 2: Get the first occurrence index for each sequence
     token_of_interest_batch_first_pos = torch.argmax(
         token_of_interest_batch_presence.long(), dim=1
@@ -449,17 +497,18 @@ def extract_states_before_special_tokens(
     # Set the position to -1 if no token of interest is found
     token_of_interest_batch_first_pos[no_token_found_mask] = -1
 
-    # Step 4: Now handle indexing into `v` based on the first position
-    # Extract v at the first position for each batch (B,)
-    # Select only valid positions in `v`
+    # Step 4: Mean-pool each sequence over the positions before its first
+    # special token. Positions differ per sample, so use a mask instead of
+    # slicing. Sequences with no special token (-1) use the full length.
+    B, L = tokens.shape[0], tokens.shape[1]
+    first_pos = token_of_interest_batch_first_pos.to(tokens.device)
+    lengths = torch.where(first_pos < 0, torch.full_like(first_pos, L), first_pos)
+    position_idx = torch.arange(L, device=tokens.device).unsqueeze(0)  # (1, L)
+    valid_mask = (position_idx < lengths.unsqueeze(1)).to(tokens.dtype)  # (B, L)
+    denom = valid_mask.sum(dim=1).clamp(min=1).unsqueeze(-1)  # (B, 1)
     v_selected = (
-        tokens[
-            range(tokens.shape[0]),
-            : token_of_interest_batch_first_pos.to(tokens.device),
-        ]
-        .mean(1)
-        .unsqueeze(1)
-    )
+        (tokens * valid_mask.unsqueeze(-1)).sum(dim=1) / denom
+    ).unsqueeze(1)
     return v_selected, no_token_found_mask
 
 
@@ -519,10 +568,31 @@ def get_hidden_states(
                     pred_tokens_tensor = pred_tokens_tensor.unsqueeze(0)
                 pred_tokens_tensor = pred_tokens_tensor.to(dtype=torch.long)
 
+            # P_bin_shuf: each sample's prompt asked about a different
+            # (shuffled) concept -- kwargs["prompt_concept"] carries that
+            # per-sample word (see JSONDataset.create_dataset()). Build a
+            # per-sample token id set so each row is searched for the word
+            # IT was actually asked about, not the batch's tag-level word
+            # (which the shuffled prompt never mentions).
+            prompt_concepts = kwargs.get("prompt_concept", None)
+            toi_idx_per_sample = None
+            tag_word = kwargs.get("token_of_interest", None)
+            hook_tokenizer = kwargs.get("tokenizer", None)
+            if prompt_concepts and hook_tokenizer is not None and any(
+                pc != tag_word for pc in prompt_concepts
+            ):
+                encoded_cache: Dict[str, torch.Tensor] = {}
+                toi_idx_per_sample = []
+                for pc in prompt_concepts:
+                    if pc not in encoded_cache:
+                        encoded_cache[pc] = _encode_token_of_interest_variants(pc, hook_tokenizer)
+                    toi_idx_per_sample.append(encoded_cache[pc])
+
             v, token_of_interest_mask = extract_token_of_interest_states(
                 tokens=v,
                 pred_tokens=pred_tokens_tensor,
                 token_of_interest_idx=kwargs.get("token_of_interest_idx", None),
+                token_of_interest_idx_per_sample=toi_idx_per_sample,
                 token_of_interest_start_token=toi_start,
             )
             output["token_of_interest_mask"] = token_of_interest_mask
@@ -764,13 +834,15 @@ def register_hooks(
 
         # Get index in tokenizer vocabulary for token of interest
         # Some tokenizers encode/decode space along with token, so include index of whitespace + token_of_interest
-        tokens_of_interest = set(
-            [
-                token_of_interest,
-                token_of_interest.capitalize(),
-                token_of_interest.lower(),
-            ]
-        )
+        base_forms = [
+            token_of_interest,
+            token_of_interest.capitalize(),
+            token_of_interest.lower(),
+        ]
+        # Also match the plural (e.g. "apple" -> "apples") so a free-form
+        # response like "the fruits include apples" still counts as a hit --
+        # non-contrastive prompts aren't forced to name the singular concept.
+        tokens_of_interest = set(base_forms + [form + "s" for form in base_forms])
         token_of_interest_idx = args.token_of_interest_idx
         if token_of_interest_idx is None:
             token_of_interest_idx = torch.tensor(
@@ -782,12 +854,13 @@ def register_hooks(
             #prefixed_token =  tokenizer.encode("beatiful " + token_of_interest, add_special_tokens=False)
             #suffix_token = tokenizer.encode( token_of_interest + " long", add_special_tokens=False)
             #im_start_token = tokenizer.encode("<|im_start|> "+ token_of_interest, add_special_tokens=False)
-      
-            check_token = tokenizer.encode(" " + token_of_interest, add_special_tokens=False)[0]
-            #dcode_tok_106 = tokenizer.decode([106, 0])
-            if token_of_interest in tokenizer.decode([check_token]): # Check if this check_token is only encoding whitespace
-                token_of_interest_idx = torch.tensor(list(token_of_interest_idx) + [check_token])
-            
+
+            for suffix_form in (token_of_interest, token_of_interest + "s"):
+                check_token = tokenizer.encode(" " + suffix_form, add_special_tokens=False)[0]
+                #dcode_tok_106 = tokenizer.decode([106, 0])
+                if token_of_interest in tokenizer.decode([check_token]): # Check if this check_token is only encoding whitespace (+ optional plural)
+                    token_of_interest_idx = torch.tensor(list(token_of_interest_idx) + [check_token])
+
 
         hook_function = save_hidden_states
         hook_return_function = partial(
@@ -796,6 +869,10 @@ def register_hooks(
             token_of_interest_idx=token_of_interest_idx,
             token_of_interest_start_token=args.token_of_interest_start_token,
             save_only_generated_tokens=args.save_only_generated_tokens,
+            # Needed only for P_bin_shuf's per-sample token-of-interest
+            # override (see get_hidden_states) -- harmless no-op otherwise.
+            tokenizer=tokenizer,
+            token_of_interest=token_of_interest,
         )
     elif "save_hidden_states_for_token_of_interest_class" == hook_name:
         # Save the hidden states of tokens between start and end index
@@ -887,7 +964,8 @@ def hooks_postprocessing(
 
         data_keys = ["hidden_states", "image"]
         # temp change
-        data_keys = ["concept", "hidden_states", "image", "model_predictions", "bbox", "seg_mask_rle", "is_concept"]
+        data_keys = ["concept", "hidden_states", "image", "model_predictions", "bbox", "seg_mask_rle", "is_concept",
+                     "selected_layer", "logit_lens_selection"]
 
         if "token_of_interest" in hook_name:
             data_keys.append("token_of_interest_mask")
@@ -933,6 +1011,11 @@ def setup_hooks(
     args: argparse.Namespace = None,
 ):
     hook_return_functions, hook_postprocessing_functions = [], []
+    if modules_to_hook is not None and len(modules_to_hook) < len(hook_names):
+        raise ValueError(
+            f"Got {len(hook_names)} hook_names but only {len(modules_to_hook)} "
+            f"modules_to_hook; every hook needs a module or no features are saved."
+        )
     for i, hook_name in enumerate(hook_names):
         if modules_to_hook is not None and i < len(modules_to_hook):
             modules_to_hook_ = modules_to_hook[i]

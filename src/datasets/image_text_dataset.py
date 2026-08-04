@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from typing import Any, Callable, Dict, List, Tuple, Optional
@@ -24,6 +25,8 @@ class ImageTextDataset(Dataset):
         questions_file: str = "",
         prompt_template: str = "llava",
         token_of_interest_num_samples: int = -1,
+        shuffle_concept_prompt: bool = False,
+        shuffle_concept_vocab: Optional[List[str]] = None,
         **kwargs: Any,
     ):
         super().__init__()
@@ -37,6 +40,12 @@ class ImageTextDataset(Dataset):
         self.mode = mode
         self.prompt_template = prompt_template
         self.token_of_interest_num_samples = token_of_interest_num_samples
+        # Rebuttal ablation's P_bin_shuf condition: substitute a different,
+        # reproducibly-sampled concept into the prompt text (excluding the
+        # crop's true tag(s)), while keeping it filed under its real tag for
+        # concept-bank bucketing. See JSONDataset.create_dataset().
+        self.shuffle_concept_prompt = shuffle_concept_prompt
+        self.shuffle_concept_vocab = shuffle_concept_vocab
 
         self.rng = np.random.default_rng(seed)
 
@@ -267,7 +276,7 @@ class JSONDataset(ImageTextDataset):
 
         # Try to load annotations if a JSON path is provided
         annotation_json_path = _resolve_json_path()
-        if annotation_json_path.endswith(".json") and os.path.isfile(annotation_json_path) and self.prompt_template in ["cgdl", "yn"]:
+        if annotation_json_path.endswith(".json") and os.path.isfile(annotation_json_path) and self.prompt_template in ["cgdl", "yn", "llava", "non_contrastive", "contrastive", "null"]:
             with open(annotation_json_path, "r") as f:
                 annotations = json.load(f)
 
@@ -275,6 +284,20 @@ class JSONDataset(ImageTextDataset):
             if isinstance(annotations, dict) and all(
                 isinstance(v, dict) for v in annotations.values()
             ):
+                # For P_bin_shuf: a source image can appear under more than one
+                # tag (e.g. a crop annotated for both "cat" and "cup"); the
+                # shuffled substitute must exclude every true tag it appears
+                # under, not just the tag whose bucket is currently being
+                # built. Cheap single pass since annotations is already
+                # in memory.
+                rel_path_to_tags: Dict[str, set] = {}
+                if self.shuffle_concept_prompt:
+                    for tk, fm in annotations.items():
+                        if not isinstance(fm, dict):
+                            continue
+                        for rp in fm.keys():
+                            rel_path_to_tags.setdefault(rp, set()).add(tk)
+
                 for top_key, file_map in annotations.items():
                     concept_data = []
                     if not isinstance(file_map, dict):
@@ -299,6 +322,26 @@ class JSONDataset(ImageTextDataset):
                             instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
                                 "ShortCaptioning", "An image of "
                             )
+                            # Per-concept substitution: [concept] -> this tag's own name
+                            # (top_key), same convention as layer_selection.py.
+                            # P_bin_shuf control: substitute a different concept,
+                            # sampled reproducibly per-crop from
+                            # shuffle_concept_vocab minus every true tag this
+                            # source image is annotated under. Bucketing below
+                            # (item["concept"] = top_key) is unaffected -- only
+                            # the text sent to the model changes.
+                            prompt_concept = str(top_key)
+                            if self.shuffle_concept_prompt and self.shuffle_concept_vocab:
+                                true_tags = rel_path_to_tags.get(rel_path, {top_key})
+                                candidates = [
+                                    c for c in self.shuffle_concept_vocab if c not in true_tags
+                                ]
+                                if candidates:
+                                    seed_key = f"{self.seed}:{rel_path}"
+                                    digest = hashlib.sha256(seed_key.encode()).hexdigest()
+                                    local_rng = random.Random(digest)
+                                    prompt_concept = local_rng.choice(candidates)
+                            instruction = instruction.replace("[concept]", prompt_concept)
                             response = ""
 
                             # --- Mask-centric path (RLE masks preferred, bbox fallback allowed) ---
@@ -319,6 +362,7 @@ class JSONDataset(ImageTextDataset):
                                         "image_size": image_size,
                                         "patch_size": patch_size,
                                         "concept": top_key,
+                                        "prompt_concept": prompt_concept,
                                         "is_concept": is_concept,
                                     }
                                     if rle is not None:
@@ -533,6 +577,18 @@ class _ListDictDataset(Dataset):
 
 
 class ImageDataset(ImageTextDataset):
+    @staticmethod
+    def _resolve_instruction(instruction: str, concept_dir: str) -> str:
+        """Fill in a "[concept]" placeholder for datasets with no per-image
+        concept label (a bare image directory, unlike JSONDataset's tag-keyed
+        mapping). Falls back to the enclosing folder name -- same convention
+        vlm_explainer_multibatch.py uses to infer a label when none is given
+        -- so the placeholder is never sent to the model unresolved."""
+        if "[concept]" not in instruction:
+            return instruction
+        inferred_concept = os.path.basename(os.path.normpath(concept_dir)) or "the object"
+        return instruction.replace("[concept]", inferred_concept)
+
     def create_dataset(self) -> None:
         data = []
 
@@ -545,6 +601,7 @@ class ImageDataset(ImageTextDataset):
                 instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
                     "List of item", "An image of "
                 )
+                instruction = self._resolve_instruction(instruction, os.path.dirname(self.data_dir))
                 response = ""  # Assuming response generation is handled elsewhere
 
                 item = {
@@ -567,6 +624,7 @@ class ImageDataset(ImageTextDataset):
                         instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
                             "ShortVQA", "An image of "
                         )
+                        instruction = self._resolve_instruction(instruction, root)
                         response = ""  # Assuming response generation is handled elsewhere
 
                         item = {
@@ -588,6 +646,7 @@ class ImageDataset(ImageTextDataset):
                         instruction = TASK_PROMPTS.get(self.prompt_template, {}).get(
                             "ShortCaptioning", "An image of "
                         )
+                        instruction = self._resolve_instruction(instruction, root)
                         response = ""  # Assuming response generation is handled elsewhere
 
                         item = {

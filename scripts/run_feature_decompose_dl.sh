@@ -67,6 +67,15 @@ n_concepts=${NUM_CONCEPTS:-1000}
 max_iterations=${MAX_ITERATIONS:-100}
 normalizations=("gl")
 
+# Sparsity regularization: higher = sparser decomposition.
+# dl_alpha feeds snmf/nndl (sklearn DictionaryLearning L1 alpha, default 20).
+# sae_sparsity_lambda feeds sae/sae2 soft L1 penalty (default 0.0005).
+# sae_target_sparsity enables hard top-k activation on sae/sae2, guaranteeing
+# this exact zero-fraction (e.g. 0.99) instead of relying on the soft penalty.
+dl_alpha="${DL_ALPHA:-20}"
+sae_sparsity_lambda="${SAE_SPARSITY_LAMBDA:-0.0005}"
+sae_target_sparsity="${SAE_TARGET_SPARSITY:-}"
+
 # Decomposition methods to run (respect orchestrator-selected method if set)
 if [[ -n "${DECOMP_METHOD:-}" ]]; then
     decomposition_methods=("${DECOMP_METHOD}")
@@ -105,6 +114,17 @@ echo
 for decomposition in "${decomposition_methods[@]}"; do
     echo "=== Running DL decomposition: $decomposition ==="
 
+    # Per-method concept-count override, e.g. NUM_CONCEPTS_SNMF=460,
+    # NUM_CONCEPTS_SAE2=100. Falls back to the generic n_concepts above.
+    method_upper=$(echo "$decomposition" | tr '[:lower:]' '[:upper:]')
+    method_n_concepts_var="NUM_CONCEPTS_${method_upper}"
+    method_n_concepts="${!method_n_concepts_var:-$n_concepts}"
+
+    sparsity_extra_args=(--dl_alpha "$dl_alpha" --sae_sparsity_lambda "$sae_sparsity_lambda")
+    if [[ -n "$sae_target_sparsity" ]]; then
+        sparsity_extra_args+=(--sae_target_sparsity "$sae_target_sparsity")
+    fi
+
     analysis_name="${base_analysis_name}_${decomposition}"
 
     combined_pth="$feature_dir/combined_features.pth"
@@ -128,10 +148,11 @@ for decomposition in "${decomposition_methods[@]}"; do
         --analysis_name "$analysis_name" \
         --features_path "$combined_pth" \
         --module_to_decompose "$feature_module" \
-        --num_concepts "$n_concepts" \
+        --num_concepts "$method_n_concepts" \
         --decomposition_method "$decomposition" \
         --save_filename "combined_concept_${decomposition}_raw" \
-        --save_dir "$analysis_save_dir"
+        --save_dir "$analysis_save_dir" \
+        "${sparsity_extra_args[@]}"
 
     # Move/normalize filename to expected target (handle various prefixes and locations)
     if [[ ! -f "$target_path" ]]; then

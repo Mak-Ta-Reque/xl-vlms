@@ -5,19 +5,36 @@ import torch.optim as optim
 
 
 class SparseAutoencoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, sparsity_lambda=5.0):
+    def __init__(self, input_dim, hidden_dim, sparsity_lambda=5.0, top_k=None):
         super().__init__()
         self.encoder = nn.Linear(input_dim, hidden_dim)
         self.decoder = nn.Linear(hidden_dim, input_dim)
         self.sparsity_lambda = sparsity_lambda
+        # Hard top-k activation: keep only the top_k largest ReLU codes per
+        # sample and zero the rest, guaranteeing an exact sparsity level by
+        # construction. A soft L1 penalty alone cannot reliably hit a target
+        # zero-fraction (it plateaus well short of e.g. 99% no matter how high
+        # sparsity_lambda is set), since exact-zero only happens when training
+        # happens to push a pre-activation below zero.
+        self.top_k = top_k
 
     def forward(self, x):
         z = F.relu(self.encoder(x))
+        if self.top_k is not None and self.top_k < z.shape[1]:
+            topk_vals, topk_idx = torch.topk(z, self.top_k, dim=1)
+            mask = torch.zeros_like(z)
+            mask.scatter_(1, topk_idx, 1.0)
+            z = z * mask
         x_hat = self.decoder(z)
         return x_hat, z
 
     def loss(self, x, x_hat, z):
         recon_loss = F.mse_loss(x_hat, x)
+        if self.top_k is not None:
+            # Sparsity is already guaranteed structurally by top-k masking;
+            # an additional L1 penalty would only shrink the surviving
+            # coefficients and hurt reconstruction for no sparsity benefit.
+            return recon_loss
         sparsity_loss = torch.mean(torch.abs(z))
         return recon_loss + self.sparsity_lambda * sparsity_loss
 
@@ -37,7 +54,12 @@ def train_sae(
     normalize_input=True,
     lr_cooldown=True,
 ):
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if device is None:
+        try:
+            from device_utils import get_device_config
+            device = get_device_config(None).primary_device
+        except Exception:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.train()
 

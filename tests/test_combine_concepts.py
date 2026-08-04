@@ -168,7 +168,7 @@ def test_combine_concepts_integration():
             ]
         )
 
-        result = combine_concepts(tmpdir)
+        result, negative = combine_concepts(tmpdir)
 
         # Expected: 4 concepts total (1 from a, 1 from b, 0 from c, 2 from d)
         n_concepts = result['concepts'].shape[0]
@@ -184,6 +184,15 @@ def test_combine_concepts_integration():
         # Verify concept names
         names = result['concept_names']
         assert len(names) == 4, f"Expected 4 concept names, got {len(names)}"
+
+        # The filtered-out concepts land in the negative bank instead of
+        # being discarded: 1 from a, 1 from b, 2 from c.
+        n_negative = negative['concepts'].shape[0]
+        assert n_negative == 4, f"Expected 4 negative concepts, got {n_negative}"
+        assert len(negative['concept_names']) == 4
+        # Every negative concept has at least one negative prediction
+        for preds in negative['image_grounding_predictions']:
+            assert preds is None or any(is_negative_prediction(p) for p in preds)
 
         print("  PASSED: test_combine_concepts_integration")
 
@@ -203,9 +212,11 @@ def test_combine_concepts_all_negative():
             ]
         )
 
-        result = combine_concepts(tmpdir)
+        result, negative = combine_concepts(tmpdir)
         assert result['concepts'].numel() == 0, "Expected empty concepts tensor"
         assert len(result['image_grounding_predictions']) == 0
+        # ...but nothing is lost: both concepts land in the negative bank
+        assert negative['concepts'].shape[0] == 2
         print("  PASSED: test_combine_concepts_all_negative")
 
     finally:
@@ -226,7 +237,7 @@ def test_edge_case_normal_nose_not_flagged():
             ]
         )
 
-        result = combine_concepts(tmpdir)
+        result, _negative = combine_concepts(tmpdir)
         assert result['concepts'].shape[0] == 1, \
             f"Expected 1 concept (normal/nose/north are positive), got {result['concepts'].shape[0]}"
         print("  PASSED: test_edge_case_normal_nose_not_flagged")
@@ -253,16 +264,16 @@ def test_combine_concepts_logging():
         from contextlib import redirect_stdout
         f = io.StringIO()
         with redirect_stdout(f):
-            result = combine_concepts(tmpdir)
+            result, _negative = combine_concepts(tmpdir)
 
         output = f.getvalue()
 
         # Verify summary stats appear
         assert 'COMBINE CONCEPTS SUMMARY' in output, "Missing summary header"
-        assert 'Concepts skipped:       1' in output, f"Should report 1 skipped concept, got: {output}"
-        assert 'Concepts included:      1' in output, f"Should report 1 included concept, got: {output}"
-        assert 'SKIPPED' in output, "Should show SKIPPED for negative concept"
-        assert 'INCLUDED' in output, "Should show INCLUDED for positive concept"
+        assert 'Negative bank:          1' in output, f"Should report 1 negative-bank concept, got: {output}"
+        assert 'Positive bank:          1' in output, f"Should report 1 positive-bank concept, got: {output}"
+        assert 'NEGATIVE' in output, "Should show NEGATIVE for negative concept"
+        assert 'POSITIVE' in output, "Should show POSITIVE for positive concept"
         assert 'negative predictions:' in output, "Should show which predictions were negative"
 
         # Verify the actual result is correct too

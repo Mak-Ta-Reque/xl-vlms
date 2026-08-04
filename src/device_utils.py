@@ -251,8 +251,18 @@ def parse_device_config(device_str: Optional[str] = None) -> DeviceConfig:
 # ---------------------------------------------------------------------------
 
 def resolve_device_env() -> str:
-    """Read the ``DEVICE`` env var, defaulting to ``'auto'``."""
-    return os.environ.get("DEVICE", "auto")
+    """Read the ``DEVICE`` env var, defaulting to ``'auto'``.
+
+    ``DEVICE_ID`` is honored as a fallback alias when ``DEVICE`` is unset:
+    a bare index or comma list (e.g. ``1`` or ``0,2``) becomes ``cuda:<ids>``.
+    """
+    device = os.environ.get("DEVICE", "").strip()
+    if device:
+        return device
+    device_id = os.environ.get("DEVICE_ID", "").strip()
+    if device_id and re.fullmatch(r"\d+(\s*,\s*\d+)*", device_id):
+        return f"cuda:{device_id.replace(' ', '')}"
+    return "auto"
 
 
 def get_device_config(device_override: Optional[str] = None) -> DeviceConfig:

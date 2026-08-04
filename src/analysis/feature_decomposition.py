@@ -79,6 +79,23 @@ def refine_ground_activations(
 
     results_dict["activations"] = activations
     results_dict["decomposition_method"] = concept_dict ["decomposition_method"]
+    # Empty concept bank (e.g. no concept passed the CLEAN_EXAMPLE_RATIO
+    # purity filter): there is nothing to reground — return the empty dict
+    # instead of crashing in lm_head with a (1x0) matmul.
+    if not torch.is_tensor(concepts) or concepts.numel() == 0 or concepts.ndim < 2:
+        if logger is not None:
+            logger.warning(
+                "Concept bank is empty — skipping regrounding. No concept "
+                "survived combining (check CLEAN_EXAMPLE_RATIO and the "
+                "image_grounding_predictions in the intermediate files)."
+            )
+        results_dict["text_grounding"] = []
+        results_dict["selected_layer"] = concept_dict.get("selected_layer", [])
+        for opt_key in ["image_grounding_paths", "image_grounding_bboxes",
+                        "image_grounding_masks", "image_grounding_predictions"]:
+            results_dict[opt_key] = concept_dict.get(opt_key, [])
+        results_dict["analysis_model"] = concept_dict.get("analysis_model", None)
+        return results_dict
     if logger is not None:
         logger.info(
             f"\nDecomposition type {args.decomposition_method}, Components/concepts shape: {results_dict['concepts'].shape}, Activations shape: {len(concept_dict ['activations'])}"
@@ -94,8 +111,18 @@ def refine_ground_activations(
             num_grounded_text_tokens=args.num_grounded_text_tokens,
             logger=logger,
             args=args,
+            selected_layers=concept_dict.get("selected_layer", None),
         )
         grounding_dict["analysis_model"] = concept_dict["analysis_model"]
+        # Prefer the per-concept layer list from the combined bank over the
+        # scalar --module_to_decompose (layers differ per tag when logit-lens
+        # layer selection is enabled).
+        if concept_dict.get("selected_layer", None) is not None:
+            grounding_dict["selected_layer"] = concept_dict["selected_layer"]
+        for passthrough_key in ("direction_positive_ratio", "direction_num_assigned",
+                                "direction_weighted_ratio", "clean_example_ratio"):
+            if concept_dict.get(passthrough_key, None) is not None:
+                grounding_dict[passthrough_key] = concept_dict[passthrough_key]
         grounding_dict['image_grounding_paths'] = concept_dict.get('image_grounding_paths', [])
         grounding_dict['image_grounding_bboxes'] = concept_dict.get('image_grounding_bboxes', [])
         grounding_dict['image_grounding_masks'] = concept_dict.get('image_grounding_masks', [])
@@ -164,6 +191,18 @@ def get_feature_matrix(
             #)
 
         return matrix
+
+
+def _compute_sae_top_k(args: argparse.Namespace, hidden_dim: int):
+    """Translate --sae_target_sparsity (a desired zero-fraction, e.g. 0.99)
+    into an absolute top_k count of code entries to keep per sample. Returns
+    None when no target is set, which leaves the SAE's soft L1 penalty as the
+    only sparsity mechanism (previous behavior)."""
+    target_sparsity = getattr(args, "sae_target_sparsity", None)
+    if target_sparsity is None:
+        return None
+    top_k = max(1, round((1 - target_sparsity) * hidden_dim))
+    return top_k
 
 
 def decompose_activations(
@@ -298,8 +337,15 @@ def decompose_activations(
 
         input_dim = mat.shape[1]
         hidden_dim = num_concepts
+        sae_sparsity_lambda = getattr(args, "sae_sparsity_lambda", 0.0005)
+        sae_top_k = _compute_sae_top_k(args, hidden_dim)
+        if sae_top_k is not None:
+            print(f"Using SAE with hard top-k activation: top_k={sae_top_k}/{hidden_dim} "
+                  f"(target_sparsity={args.sae_target_sparsity})")
+        else:
+            print("Using SAE with sparsity_lambda:", sae_sparsity_lambda)
 
-        model = SparseAutoencoder(input_dim, hidden_dim, sparsity_lambda=0.0005).to(device)
+        model = SparseAutoencoder(input_dim, hidden_dim, sparsity_lambda=sae_sparsity_lambda, top_k=sae_top_k).to(device)
 
         if concepts is not None:
             # Set decoder weights on the correct device
@@ -325,12 +371,24 @@ def decompose_activations(
     elif decomposition_method == "sae2":
         from helpers.sae import SparseAutoencoder, train_sae  # Modularized SAE
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # DEVICE from .env is the source of truth (get_device_config reads it).
+        try:
+            from device_utils import get_device_config
+            device = get_device_config(None).primary_device
+        except Exception:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         input_dim = mat.shape[1]
         hidden_dim = num_concepts
+        sae_sparsity_lambda = getattr(args, "sae_sparsity_lambda", 0.0005)
+        sae_top_k = _compute_sae_top_k(args, hidden_dim)
+        if sae_top_k is not None:
+            print(f"Using SAE2 with hard top-k activation: top_k={sae_top_k}/{hidden_dim} "
+                  f"(target_sparsity={args.sae_target_sparsity})")
+        else:
+            print("Using SAE2 with sparsity_lambda:", sae_sparsity_lambda)
 
-        model = SparseAutoencoder(input_dim, hidden_dim, sparsity_lambda=0.0005).to(device)
+        model = SparseAutoencoder(input_dim, hidden_dim, sparsity_lambda=sae_sparsity_lambda, top_k=sae_top_k).to(device)
 
         if concepts is not None:
             # Initialize decoder with given components

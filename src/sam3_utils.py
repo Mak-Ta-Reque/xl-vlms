@@ -105,25 +105,24 @@ def load_sam3(
     sam3_root = os.path.dirname(sam3.__file__)
     bpe_path = os.path.join(sam3_root, "assets", "bpe_simple_vocab_16e6.txt.gz")
 
-    # Handle device selection
+    # Handle device selection — DEVICE from .env is the source of truth when
+    # no explicit device is passed (get_device_config(None) reads the env).
     use_cuda = False
     target_device = torch.device("cpu") if torch is not None else None
     if torch is not None and torch.cuda.is_available():
         use_cuda = True
-        target_device = torch.device("cuda")
-        if device:
-            try:
-                from device_utils import get_device_config
-                _dc = get_device_config(str(device))
-                target_device = _dc.primary_device
-                use_cuda = target_device.type == "cuda"
-            except Exception:
-                dev = str(device).lower()
-                if dev == "cpu":
-                    use_cuda = False
-                    target_device = torch.device("cpu")
-                elif dev.startswith("cuda"):
-                    target_device = torch.device(dev)
+        try:
+            from device_utils import get_device_config
+            _dc = get_device_config(str(device) if device else None)
+            target_device = _dc.primary_device
+            use_cuda = target_device.type == "cuda"
+        except Exception:
+            dev = str(device).lower() if device else "cuda"
+            if dev == "cpu":
+                use_cuda = False
+                target_device = torch.device("cpu")
+            else:
+                target_device = torch.device(dev if dev.startswith("cuda") else "cuda")
 
     # Enable TF32 and autocast for better performance on Ampere GPUs
     if use_cuda and torch is not None:
@@ -663,7 +662,13 @@ def _predict_bboxes_and_masks_batched_internal(
     postprocessor = model_dict["postprocessor"]
     collate_fn = model_dict["collate_fn"]
     copy_to_device_fn = model_dict["copy_to_device_fn"]
-    device = model_dict.get("device", torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+    device = model_dict.get("device", None)
+    if device is None:
+        try:
+            from device_utils import get_device_config
+            device = get_device_config(None).primary_device
+        except Exception:
+            device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     adaptive_threshold_enabled = bool(model_dict.get("adaptive_threshold", False))
     minimum_keep = model_dict.get("minimum_keep", 0)
 

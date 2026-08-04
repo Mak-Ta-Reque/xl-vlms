@@ -261,12 +261,15 @@ def get_random_words(
             10 * desired_length, lm_head.out_features
         )  # Should be more than enough
         random_direction = torch.rand(1, lm_head.in_features).float()
+        random_direction = random_direction.to(next(lm_head.parameters()).device)
         token_logits = lm_head(random_direction)
         top_token_idx = token_logits.argsort(dim=-1, descending=True)[
             :, :num_top_tokens
         ]
+        # Decode each token id separately: batch_decode on a 1-D id tensor
+        # concatenates them into ONE string, which the word filter rejects.
         candidate_words = tokenizer.batch_decode(
-            top_token_idx[0], skip_special_tokens=True
+            [[int(t)] for t in top_token_idx[0].tolist()], skip_special_tokens=True
         )
         candidate_words = [
             word.lower().strip()

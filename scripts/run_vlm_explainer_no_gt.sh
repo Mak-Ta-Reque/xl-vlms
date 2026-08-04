@@ -5,11 +5,19 @@ set -euo pipefail
 # Recognized env: WORKSPACE_DIR, PYTHON, HF_HOME, VLM_MODEL, CONCEPT_PATH, LAYER_PATH,
 # IMAGE_ROOT, TOP_N, EXPLAIN_DIR, DECOMP_DIR, EXPL_PROMPT_MODE, EXPL_LABEL, EXPL_CHOICES
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-/mnt/abka03/Projects/xl-vlms}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="${WORKSPACE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# .env may reference $ROOT_DIR; make sure it is defined under set -u
+ROOT_DIR="${ROOT_DIR:-$WORKSPACE_DIR}"
 
-# Source .env as single source of truth
+# Source .env; variables already set in the environment (e.g. by the
+# orchestrator) take precedence: snapshot exports and restore afterwards.
 if [[ -f "$WORKSPACE_DIR/.env" ]]; then
+  _pre_env_snapshot="$(mktemp)"
+  declare -px > "$_pre_env_snapshot"
   set -a; source "$WORKSPACE_DIR/.env"; set +a
+  source "$_pre_env_snapshot" 2>/dev/null || true
+  rm -f "$_pre_env_snapshot"
 fi
 
 # Resolve Python interpreter

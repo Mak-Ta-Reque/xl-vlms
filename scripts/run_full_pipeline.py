@@ -8,11 +8,14 @@ for easier debugging and development in VS Code.
 Steps:
 1) Dataset inference -> concepts map
 2) Build crops JSON from concept→image mapping
-3) Generate features from crops JSON (on-the-fly cropping)
-4) Decompose features (one or more methods)
-5) Run VLM explainer per method
-6) Concept deletion eval per method
-7) (Optional) Plots per method + summary
+3) (Optional, LOGIT_LENS_LAYER_SELECTION=1) Per-tag layer selection via
+   logit lens -> logitlens/selected_layers.json
+4) Generate features from crops JSON (on-the-fly cropping, hooks the
+   per-tag selected layer when step 3 ran)
+5) Decompose features (one or more methods)
+6) Run VLM explainer per method
+7) Concept deletion eval per method
+8) (Optional) Plots per method + summary
 
 Usage:
     python scripts/run_full_pipeline.py
@@ -31,22 +34,19 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 
-import inflect
-
 # Add project root to path for imports
 SCRIPT_DIR = Path(__file__).parent.resolve()
 ROOT_DIR = SCRIPT_DIR.parent.resolve()
 sys.path.insert(0, str(ROOT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "src"))
-p = inflect.engine()
 
-# Try to import dotenv for loading .env file
 try:
     from dotenv import load_dotenv
-except ImportError:
-    print("python-dotenv not installed. Installing...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-dotenv"])
-    from dotenv import load_dotenv
+except ImportError as err:
+    raise SystemExit(
+        "python-dotenv is required to load the .env configuration: "
+        "pip install python-dotenv"
+    ) from err
 
 from src.helpers.utils import resolve_layer_path
 
@@ -79,7 +79,12 @@ class PipelineConfig:
         self.vlm_model = self._get_str("VLM_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct")
         self.batch_size = self._get_int("BATCH_SIZE", 48)
         self.seed = self._get_int("SEED", 42)
-        self.device = self._get_str("DEVICE", "cuda:0")
+        # Device selection: DEVICE ("cuda:1", "cuda:0,2", "auto", "cpu");
+        # DEVICE_ID=<n> is honored as a fallback alias when DEVICE is unset.
+        self.device = self._get_str("DEVICE", "").strip()
+        if not self.device:
+            device_id = self._get_str("DEVICE_ID", "").strip()
+            self.device = f"cuda:{device_id}" if device_id else "cuda:0"
         
         # Crops JSON generation
         self.masks_per_image = self._get_int("MASKS_PER_IMAGE", 5)
@@ -97,9 +102,14 @@ class PipelineConfig:
             self.object_detector = self.crop_mode
             if self.crop_mode == "semanticsegments_sam3":
                 self.object_detector = "sam3"
+        elif self.crop_mode == "none":
+            # No real cropping: step 2 emits one whole-image bbox per (tag,
+            # image) pair instead of running a detector, so steps 3-8 stay
+            # completely unchanged (they only ever consume crops.json).
+            self.object_detector = "none"
         else:
             raise ValueError(
-                "Invalid CROP_MODE. Use one of: random, sliding_window, langsam, sam3, semanticsegments_sam3"
+                "Invalid CROP_MODE. Use one of: random, sliding_window, langsam, sam3, semanticsegments_sam3, none"
             )
         self.detection_batch_size = self._get_int("DETECTION_BATCH_SIZE", 2)
         self.mask_context_pixels = self._get_int("MASK_CONTEXT_PIXELS", 0)
@@ -116,6 +126,27 @@ class PipelineConfig:
             "Identify every visible object, item, concept, and pattern in the image at the most fine-grained level. Output only single words in a strict comma-separated list, no sentences or explanations."
         )
         self.prompt_template = self._get_str("PROMPT_TEMPLATE", "cgdl")
+        # Decomposition strategy is an independent axis from PROMPT_TEMPLATE --
+        # any template can use either:
+        #   per_tag: one SNMF call per tag (DECOMP_COMPONENTS concepts/tag),
+        #            merged + CLEAN_EXAMPLE_RATIO-purity-filtered by
+        #            src/combine_concepts.py. Meaningful whenever each tag's
+        #            features carry a real per-tag positive/negative signal
+        #            to filter on.
+        #   pooled:  every tag's features concatenated once (src/combine_features.py)
+        #            into a single matrix, one SNMF call for the whole dataset
+        #            (DECOMP_COMPONENTS_GLOBAL concepts total), no purity filter
+        #            (every direction with >=1 assigned sample is accepted).
+        # Defaults preserve each template's original behavior when
+        # DECOMP_STRATEGY isn't set explicitly: cgdl -> per_tag,
+        # non_contrastive/null -> pooled. Set DECOMP_STRATEGY=per_tag/pooled
+        # to override for any template (e.g. cgdl+pooled, non_contrastive+per_tag).
+        self.decomp_strategy = self._get_str(
+            "DECOMP_STRATEGY",
+            "per_tag" if self.prompt_template == "cgdl" else "pooled",
+        ).strip().lower()
+        if self.decomp_strategy not in ("per_tag", "pooled"):
+            raise ValueError(f"DECOMP_STRATEGY must be 'per_tag' or 'pooled', got {self.decomp_strategy!r}")
         # Use IMAGE_SIZE_WIDTH as the reference; height is derived per-image via aspect ratio.
         self.image_size_width = self._get_int("IMAGE_SIZE_WIDTH", 512)
         # Keep for backward compatibility / debugging; not used as a fixed resize target.
@@ -127,8 +158,29 @@ class PipelineConfig:
         # Decomposition methods
         self.decomp_methods = self._get_str("DECOMP_METHODS", "snmf").split(",")
         self.decomp_components = self._get_int("DECOMP_COMPONENTS", 2)
+        # Concept count for the non-contrastive/null global decomposition path
+        # (step 5): these prompt templates don't produce a per-tag contrastive
+        # fg/bg split, so all tags' features are pooled first and decomposed
+        # once, budget-matched to roughly decomp_components * num_tags.
+        self.decomp_components_global = self._get_int("DECOMP_COMPONENTS_GLOBAL", 20)
+        # Sparsity regularization: higher = sparser decomposition.
+        # DL_ALPHA feeds SNMF/dictionary-learning methods (snmf, nndl); it is
+        # sklearn DictionaryLearning's L1 `alpha` on the sparse code (default 20).
+        # SAE_SPARSITY_LAMBDA feeds sae/sae2; it is the L1 penalty weight on the
+        # SAE hidden code (default 0.0005). Try e.g. 1.0 for a much sparser result.
+        self.dl_alpha = self._get_float("DL_ALPHA", 20.0)
+        self.sae_sparsity_lambda = self._get_float("SAE_SPARSITY_LAMBDA", 0.0005)
+        # Hard top-k activation for sae/sae2: guarantees this exact zero-fraction
+        # in the code (e.g. 0.99), unlike SAE_SPARSITY_LAMBDA which plateaus well
+        # short of high targets. Empty/unset disables it (soft L1 penalty only).
+        _sae_target_sparsity = self._get_str("SAE_TARGET_SPARSITY", "").strip()
+        self.sae_target_sparsity = float(_sae_target_sparsity) if _sae_target_sparsity else None
         self.num_concept = self._get_int("NUM_CONCEPT", -1)  # -1 = use all tags, else top N tags by crop count
-        self.concepts_vocab = self._get_path("CONCEPTS_VOCAB", ROOT_DIR / "src" / "assets" / "vocab.txt")
+        # Optional concept vocab filter. Unset/empty (e.g. commented out in
+        # .env) => None => NUM_CONCEPT picks the top-N most frequent tags
+        # without any vocab filtering.
+        _vocab = self._get_str("CONCEPTS_VOCAB", "").strip()
+        self.concepts_vocab = Path(_vocab) if _vocab else None
         self.dataset_size = self._get_int("BAG_SIZE", 100)
         self.delete_intermediate_files = self._get_int("DELETE_INTERMEDIATE_FILES", 0) == 1
         
@@ -136,15 +188,80 @@ class PipelineConfig:
         self.layer_path = resolve_layer_path(
             self._get_str("LAYER_PATH", "model.language_model.norm")
         )
-        self.hook_names = self._get_str("HOOK_NAMES", "save_hidden_states_mean")
+        # Any template whose response can run several tokens has the same
+        # mean-pooling problem: averaging over all generated tokens dilutes
+        # the signal with filler/punctuation and biases toward whatever token
+        # the response happens to end on, rather than the token that actually
+        # names the concept. save_hidden_states_for_token_of_interest instead
+        # extracts the hidden state at the tag word itself wherever it occurs
+        # in the response (falls back gracefully, with a found/not-found
+        # mask, when the tag word never appears -- see
+        # extract_token_of_interest_states). cgdl's forced "X or No X" answer
+        # and non_contrastive's open caption both have a real tag word to find
+        # this way; null's empty prompt + MAX_NEW_TOKENS=1 has no multi-token
+        # response to disambiguate in the first place, so it stays on mean
+        # (equivalent to the single token either way).
+        _default_hook_names = (
+            "save_hidden_states_mean"
+            if self.prompt_template == "null"
+            else "save_hidden_states_for_token_of_interest"
+        )
+        self.hook_names = self._get_str("HOOK_NAMES", _default_hook_names)
+        # Per-tag layer selection via logit lens (step 3). When enabled, each
+        # tag's extraction layer is picked by a logit-lens sweep and LAYER_PATH
+        # is only the fallback; values flow to subprocesses via the environment.
+        self.logit_lens_layer_selection = self._get_int("LOGIT_LENS_LAYER_SELECTION", 0)
+        self.logit_lens_mode = self._get_str("LOGIT_LENS_MODE", "patch")
+        self.logit_lens_layers = self._get_str("LOGIT_LENS_LAYERS", "auto")
+        self.logit_lens_num_patches = self._get_int("LOGIT_LENS_NUM_PATCHES", 8)
         
 
         self.top_n = self._get_int("TOP_N", 5)
         self.num_most_activating_samples = self._get_int("NUM_MOST_ACTIVATING_SAMPLES", 10)
+        # Tokens generated during feature extraction (steps 3/4) -- default 50
+        # matches save_features.py/select_layers.py's own CLI default (both
+        # previously received no --max_new_tokens flag at all). Set to 1 for
+        # a single-forward-pass extraction (e.g. with PROMPT_TEMPLATE=null),
+        # since --generation_mode with max_new_tokens=1 does exactly one
+        # decoder forward pass without needing a separate teacher-forcing path.
+        self.max_new_tokens = self._get_int("MAX_NEW_TOKENS", 50)
         self.num_points = self._get_int("NUM_POINTS", 70)
         self.expl_prompt_mode = self._get_str("EXPL_PROMPT_MODE", "unsupervised")
         self.expl_label = self._get_str("EXPL_LABEL", "")
         self.expl_choices = self._get_str("EXPL_CHOICES", "")
+        # Set when IMAGE_ROOT points at single-object crops rather than
+        # multi-cell grids -- adjusts the explainer's mcq/unsupervised prompt
+        # wording so it doesn't ask about non-existent grid cells.
+        self.single_object = os.environ.get("SINGLE_OBJECT", "0") == "1"
+        # Rebuttal P_bin_shuf control: substitute a different, reproducibly
+        # sampled concept into the [concept] prompt placeholder instead of
+        # the crop's true tag (see JSONDataset.create_dataset()). Only
+        # affects step 4's prompt text -- concept-bank bucketing is untouched.
+        self.shuffle_concept_prompt = os.environ.get("SHUFFLE_CONCEPT_PROMPT", "0") == "1"
+        self.shuffle_concept_vocab = self._get_str("SHUFFLE_CONCEPT_VOCAB", "")
+        # Images the explainer takes from IMAGE_ROOT:
+        # -1 = all, 0 = skip explanation (and eval/plots), N = first N.
+        self.expl_max_images = self._get_int("EXPL_MAX_IMAGES", -1)
+        # Positive/negative concept split threshold; embedded in the bank
+        # file names (…_cr<ratio>_raw.pth) so runs with different ratios can
+        # be evaluated side by side.
+        self.clean_example_ratio = self._get_float("CLEAN_EXAMPLE_RATIO", 0.8)
+        # Purity filtering is tied to DECOMP_STRATEGY, not PROMPT_TEMPLATE:
+        # per_tag decomposition gives each tag's own positive/negative split a
+        # real ratio to filter on (regardless of which template produced it),
+        # while pooled decomposition has no such per-tag split to check --
+        # every sample's hidden state is pooled together unfiltered (see
+        # keep_only_token_of_interest in src/analysis/__init__.py), so
+        # constraining concept selection to a CLEAN_EXAMPLE_RATIO threshold
+        # meant for a per-tag split isn't meaningful there. Accept every SNMF
+        # direction with >=1 assigned sample (MIN_DIRECTION_ASSIGNED) instead.
+        # Written back to the environment so the combine_concepts.py
+        # subprocess (which re-reads CLEAN_EXAMPLE_RATIO itself) and this
+        # process's own ratio_tag-based file paths agree.
+        if self.decomp_strategy == "pooled":
+            self.clean_example_ratio = 0.0
+            os.environ["CLEAN_EXAMPLE_RATIO"] = "0.0"
+        self.ratio_tag = f"cr{self.clean_example_ratio:g}"
         
         # Plot
         self.plot_ymin = self._get_float("PLOT_YMIN", 6.55e-6)
@@ -186,6 +303,8 @@ class PipelineConfig:
         self.active_concept_map_json = self.concept_map_json
         self.crops_json = self.output_dir / "inference" / "crops.json"
         self.objects_csv = self.output_dir / "inference" / "objects.csv"
+        self.logitlens_dir = self.output_dir / "logitlens"
+        self.selected_layers_json = self.logitlens_dir / "selected_layers.json"
         self.features_dir = self.output_dir
         self.decomp_dir = self.output_dir / "concept"
         self.explain_dir = self.output_dir / "explanations"
@@ -268,29 +387,34 @@ def _run_python_subprocess(script_args: List[str], env_overrides: dict = None,
     combine_concepts skip summaries (and other subprocess output) appear in logs.
     """
     env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     if env_overrides:
         env.update(env_overrides)
-    
-    cmd = [sys.executable] + script_args
+
+    # -u: unbuffered child stdout, so output streams live instead of arriving
+    # in one block when the step finishes.
+    cmd = [sys.executable, "-u"] + script_args
     if logger:
         logger.debug(f"Subprocess: {' '.join(cmd)}")
-    
-    proc = subprocess.run(
+
+    proc = subprocess.Popen(
         cmd, env=env, cwd=str(ROOT_DIR),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
 
-    # Relay subprocess output through logger
-    if proc.stdout:
-        for line in proc.stdout.splitlines():
-            if logger:
-                logger.info(f"  [sub] {line}")
-            else:
-                print(line)
+    # Relay subprocess output through the logger as it is produced
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.rstrip("\n")
+        if logger:
+            logger.info(f"  [sub] {line}")
+        else:
+            print(line)
 
-    if proc.returncode != 0:
+    returncode = proc.wait()
+    if returncode != 0:
         raise RuntimeError(
-            f"Subprocess failed (exit {proc.returncode}): {' '.join(cmd)}"
+            f"Subprocess failed (exit {returncode}): {' '.join(cmd)}"
         )
 
 
@@ -306,6 +430,7 @@ def _delete_downstream_outputs(config: PipelineConfig, step_num: int, logger: lo
         # If step 1 reruns, delete everything after it
         downstream_deletions = [
             (config.crops_json, "Crops JSON"),
+            (config.logitlens_dir, "Logit-lens layer selection"),
             (config.features_dir / "features", "Features"),
             (config.decomp_dir, "Decomposed concepts"),
             (config.explain_dir, "Explanations"),
@@ -315,6 +440,7 @@ def _delete_downstream_outputs(config: PipelineConfig, step_num: int, logger: lo
     elif step_num <= 2:
         # If step 2 reruns, delete outputs from step 3 onwards
         downstream_deletions = [
+            (config.logitlens_dir, "Logit-lens layer selection"),
             (config.features_dir / "features", "Features"),
             (config.decomp_dir, "Decomposed concepts"),
             (config.explain_dir, "Explanations"),
@@ -322,32 +448,41 @@ def _delete_downstream_outputs(config: PipelineConfig, step_num: int, logger: lo
             (config.plots_dir, "Plots"),
         ]
     elif step_num <= 3:
-        # If step 3 reruns, delete outputs from step 4 onwards
+        # If step 3 (layer selection) reruns, delete outputs from step 4 onwards
         downstream_deletions = [
+            (config.features_dir / "features", "Features"),
             (config.decomp_dir, "Decomposed concepts"),
             (config.explain_dir, "Explanations"),
             (config.eval_dir, "Evaluations"),
             (config.plots_dir, "Plots"),
         ]
     elif step_num <= 4:
-        # If step 4 reruns, delete outputs from step 5 onwards
+        # If step 4 (features) reruns, delete outputs from step 5 onwards
         downstream_deletions = [
+            (config.decomp_dir, "Decomposed concepts"),
             (config.explain_dir, "Explanations"),
             (config.eval_dir, "Evaluations"),
             (config.plots_dir, "Plots"),
         ]
     elif step_num <= 5:
-        # If step 5 reruns, delete outputs from step 6 onwards
+        # If step 5 (decompose) reruns, delete outputs from step 6 onwards
         downstream_deletions = [
+            (config.explain_dir, "Explanations"),
             (config.eval_dir, "Evaluations"),
             (config.plots_dir, "Plots"),
         ]
     elif step_num <= 6:
-        # If step 6 reruns, delete outputs from step 7 (plots)
+        # If step 6 (explainer) reruns, delete outputs from step 7 onwards
+        downstream_deletions = [
+            (config.eval_dir, "Evaluations"),
+            (config.plots_dir, "Plots"),
+        ]
+    elif step_num <= 7:
+        # If step 7 (eval) reruns, delete outputs from step 8 (plots)
         downstream_deletions = [
             (config.plots_dir, "Plots"),
         ]
-    # Step 7 has no downstream dependencies
+    # Step 8 has no downstream dependencies
     
     if downstream_deletions:
         logger.info(f"Step {step_num} was re-computed; cascade deleting downstream outputs...")
@@ -363,90 +498,22 @@ def _delete_downstream_outputs(config: PipelineConfig, step_num: int, logger: lo
                     logger.warning(f"  Could not delete {label}: {e}")
 
 
-def _load_concept_vocab(vocab_path: Path) -> Optional[set]:
-    if not vocab_path.exists():
-        return None
-    vocab = set()
-    with open(vocab_path, "r", encoding="utf-8") as handle:
-        for line in handle:
-            concept = line.strip()
-            if not concept or concept.startswith("#"):
-                continue
-            vocab.add(_normalize_concept_name(concept))
-    return vocab
-
-
-def _normalize_concept_name(name: str) -> str:
-    """Normalize concept names for case-insensitive singular/plural matching."""
-    value = name.strip().casefold()
-    if not value:
-        return value
-    return " ".join(p.singular_noun(word) or word for word in value.split())
-
-
 def _ensure_top_concept_map(
     concept_map_json: Path,
     num_concept: int,
     logger: logging.Logger,
     concepts_vocab: Optional[Path] = None,
 ) -> Path:
-    """Create and return a filtered concept map containing vocab-filtered top-N concepts."""
-    if num_concept <= 0:
-        return concept_map_json
+    """Create and return a filtered concept map containing vocab-filtered top-N concepts.
 
-    if not concept_map_json.exists():
-        raise FileNotFoundError(f"Concept map not found: {concept_map_json}")
+    Delegates to the shared module so the selection logic has a single home.
+    """
+    from preprocessing.select_top_concepts import select_top_concepts
 
-    with open(concept_map_json, "r", encoding="utf-8") as handle:
-        concept_mapping = json.load(handle)
-
-    if not isinstance(concept_mapping, dict):
-        raise ValueError(f"Expected a JSON object in {concept_map_json}")
-
-    vocab = None
-    if concepts_vocab is not None:
-        vocab = _load_concept_vocab(concepts_vocab)
-        if vocab is None:
-            logger.warning(f"Concept vocab not found: {concepts_vocab}. Falling back to all concepts.")
-        else:
-            logger.info(f"Loaded {len(vocab)} concept names from {concepts_vocab}")
-
-    filtered_candidates = concept_mapping.items()
-    if vocab is not None:
-        filtered_candidates = [
-            (tag, images)
-            for tag, images in concept_mapping.items()
-            if _normalize_concept_name(tag) in vocab
-        ]
-        logger.info(
-            f"Vocab filter kept {len(filtered_candidates)} of {len(concept_mapping)} concepts from {concept_map_json}"
-        )
-
-    sorted_concepts = sorted(
-        filtered_candidates,
-        key=lambda item: (-len(item[1]), item[0]),
-    )
-    selected_concepts = sorted_concepts[: min(num_concept, len(sorted_concepts))]
-    filtered_mapping = {tag: images for tag, images in selected_concepts}
-
-    vocab_suffix = ""
-    if concepts_vocab is not None:
-        vocab_suffix = f"_{concepts_vocab.stem}"
-    filtered_path = concept_map_json.with_name(
-        f"{concept_map_json.stem}{vocab_suffix}_top{len(filtered_mapping)}{concept_map_json.suffix}"
-    )
-    if filtered_path.exists():
-        return filtered_path
-
-    filtered_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(filtered_path, "w", encoding="utf-8") as handle:
-        json.dump(filtered_mapping, handle, indent=2, ensure_ascii=False)
-
-    logger.info(
-        f"Filtered concept map saved to {filtered_path} using top {len(filtered_mapping)} of {len(sorted_concepts)} candidate tags"
-    )
-    logger.info(f"Selected tags: {[tag for tag, _ in selected_concepts]}")
-    return filtered_path
+    result = select_top_concepts(concept_map_json, num_concept, concepts_vocab)
+    if result != concept_map_json:
+        logger.info(f"Using filtered concept map: {result}")
+    return result
 
 
 def _count_concepts_in_json(concept_map_json: Path) -> int:
@@ -481,15 +548,22 @@ def create_directories(config: PipelineConfig, logger: logging.Logger):
 
 def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
     """Step 1: Dataset inference -> concept map."""
-    
+
     config.objects_csv.parent.mkdir(parents=True, exist_ok=True)
     
     # Check if both CSV and concept map exist before skipping
     csv_exists = config.objects_csv.exists()
     concept_map_exists = config.concept_map_json.exists()
-    
+
     if csv_exists and concept_map_exists:
         logger.info(f"Skip Step 1 (found {config.objects_csv} and {config.concept_map_json})")
+        # Still resolve the filtered map so later steps log/count correctly
+        config.active_concept_map_json = _ensure_top_concept_map(
+            config.concept_map_json,
+            config.num_concept,
+            logger,
+            concepts_vocab=config.concepts_vocab,
+        )
         return
     
     # Step will re-compute; cascade delete downstream outputs
@@ -557,16 +631,91 @@ def step_1_dataset_inference(config: PipelineConfig, logger: logging.Logger):
     )
 
 
+def _build_whole_image_crops_json(config: PipelineConfig, logger: logging.Logger, concept_map_json: Path) -> None:
+    """CROP_MODE=none variant of step 2: instead of running a detector,
+    emit one crops.json entry per (tag, image) with bbox = the full image
+    extent. Steps 3-8 need no changes since they only ever consume
+    crops.json in this same schema (bbox-only records, RLE off, are already
+    a supported variant — see RLE=0 in .env.example).
+    """
+    import random
+    from PIL import Image
+    from preprocessing.crops_to_json import load_mapping
+
+    if config.seed is not None:
+        random.seed(config.seed)
+
+    mapping = load_mapping(str(concept_map_json))
+
+    valid_tags = []
+    for tag, rels in mapping.items():
+        if not isinstance(rels, list) or len(rels) < config.min_images_per_tag:
+            continue
+        if config.max_images_per_tag > 0 and len(rels) > config.max_images_per_tag:
+            rels = random.sample(rels, config.max_images_per_tag)
+        valid_tags.append((tag, rels))
+
+    if not valid_tags:
+        raise RuntimeError(
+            f"No concept tag survived filtering: all {len(mapping)} tags in "
+            f"'{concept_map_json}' have fewer than min_images_per_tag="
+            f"{config.min_images_per_tag} images."
+        )
+
+    total_images = sum(len(rels) for _, rels in valid_tags)
+    logger.info(f"Building whole-image crops.json: {total_images} images across {len(valid_tags)} tags")
+
+    result = {}
+    skipped = 0
+    for tag, rels in valid_tags:
+        tag_entry = {}
+        for rel in rels:
+            image_path = config.input_dir / rel
+            try:
+                with Image.open(image_path) as im:
+                    width, height = im.size
+            except Exception as e:
+                logger.warning(f"  Skipping unreadable image {image_path}: {e}")
+                skipped += 1
+                continue
+            tag_entry[rel] = {
+                "masks_rle": [{"bbox": [0, 0, width, height], "is_concept": True}]
+            }
+        if tag_entry:
+            result[tag] = tag_entry
+
+    if not result:
+        raise RuntimeError("Whole-image crops.json build produced zero entries (all images unreadable?).")
+
+    config.crops_json.parent.mkdir(parents=True, exist_ok=True)
+    with open(config.crops_json, "w", encoding="utf-8") as f:
+        json.dump(result, f)
+    logger.info(f"Wrote whole-image crops.json: {config.crops_json} ({total_images - skipped} images, {skipped} skipped)")
+
+
 def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
     """Step 2: Build crops JSON from concept→image map.
-    
-    Runs as a subprocess to isolate detector GPU memory.
+
+    Runs as a subprocess to isolate detector GPU memory (skipped for
+    CROP_MODE=none, which builds crops.json in-process — no detector to load).
     """
-    
+
     if config.crops_json.exists():
-        logger.info(f"Skip Step 2 (found {config.crops_json})")
-        return
-    
+        # A crops.json without any concept entries (e.g. from a run where
+        # every tag was filtered out) must not be reused — it would make
+        # every downstream step fail with "0 concept splits".
+        try:
+            with open(config.crops_json, "r", encoding="utf-8") as handle:
+                _crops = json.load(handle)
+        except Exception:
+            _crops = None
+        if isinstance(_crops, dict) and len(_crops) > 0:
+            logger.info(f"Skip Step 2 (found {config.crops_json})")
+            return
+        logger.warning(
+            f"Existing {config.crops_json} is empty or unreadable — rebuilding it."
+        )
+
     # Step will re-compute; cascade delete downstream outputs
     _delete_downstream_outputs(config, 2, logger)
     
@@ -578,7 +727,12 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         logger,
         concepts_vocab=config.concepts_vocab,
     )
-    
+
+    if config.crop_mode == "none":
+        _build_whole_image_crops_json(config, logger, concept_map_json)
+        logger.info("DONE: Crops JSON (whole-image, no cropping)")
+        return
+
     crops_args = [
         str(ROOT_DIR / "preprocessing" / "crops_to_json.py"),
         "--mapping_json", str(concept_map_json),
@@ -597,37 +751,118 @@ def step_2_build_crops_json(config: PipelineConfig, logger: logging.Logger):
         "--confidence_threshold", str(config.segmentation_confidence),
         "--positive_negative_segment", str(config.positive_negative_segment),
     ]
-    
+
     _run_python_subprocess(crops_args, logger=logger)
-    
+
     logger.info("DONE: Crops JSON")
 
 
-def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
-    """Step 3: Generate features from crops JSON.
-    
-    Runs as a subprocess to isolate VLM GPU memory from Step 4.
+def step_3_select_layers(config: PipelineConfig, logger: logging.Logger):
+    """Step 3: Per-tag layer selection via logit lens (optional).
+
+    Runs only when LOGIT_LENS_LAYER_SELECTION=1. For each concept tag in
+    crops.json, sweeps decoder layers on sampled tag regions and writes the
+    winning layer per tag to logitlens/selected_layers.json, which step 4
+    uses to hook the right layer during feature extraction.
+
+    Skipped whenever DECOMP_STRATEGY=pooled, for ANY prompt template: pooled
+    decomposition concatenates every tag's features and decomposes once
+    (step 5), which requires every tag's hidden states to live under the SAME
+    module key. A per-tag layer would break that (and does: mixed module keys
+    after pooling fail step 5's fixed --module_to_decompose). per_tag
+    decomposition has no such constraint -- each tag is decomposed
+    separately, so a different layer per tag is fine -- which is why this is
+    keyed off decomp_strategy, not prompt_template: it's universal across
+    templates for a given strategy, not special-cased per template.
+
+    Runs as a subprocess to isolate VLM GPU memory.
     """
-    
+    if not config.logit_lens_layer_selection:
+        logger.info("Skip Step 3 (LOGIT_LENS_LAYER_SELECTION=0)")
+        return
+    if config.decomp_strategy == "pooled":
+        logger.info(f"Skip Step 3 (decomp_strategy=pooled uses a uniform layer, not per-tag selection; prompt_template={config.prompt_template})")
+        return
+
+    if config.selected_layers_json.exists():
+        logger.info(f"Skip Select Layers (found {config.selected_layers_json})")
+        return
+
+    # Step will re-compute; cascade delete downstream outputs
+    _delete_downstream_outputs(config, 3, logger)
+
+    logger.info("START: Select Layers (logit lens)")
+
+    select_args = [
+        str(ROOT_DIR / "src" / "select_layers.py"),
+        "--model_name", config.vlm_model,
+        "--dataset_name", "json_crop_map",
+        "--dataset_size", str(config.dataset_size),
+        "--data_dir", str(config.input_dir),
+        "--annotation_file", str(config.crops_json),
+        "--split", "train",
+        "--prompt_template", config.prompt_template,
+        "--save_dir", str(config.features_dir),
+        "--batch_size", "1",
+        "--generation_mode",
+        "--max_new_tokens", str(config.max_new_tokens),
+    ]
+
+    _run_python_subprocess(select_args, logger=logger)
+
+    logger.info("DONE: Select Layers (logit lens)")
+
+
+def step_4_generate_features(config: PipelineConfig, logger: logging.Logger):
+    """Step 4: Generate features from crops JSON.
+
+    Runs as a subprocess to isolate VLM GPU memory from Step 5. Works
+    unchanged for CROP_MODE=none too, since crops.json already has one
+    whole-image bbox per (tag, image) from step 2 in that mode.
+    """
+
     features_path = config.features_dir / "features"
     debug_save_enabled = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "0") == "1"
-    if features_path.exists() and any(features_path.glob("*.pth")):
+    selected_concept_count = _count_concepts_in_json(config.active_concept_map_json)
+    existing_pth_count = len(list(features_path.glob("*.pth"))) if features_path.exists() else 0
+    # Require the full expected tag count, not just "at least one file" --
+    # a config interrupted mid-loop (e.g. a killed subprocess) can leave
+    # exactly one tag's .pth file on disk, which the old any(...) check
+    # treated as fully done, silently decomposing/evaluating on 1 of N tags
+    # for the rest of the pipeline with no error raised. Confirmed this
+    # happened in practice: a killed run left only one tag's feature file,
+    # and every step downstream skip-checked past it to a "successful"
+    # completion built on 10% of the intended data.
+    features_complete = (
+        features_path.exists()
+        and existing_pth_count > 0
+        and (selected_concept_count <= 0 or existing_pth_count >= selected_concept_count)
+    )
+    if features_complete:
         if debug_save_enabled:
             logger.info(
-                f"Debug mode enabled (DEBUG_SAVE_VLM_INPUTS=1): forcing Step 3 rerun even though features exist under {features_path}"
+                f"Debug mode enabled (DEBUG_SAVE_VLM_INPUTS=1): forcing feature rerun even though features exist under {features_path}"
             )
             # Cascade delete downstream outputs
-            _delete_downstream_outputs(config, 3, logger)
+            _delete_downstream_outputs(config, 4, logger)
         else:
-            logger.info(f"Skip Step 3 (found features under {features_path})")
+            logger.info(f"Skip Generate Features (found {existing_pth_count} feature files under {features_path})")
             return
     else:
+        if existing_pth_count > 0:
+            logger.warning(
+                f"Found {existing_pth_count} feature file(s) under {features_path} but expected "
+                f"{selected_concept_count} (from the filtered concept map) -- treating as incomplete "
+                "(likely an interrupted prior run) and regenerating from scratch."
+            )
         # Step will re-compute; cascade delete downstream outputs
-        _delete_downstream_outputs(config, 3, logger)
-    
+        _delete_downstream_outputs(config, 4, logger)
+        if existing_pth_count > 0:
+            import shutil
+            shutil.rmtree(features_path)
+
     logger.info("START: Generate Features")
     annotation_file = config.crops_json
-    selected_concept_count = _count_concepts_in_json(config.active_concept_map_json)
     if selected_concept_count > 0:
         logger.info(f"Using top {selected_concept_count} concepts from the filtered concept map for feature generation")
     
@@ -645,28 +880,49 @@ def step_3_generate_features(config: PipelineConfig, logger: logging.Logger):
         "--save_dir", str(config.features_dir),
         "--batch_size", str(config.batch_size),
         "--generation_mode",
+        "--max_new_tokens", str(config.max_new_tokens),
         "--save_only_generated_tokens",
         "--exact_match_modules_to_hook",
     ]
-    
-    _run_python_subprocess(features_args, logger=logger)
-    
+    if config.shuffle_concept_prompt and config.shuffle_concept_vocab:
+        features_args.append("--shuffle_concept_prompt")
+        features_args.extend(["--shuffle_concept_vocab", config.shuffle_concept_vocab])
+
+    # Force off regardless of the .env value: pooled decomposition (any
+    # template) concatenates every tag's features and decomposes once against
+    # one fixed module path, so save_features.py's per-tag layer-selection
+    # fallback (which would hook a different layer per tag) must not run.
+    step4_env_overrides = None
+    if config.decomp_strategy == "pooled":
+        step4_env_overrides = {"LOGIT_LENS_LAYER_SELECTION": "0"}
+
+    _run_python_subprocess(features_args, env_overrides=step4_env_overrides, logger=logger)
+
     logger.info("DONE: Generate Features")
 
 
-def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
-    """Step 4: Decompose features across methods.
-    
+def step_5_decompose_features(config: PipelineConfig, logger: logging.Logger):
+    """Step 5: Decompose features across methods.
+
     Each analyse_features call runs as a subprocess to isolate GPU memory,
-    since loading the model's lm_head requires significant VRAM.
+    since loading the model's lm_head requires significant VRAM. Works
+    unchanged for CROP_MODE=none too — features_dir/"features" still holds
+    one .pth per tag (built from whole-image crops in step 4).
+
+    DECOMP_STRATEGY selects which of the two happens, independent of
+    PROMPT_TEMPLATE: per_tag decomposes each tag's features separately (below)
+    and merges; pooled concatenates every tag's features into one matrix
+    first and decomposes once, with each resulting atom used directly as a
+    concept -- see combine_features.py.
     """
-    
+    use_per_tag_decomp = config.decomp_strategy == "per_tag"
+
     step_4_recomputed = False  # Track if any method was re-computed
-    
+
     for method in config.decomp_methods:
         method = method.strip()
         method_dir = config.decomp_dir / method
-        out_raw = method_dir / f"combined_concept_{method}_raw.pth"
+        out_raw = method_dir / f"combined_concept_{method}_{config.ratio_tag}_raw.pth"
         
         if out_raw.exists():
             logger.info(f"Skip Decompose ({method}) (found {out_raw})")
@@ -682,18 +938,39 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
         intermediate_dir = method_dir / f"intermediate_{method}"
         
         logger.info(f"START: Decompose:{method} (batch)")
-        
+
+        features_dir = config.features_dir / "features"
+        if use_per_tag_decomp:
+            decompose_features_path = str(features_dir)
+            decompose_num_concepts = config.decomp_components
+        else:
+            # Pool every tag's features into a single combined_features.pth
+            # (once) so analyse_features.py takes its single-matrix path
+            # instead of looping per tag.
+            combined_features_path = features_dir / "combined_features.pth"
+            if not combined_features_path.exists():
+                _run_python_subprocess(
+                    [str(ROOT_DIR / "src" / "combine_features.py"), str(features_dir)],
+                    logger=logger,
+                )
+            decompose_features_path = str(combined_features_path)
+            decompose_num_concepts = config.decomp_components_global
+
         analyse_args = [
             str(ROOT_DIR / "src" / "analyse_features.py"),
             "--model_name", config.vlm_model,
             "--analysis_name", f"{base_analysis_name}_{method}",
-            "--features_path", str(config.features_dir / "features"),
+            "--features_path", decompose_features_path,
             "--module_to_decompose", config.layer_path,
-            "--num_concepts", str(config.decomp_components),
+            "--num_concepts", str(decompose_num_concepts),
             "--decomposition_method", method,
             "--num_most_activating_samples", str(config.num_most_activating_samples),
             "--save_dir", str(intermediate_dir),
+            "--dl_alpha", str(config.dl_alpha),
+            "--sae_sparsity_lambda", str(config.sae_sparsity_lambda),
         ]
+        if config.sae_target_sparsity is not None:
+            analyse_args += ["--sae_target_sparsity", str(config.sae_target_sparsity)]
         
         _run_python_subprocess(analyse_args, logger=logger)
         
@@ -705,16 +982,41 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
         combine_cli_args = [
             str(ROOT_DIR / "src" / "combine_concepts.py"),
             "--input_dir", str(intermediate_dir),
-            "--output_path", str(method_dir / f"combined_concept_{method}.pth"),
+            "--output_path", str(method_dir / f"combined_concept_{method}.pth"),  # combine appends _cr<ratio>
             "--normalization", "gl",
         ]
         if config.delete_intermediate_files:
             combine_cli_args.append("--delete")
         
         _run_python_subprocess(combine_cli_args, logger=logger)
-        
+
         logger.info(f"DONE: Combine Concepts ({method})")
-        
+
+        # Fail fast if the combined bank is empty — regrounding, explainer
+        # and eval all need at least one concept.
+        raw_bank_path = method_dir / f"combined_concept_{method}_{config.ratio_tag}_raw.pth"
+        try:
+            import torch as _torch
+            _bank = _torch.load(raw_bank_path, map_location="cpu")
+            _n_concepts = int(_bank.get("concepts", _torch.empty(0)).shape[0]) if hasattr(
+                _bank.get("concepts", None), "shape"
+            ) else 0
+            del _bank
+        except Exception as exc:
+            raise RuntimeError(f"Could not read combined concept bank {raw_bank_path}: {exc}")
+        if _n_concepts == 0:
+            raise RuntimeError(
+                f"Combined concept bank is EMPTY ({raw_bank_path}). No concept "
+                f"passed the CLEAN_EXAMPLE_RATIO={os.environ.get('CLEAN_EXAMPLE_RATIO', '0.8')} "
+                "purity filter — the VLM answered 'No [tag]' for the top-activating "
+                "regions of every direction. All filtered concepts were saved to the "
+                f"negative bank (combined_negative_concept_{method}_{config.ratio_tag}_*.pth) for inspection. "
+                "Check the 'Combine Concepts' log above for per-concept positive ratios; "
+                "consider lowering CLEAN_EXAMPLE_RATIO, increasing regions per tag, or "
+                "reviewing the crops (CROP_MODE, PATCH_SIZE)."
+            )
+        logger.info(f"Combined concept bank: {_n_concepts} concepts ({raw_bank_path})")
+
         # Regrounding (subprocess — loads model again)
         logger.info(f"START: Reground Concepts ({method})")
         
@@ -722,10 +1024,10 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
             str(ROOT_DIR / "src" / "analyse_features.py"),
             "--model_name", config.vlm_model,
             "--analysis_name", f"redefine_activations_text_grounding_{method}",
-            "--analysis_saving_path", str(method_dir / f"combined_concept_{method}_raw.pth"),
+            "--analysis_saving_path", str(method_dir / f"combined_concept_{method}_{config.ratio_tag}_raw.pth"),
             "--module_to_decompose", config.layer_path,
             "--decomposition_method", method,
-            "--save_filename", f"combined_concept_{method}_gl_regrounded",
+            "--save_filename", f"combined_concept_{method}_{config.ratio_tag}_gl_regrounded",
             "--save_dir", str(method_dir),
             "--load_matched_features",
         ]
@@ -740,20 +1042,26 @@ def step_4_decompose_features(config: PipelineConfig, logger: logging.Logger):
     
     # If any method was re-computed, cascade delete downstream outputs
     if step_4_recomputed:
-        _delete_downstream_outputs(config, 4, logger)
+        _delete_downstream_outputs(config, 5, logger)
 
 
-def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
-    """Step 5: VLM explainer per method.
-    
+def step_6_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
+    """Step 6: VLM explainer per method.
+
     Runs as a subprocess — loads VLM model for explanation generation.
+    EXPL_MAX_IMAGES: -1 = all IMAGE_ROOT images, 0 = skip this step,
+    N = first N images.
     """
-    
+
+    if config.expl_max_images == 0:
+        logger.info("Skip Step 6 (EXPL_MAX_IMAGES=0 — explanation disabled); steps 7-8 will have no input.")
+        return
+
     step_5_recomputed = False  # Track if any method was re-computed
     
     for method in config.decomp_methods:
         method = method.strip()
-        concept_path = config.decomp_dir / method / f"combined_concept_{method}_raw.pth"
+        concept_path = config.decomp_dir / method / f"combined_concept_{method}_{config.ratio_tag}_raw.pth"
         out_dir = config.explain_dir / method
         out_json = out_dir / "vlm_explanations.json"
         
@@ -777,24 +1085,27 @@ def step_5_vlm_explainer(config: PipelineConfig, logger: logging.Logger):
             "--top_n", str(config.top_n),
             "--out_json", str(out_json),
             "--prompt_mode", config.expl_prompt_mode,
+            "--max_images", str(config.expl_max_images),
         ]
         
         if config.expl_label:
             explainer_args.extend(["--prompt_label", config.expl_label])
         if config.expl_choices:
             explainer_args.extend(["--choices", config.expl_choices])
-        
+        if config.single_object:
+            explainer_args.append("--single_object")
+
         _run_python_subprocess(explainer_args, logger=logger)
         
         logger.info(f"DONE: Explainer ({method})")
     
     # If any method was re-computed, cascade delete downstream outputs
     if step_5_recomputed:
-        _delete_downstream_outputs(config, 5, logger)
+        _delete_downstream_outputs(config, 6, logger)
 
 
-def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger):
-    """Step 6: Concept deletion eval per method.
+def step_7_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger):
+    """Step 7: Concept deletion eval per method.
     
     Each eval run is a subprocess — loads VLM model for token evaluation.
     """
@@ -803,9 +1114,16 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
     
     for method in config.decomp_methods:
         method = method.strip()
-        concept_path = config.decomp_dir / method / f"combined_concept_{method}_raw.pth"
+        concept_path = config.decomp_dir / method / f"combined_concept_{method}_{config.ratio_tag}_raw.pth"
         in_json = config.explain_dir / method / "vlm_explanations.json"
         out_dir = config.eval_dir / method
+
+        if not in_json.exists():
+            logger.info(
+                f"Skip Eval ({method}) — no explanations at {in_json} "
+                "(step 6 skipped via EXPL_MAX_IMAGES=0 or produced nothing)."
+            )
+            continue
 
         out_dir.mkdir(parents=True, exist_ok=True)
         
@@ -813,6 +1131,8 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
             rank_idx = rank + 1
             insertion_csv = out_dir / f"c_insertion_token_rank{rank_idx}.csv"
             deletion_csv = out_dir / f"c_deletion_token_rank{rank_idx}.csv"
+            insertion_random_csv = out_dir / f"c_insertion_token_rank{rank_idx}_random.csv"
+            deletion_random_csv = out_dir / f"c_deletion_token_rank{rank_idx}_random.csv"
 
             # Insertion eval
             if insertion_csv.exists():
@@ -838,7 +1158,33 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
                 _run_python_subprocess(insert_args, logger=logger)
 
                 logger.info(f"DONE: Eval Insert (rank={rank_idx}, {method})")
-            
+
+            # Insertion eval -- random-order baseline (chance-level faithfulness)
+            if insertion_random_csv.exists():
+                logger.info(f"Skip Eval Insert Random (rank={rank_idx}, {method})")
+            else:
+                step_6_recomputed = True
+                logger.info(f"START: Eval Insert Random (rank={rank_idx}, {method})")
+
+                insert_random_args = [
+                    str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
+                    "--results_json", str(in_json),
+                    "--concept_path", str(concept_path),
+                    "--model_name", config.vlm_model,
+                    "--layer_path", config.layer_path,
+                    "--mode", "token",
+                    "--num_points", str(config.num_points),
+                    "--out_dir", str(out_dir),
+                    "--device", config.device,
+                    "--rank", str(rank_idx),
+                    "--insertion",
+                    "--order_mode", "random",
+                ]
+
+                _run_python_subprocess(insert_random_args, logger=logger)
+
+                logger.info(f"DONE: Eval Insert Random (rank={rank_idx}, {method})")
+
             # Deletion eval
             if deletion_csv.exists():
                 logger.info(f"Skip Eval Delete (rank={rank_idx}, {method})")
@@ -862,6 +1208,31 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
                 _run_python_subprocess(delete_args, logger=logger)
 
                 logger.info(f"DONE: Eval Delete (rank={rank_idx}, {method})")
+
+            # Deletion eval -- random-order baseline
+            if deletion_random_csv.exists():
+                logger.info(f"Skip Eval Delete Random (rank={rank_idx}, {method})")
+            else:
+                step_6_recomputed = True
+                logger.info(f"START: Eval Delete Random (rank={rank_idx}, {method})")
+
+                delete_random_args = [
+                    str(ROOT_DIR / "eval" / "concept_deletion_eval.py"),
+                    "--results_json", str(in_json),
+                    "--concept_path", str(concept_path),
+                    "--model_name", config.vlm_model,
+                    "--layer_path", config.layer_path,
+                    "--mode", "token",
+                    "--num_points", str(config.num_points),
+                    "--out_dir", str(out_dir),
+                    "--device", config.device,
+                    "--rank", str(rank_idx),
+                    "--order_mode", "random",
+                ]
+
+                _run_python_subprocess(delete_random_args, logger=logger)
+
+                logger.info(f"DONE: Eval Delete Random (rank={rank_idx}, {method})")
 
         # Top-k semantic table (BERT/CLIP) + random activation baseline
         logger.info(f"START: Eval BERT/CLIP Top-K Table ({method})")
@@ -891,11 +1262,11 @@ def step_6_concept_deletion_eval(config: PipelineConfig, logger: logging.Logger)
     
     # If any eval was re-computed, cascade delete downstream outputs (plots)
     if step_6_recomputed:
-        _delete_downstream_outputs(config, 6, logger)
+        _delete_downstream_outputs(config, 7, logger)
 
 
-def step_7_plots(config: PipelineConfig, logger: logging.Logger):
-    """Step 7: Plots per method (optional)."""
+def step_8_plots(config: PipelineConfig, logger: logging.Logger):
+    """Step 8: Plots per method (optional)."""
     
     plot_token_script = ROOT_DIR / "scripts" / "plot_concept_deletion_eval_token.py"
     
@@ -1013,13 +1384,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-to-step",
         type=int,
-        choices=[1, 2, 3, 4, 5, 6, 7],
+        choices=[1, 2, 3, 4, 5, 6, 7, 8],
         help="Skip to a specific step (for resuming)",
     )
     parser.add_argument(
         "--only-step",
         type=int,
-        choices=[1, 2, 3, 4, 5, 6, 7],
+        choices=[1, 2, 3, 4, 5, 6, 7, 8],
         help="Run only a specific step",
     )
     
@@ -1038,12 +1409,18 @@ def main():
     # Set environment variables
     os.environ["HF_HOME"] = str(config.hf_home)
     # Do NOT override CUDA_VISIBLE_DEVICES — device placement is handled by
-    # device_utils.parse_device_config() using the DEVICE env var.
+    # device_utils.parse_device_config() using the DEVICE env var. Export the
+    # resolved value (incl. the DEVICE_ID fallback) so every subprocess —
+    # also the ones that take no --device flag — uses the same GPU(s).
+    os.environ["DEVICE"] = config.device
     os.environ["DETECTION_BATCH_SIZE"] = str(config.detection_batch_size)
     os.environ["POSITIVE_NEGATIVE_SEGMENT"] = str(config.positive_negative_segment)
     os.environ["MASK_CONTEXT_PIXELS"] = str(config.mask_context_pixels)
     os.environ["OUTPUT_DIR"] = str(config.output_dir)
-    os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "1")
+    # Debug mode must be opt-in: when "1" it forces Step 4 (features) to rerun
+    # and cascade-deletes every downstream output (decomposition, explanations,
+    # eval, plots) on each invocation.
+    os.environ["DEBUG_SAVE_VLM_INPUTS"] = os.environ.get("DEBUG_SAVE_VLM_INPUTS", "0")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     
     # Create directories and setup logging
@@ -1064,6 +1441,11 @@ def main():
     logger.info(f"Resize:     ref_width={config.image_size_width} (height auto by aspect ratio)")
     logger.info(f"Explainer:  layer={config.layer_path} image_root={config.image_root} top_n={config.top_n} mode={config.expl_prompt_mode}")
     logger.info(f"Hooks:      {config.hook_names}")
+    if config.logit_lens_layer_selection:
+        logger.info(
+            f"LayerSelect: ON mode={config.logit_lens_mode} layers={config.logit_lens_layers} "
+            f"regions={config.logit_lens_num_patches} (from crops.json)"
+        )
     logger.info(f"Grounding:  num_most_activating_samples={config.num_most_activating_samples}")
     logger.info(f"Plots Y:    [{config.plot_ymin}, {config.plot_ymax}]")
     logger.info("=" * 60)
@@ -1072,11 +1454,12 @@ def main():
     steps = [
         (1, "Dataset Inference", step_1_dataset_inference),
         (2, "Build Crops JSON", step_2_build_crops_json),
-        (3, "Generate Features", step_3_generate_features),
-        (4, "Decompose Features", step_4_decompose_features),
-        (5, "VLM Explainer", step_5_vlm_explainer),
-        (6, "Concept Deletion Eval", step_6_concept_deletion_eval),
-        (7, "Plots", step_7_plots),
+        (3, "Select Layers (Logit Lens)", step_3_select_layers),
+        (4, "Generate Features", step_4_generate_features),
+        (5, "Decompose Features", step_5_decompose_features),
+        (6, "VLM Explainer", step_6_vlm_explainer),
+        (7, "Concept Deletion Eval", step_7_concept_deletion_eval),
+        (8, "Plots", step_8_plots),
     ]
     
     # Determine which steps to run

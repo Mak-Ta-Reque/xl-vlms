@@ -69,25 +69,55 @@ def main():
         lm_head.bias.data = lm_head_bias.to(device)
     
     tokenizer = model_class.get_tokenizer()
-    
+
+    # Standalone copy of the model's final RMSNorm — needed to logit-lens
+    # concepts extracted at mid decoder layers (per-tag layer selection):
+    # lm_head on unnormalized residuals yields garbage top tokens.
+    final_norm = None
+    try:
+        from helpers.logit_lens import resolve_final_norm_module
+        norm_module = resolve_final_norm_module(model_class.get_language_model())
+        if norm_module is None:
+            norm_module = resolve_final_norm_module(model_class.get_model())
+        if norm_module is not None:
+            final_norm = copy.deepcopy(norm_module).to(device).float().eval()
+    except Exception as exc:
+        logger.warning(f"Could not extract final norm module: {exc}")
+
     # Delete the full model and clean GPU memory
     del model_class
     cleanup_gpu_memory()
-    
+
     # Create a subset with only the required components
     model_subset = {
         "lm_head": lm_head,
         "tokenizer": tokenizer,
+        "final_norm": final_norm,
     }
 
 
     feature_source = args.features_path
+    # Fail with a clear message instead of letting torch.load choke on a
+    # missing path (a directory path that doesn't exist would otherwise fall
+    # through to the file branch below).
+    if feature_source is not None and len(feature_source) == 1 and not os.path.exists(feature_source[0]):
+        raise RuntimeError(
+            f"--features_path '{feature_source[0]}' does not exist. "
+            "The feature-generation step (save_features.py, pipeline step 4) "
+            "did not produce any features — check its logs before re-running."
+        )
     # if feature_source len is 1 and is not None and a dir path than a file path
     if feature_source is not None and os.path.isdir(feature_source[0]) and len(feature_source) == 1:
         feature_source = feature_source[0]
         feature_files = os.listdir(feature_source)
         feature_files = [f for f in feature_files if f.endswith(".pth")]
         feature_files = [os.path.join(feature_source, f) for f in feature_files]
+        if not feature_files:
+            raise RuntimeError(
+                f"--features_path directory '{feature_source}' contains no .pth "
+                "feature files. The feature-generation step (save_features.py, "
+                "pipeline step 4) did not save any features — check its logs."
+            )
         concept_names = [args.save_filename +f"_"+ f.split("_")[-1].split(".")[0] for f in feature_files]
         all_args = []
 
@@ -107,7 +137,40 @@ def main():
                         f"(concept '{arg.save_filename}' had no detections)"
                     )
                     continue
+                # Per-tag layer selection: the feature file records which
+                # layer produced its hidden states; decompose that module
+                # instead of the static --module_to_decompose.
+                selected_layer = check.get("selected_layer", None)
+                if isinstance(selected_layer, (list, tuple)) and selected_layer:
+                    selected_layer = selected_layer[0]
+                if isinstance(selected_layer, str) and selected_layer:
+                    if selected_layer != arg.module_to_decompose:
+                        logger.info(
+                            f"Using selected layer from feature file for "
+                            f"'{arg.save_filename}': {selected_layer}"
+                        )
+                    arg.module_to_decompose = selected_layer
+                # A tag can have a well-formed, non-empty file (real metadata
+                # keys present) but still 0 assigned samples for this module
+                # -- e.g. a small IMAGE_BUDGET where that tag had no hits.
+                # decompose_activations()'s np.min/np.max stats print crashes
+                # outright on an empty (0, hidden_dim) matrix, so this must be
+                # caught here, before that call, not just the "file has no
+                # keys at all" check above (which doesn't catch this case).
+                hidden_states = check.get("hidden_states", {})
+                n_samples = (
+                    len(hidden_states.get(arg.module_to_decompose, []))
+                    if isinstance(hidden_states, dict)
+                    else 0
+                )
                 del check
+                if n_samples == 0:
+                    logger.warning(
+                        f"Skipping feature file with 0 samples for module "
+                        f"'{arg.module_to_decompose}': {arg.features_path[0]} "
+                        f"(concept '{arg.save_filename}' had no assigned examples)"
+                    )
+                    continue
             except Exception as e:
                 logger.warning(f"Skipping unreadable feature file {arg.features_path[0]}: {e}")
                 continue

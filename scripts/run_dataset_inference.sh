@@ -6,7 +6,13 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Source .env as single source of truth
 if [[ -f "$ROOT_DIR/.env" ]]; then
+  # Variables already set in the environment (e.g. by the orchestrator)
+  # take precedence over .env: snapshot exports and restore afterwards.
+  _pre_env_snapshot="$(mktemp)"
+  declare -px > "$_pre_env_snapshot"
   set -a; source "$ROOT_DIR/.env"; set +a
+  source "$_pre_env_snapshot" 2>/dev/null || true
+  rm -f "$_pre_env_snapshot"
 fi
 
 # Reuse env from orchestrator when available; provide soft defaults otherwise

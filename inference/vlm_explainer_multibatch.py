@@ -109,6 +109,7 @@ class VLMConceptExplainer:
     prompt_label: Optional[str] = None,
     prompt_choices: Optional[Union[str, List[str]]] = None,
     prompt: Optional[str] = None,
+    single_object: bool = False,
     ) -> None:
         self.model_name = model_name
         self.layer_path = layer_path
@@ -130,6 +131,12 @@ class VLMConceptExplainer:
         else:
             self.prompt_choices = prompt_choices
         self.prompt = prompt
+        # Grid-cell wording ("this image is a grid of separate cells...")
+        # breaks down on single-object images -- the model has no cells to
+        # enumerate and either repeats one word or hallucinates several
+        # different ones trying to satisfy "for each cell". Set this when
+        # image_root points at single-object crops (not multi-cell grids).
+        self.single_object = bool(single_object)
 
         # Memory behavior
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -305,12 +312,24 @@ class VLMConceptExplainer:
             choices = self.prompt_choices or []
             if choices:
                 choice_str = ", ".join(choices)
+                if self.single_object:
+                    return (
+                        "This image shows a single object. Choose the single best-matching "
+                        f"label from this list: {choice_str}. "
+                        "Respond with exactly one label from that list — no other words, "
+                        "no repetition, no punctuation."
+                    )
                 return (
-                    f"Multiple-choice classification: Choose the single best label from: {choice_str}. "
-                    "Respond with exactly one of these options."
+                    "This image is a grid of separate cells, each showing one object. "
+                    f"For each cell, in reading order (left-to-right, top-to-bottom), choose the single "
+                    f"best-matching label from this list: {choice_str}. "
+                    "Output exactly one label per cell, in a single line, separated by commas, "
+                    "using only labels from that list — no other words."
                 )
             # Fallback to unsupervised if no choices provided
         # Unsupervised/default prompt
+        if self.single_object:
+            return "Name the main object in this image in a single word. "
         return "Name the main object in each grid in a single line, separated by commas. "
 
     # ---------- Utils ----------
@@ -387,6 +406,14 @@ class VLMConceptExplainer:
         def chunks(seq, n):
             for i in range(0, len(seq), n):
                 yield i, seq[i:i+n]
+
+        import time as _time
+        _total_images = len(prepped_inputs)
+        _progress_start = _time.time()
+        logging.info(
+            f"[explainer] Processing {_total_images} images "
+            f"(batch_size={batch_size}, max_new_tokens={max_new_tokens})"
+        )
 
         for base_idx, img_chunk in chunks(prepped_inputs, batch_size):
             lab_chunk = labels_all[base_idx: base_idx + len(img_chunk)]
@@ -719,6 +746,15 @@ class VLMConceptExplainer:
                     'model_name': self.model_name,
                 })
 
+            _done = min(base_idx + len(img_chunk), _total_images)
+            _elapsed = _time.time() - _progress_start
+            _rate = _done / _elapsed if _elapsed > 0 else 0.0
+            _eta_min = (_total_images - _done) / _rate / 60 if _rate > 0 else float("inf")
+            logging.info(
+                f"[explainer] {_done}/{_total_images} images | "
+                f"elapsed {_elapsed / 60:.1f}m | ETA {_eta_min:.1f}m"
+            )
+
         return results
 
     def close(self):
@@ -743,6 +779,8 @@ def main():
     ap.add_argument('--layer_path', required=True)
     ap.add_argument('--image', action='append')  # removed required=True to allow --image_root only
     ap.add_argument('--image_root', default=None, help='Root dir to recursively collect images')
+    ap.add_argument('--max_images', type=int, default=int(os.environ.get('EXPL_MAX_IMAGES', '-1')),
+                    help='Images to explain: -1 = all, 0 = skip explanation entirely, N = first N; default from EXPL_MAX_IMAGES')
     ap.add_argument('--label', action='append')
     ap.add_argument('--top_n', type=int, default=5)
     ap.add_argument('--batch_size', type=int, default=1)
@@ -758,6 +796,10 @@ def main():
     ap.add_argument('--out_json', default='/mnt/abka03/Projects/xl-vlms/outputs/vlm_explanations.json', help='Path to save JSON results')
     ap.add_argument('--data_root', default=None, help='Root path of dataset. If omitted, inferred from image paths')
     ap.add_argument('--save_only_generated_tokens', default=False, action='store_true', help='Save only the generated tokens in the output')
+    ap.add_argument('--single_object', default=False, action='store_true',
+                    help='Set when --image_root points at single-object crops rather than '
+                         'multi-cell grids -- adjusts mcq/unsupervised prompt wording so it '
+                         "doesn't ask about non-existent grid cells.")
     args = ap.parse_args()
 
     # Configure logging for terminal output
@@ -787,6 +829,19 @@ def main():
     if not args.image:
         raise ValueError("No images provided. Use --image one or more times, or provide --image_root.")
 
+    # --max_images / EXPL_MAX_IMAGES: -1 = all, 0 = skip explanation, N = first N
+    if args.max_images == 0:
+        logging.info("EXPL_MAX_IMAGES=0 — explanation disabled, exiting without processing.")
+        return
+    if args.max_images > 0 and len(args.image) > args.max_images:
+        logging.info(
+            f"Capping images to explain: {args.max_images} of {len(args.image)} "
+            "(--max_images / EXPL_MAX_IMAGES)"
+        )
+        args.image = args.image[: args.max_images]
+        if args.label:
+            args.label = args.label[: args.max_images]
+
     # Set seeds early for reproducibility
     set_seed_all(args.seed, deterministic=args.deterministic)
     # add a  exception is batch size bigger than 1 the code does not work, the  error due the dataloader operation
@@ -808,6 +863,7 @@ def main():
         prompt_label=args.prompt_label,
         prompt_choices=prompt_choices,
         save_only_generated_tokens=args.save_only_generated_tokens,
+        single_object=args.single_object,
     )
     res = explainer.explain_with_concept(args.image, ground_truth_labels=args.label, top_n=args.top_n, batch_size=args.batch_size)
     for r in res:
@@ -866,23 +922,40 @@ def main():
         else:
             return obj
 
-    # Clean results: remove internal numpy embeddings and convert remaining arrays
+    # Clean results: pull out internal numpy embeddings into a separate stacked
+    # array (real per-token activations from actual grid inference) instead of
+    # discarding them -- eval/concept_deletion_eval.py needs these to ablate
+    # concept coordinates within the REAL activation the model produced,
+    # rather than operating on the standalone concept vector in isolation.
+    # Each token keeps an 'activation_index' pointing into that array.
+    all_activations: List[np.ndarray] = []
     cleaned_results = []
     for r in res:
         r_clean = r.copy()
-        # Remove internal numpy embeddings from per_token_concepts
         if 'per_token_concepts' in r_clean:
             cleaned_tokens = []
             for tok in r_clean['per_token_concepts']:
+                emb = tok.get('_token_embedding_np')
                 tok_clean = {k: v for k, v in tok.items() if not k.startswith('_')}
+                if emb is not None:
+                    tok_clean['activation_index'] = len(all_activations)
+                    all_activations.append(np.asarray(emb, dtype=np.float32))
                 cleaned_tokens.append(tok_clean)
             r_clean['per_token_concepts'] = cleaned_tokens
         cleaned_results.append(r_clean)
+
+    activations_path = None
+    if all_activations:
+        activations_path = os.path.splitext(args.out_json)[0] + "_activations.npy"
+        os.makedirs(os.path.dirname(activations_path), exist_ok=True)
+        np.save(activations_path, np.stack(all_activations, axis=0))
+        logging.info(f"Saved {len(all_activations)} real per-token activations to {activations_path}")
 
     out_payload: Dict[str, Any] = {
         'model_card': args.model_name,
         'layer_path': args.layer_path,
         'data_root': data_root,
+        'activations_path': activations_path,
         'results': _make_json_serializable(cleaned_results),
     }
     try:

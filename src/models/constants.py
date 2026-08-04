@@ -49,7 +49,7 @@ Simple_question = "Descrive the image in short."
 empty_text = ""
 list_of_items = "List the items in the image."
 known_list =  "palm_tree_bed_pine_tree_motorcycle_tractor_pear_ray_girl_squirrel_kangaroo_oak_tree_sunflower_keyboard_hamster_mouse_sweet_pepper"
-contrastve_prompt = "Write concepts of [concept] if there is a [concept] in the image, otherwise write 'Nothing'."
+contrastve_prompt = "Write concepts of [concept] if there is a [concept] in the image, otherwise write 'No [concept]'."
 sudonSNFMF_prompt_UNK = "Which of the following best describe this image: [concept], or UNK."
 sudonSNFMF_prompt_something_else = "Which of the following best describe this image: [concept], or Not [concept]. Answer the question using a single word or phrase."
 search_prompt = "What is the main object in the image is it [concept] or something else? Answer the question using a single word or phrase: [concept] or something else?."
@@ -62,10 +62,11 @@ null_prompt = ""
 stict_prompt = "Identify the pattern in the image as either '[concept]' or 'No [concept]' ? Respond with one of these two options only."
 p7 = "Classify the image as either [concept] or No [concept] based on its content. Return only the predicted label."
 grounding_class= "Classify the image as either [concept] or No [concept] based on its content. Answer with only one of these two options."
-multiple_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'Something else'. Respond with only one of these two options."
+multiple_choice_prompt = "Classify this image. If it shows [concept], output exactly '[concept]'. Otherwise, output 'No [concept]'. Respond with only one of these two options."
 
 
 oneword_question = "Identify the main object in the image using a single word."
+non_contrastive_prompt = "What are the objects in the image?"
 
 TASK_PROMPTS = {
     "llava": {
@@ -75,7 +76,7 @@ TASK_PROMPTS = {
         "Repeat the text": "Repeat the word only"
     },
     "cgdl": {
-        "ShortVQA":p2 ,
+        "ShortVQA":p7 ,
         "ShortCaptioning":p7,
         "ShortCaptioningGrounding":grounding_class,
         "List of item":multiple_choice_prompt ,
@@ -100,6 +101,24 @@ TASK_PROMPTS = {
         "ShortCaptioning":describe_image,
         "List of item":null_prompt,
         "Repeat the text": "Write the given text"
+    },
+    "non_contrastive": {
+        "ShortVQA": non_contrastive_prompt,
+        "ShortCaptioning": non_contrastive_prompt,
+        "List of item": non_contrastive_prompt,
+        "Repeat the text": non_contrastive_prompt,
+    },
+    "contrastive": {
+        "ShortVQA": contrastve_prompt,
+        "ShortCaptioning": contrastve_prompt,
+        "List of item": contrastve_prompt,
+        "Repeat the text": contrastve_prompt,
+    },
+    "null": {
+        "ShortVQA": null_prompt,
+        "ShortCaptioning": null_prompt,
+        "List of item": null_prompt,
+        "Repeat the text": null_prompt,
     },
     # Added for medical data
     'chexagent':{

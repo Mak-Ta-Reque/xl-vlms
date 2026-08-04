@@ -38,12 +38,19 @@ def dominant_positive_index(lists):
     return indices[0] if len(indices) == 1 else None
 
 
+# Sentence-ending punctuation/quotes VLMs commonly wrap short yes/no answers
+# in (e.g. "No.", "no!", '"no"') — stripped before matching so yn-mode
+# predictions aren't silently miscounted as positive.
+_NEGATIVE_STRIP_CHARS = ".,!?;:'\")( \t\n\r"
+
+
 def is_negative_prediction(s):
     """
     Return True if a prediction string is a negative/unknown outcome.
     Matches: exact 'no', or prefixes 'no_', 'not_', 'unk', 'thing', 'nc' (case-insensitive).
     """
-    low = s.lower().strip()
+    low = str(s).lower().strip()
+    low = low.strip(_NEGATIVE_STRIP_CHARS)
     return (
         low == 'no'
         or low.startswith('no_')
@@ -115,10 +122,8 @@ def eligible_indices_by_threshold(lists, clean_example_ratio=0.8):
 
 
 
-def combine_concepts(input_dir, clean_example_ratio=0.8):
-    pth_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.pth')])
-
-    combined_data = {
+def _empty_combined_dict():
+    return {
         'concepts': [],
         'concept_names': [],
         'activations': [],
@@ -129,10 +134,76 @@ def combine_concepts(input_dir, clean_example_ratio=0.8):
         'image_grounding_masks': [],
         'analysis_model': [],
         'image_grounding_predictions': [],
+        # Per-concept source layer (differs per tag with logit-lens selection)
+        'selected_layer': [],
+        # Per-concept positive ratio (assigned-samples based), the size of the
+        # assigned set it was computed over, and the threshold used for the
+        # split — kept for later evaluation.
+        'direction_positive_ratio': [],
+        'direction_num_assigned': [],
+        'direction_weighted_ratio': [],
+        'clean_example_ratio': None,
     }
+
+
+def _append_concept(store, concepts_list, activations_list, model_data, idx,
+                    image_grounding_path, image_grounding_predictions):
+    concepts_list.append(model_data['concepts'][idx])
+    # image_grounding_activations[idx] (added in multimodal_grounding.py) is
+    # index-aligned with image_grounding_path[idx]: concept_image_grounding()
+    # now hard-assigns each sample to exactly one concept (argmax direction),
+    # so it's no longer a plain prefix of the full sorted column — re-deriving
+    # it from model_data['activations'][:, idx] would silently pick the wrong
+    # (unassigned) samples. Fall back to the old re-derivation only for
+    # legacy files that predate this field.
+    aligned_activations = model_data.get('image_grounding_activations', None)
+    if isinstance(aligned_activations, list) and idx < len(aligned_activations):
+        concept_activations = aligned_activations[idx]
+    else:
+        concept_activations = torch.sort(model_data['activations'][:, idx], descending=True).values
+        concept_activations = concept_activations[: len(image_grounding_path[idx])]
+    activations_list.append(concept_activations)
+    store['text_grounding'].append(model_data['text_grounding'][idx])
+    store['image_grounding_paths'].append(image_grounding_path[idx])
+    store['concept_names'].append(model_data['image_concept_names'][idx])
+    store['analysis_model'].append(model_data['analysis_model'])
+    store['image_grounding_predictions'].append(
+        model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None
+    )
+    store['image_grounding_bboxes'].append(
+        model_data.get('image_grounding_bboxes', [])[idx]
+        if idx < len(model_data.get('image_grounding_bboxes', [])) else None
+    )
+    ig_masks = model_data.get('image_grounding_masks', [])
+    store['image_grounding_masks'].append(ig_masks[idx] if idx < len(ig_masks) else None)
+    store['selected_layer'].append(model_data.get('selected_layer', None))
+    ratios = model_data.get('direction_positive_ratio', None)
+    store['direction_positive_ratio'].append(
+        ratios[idx] if isinstance(ratios, list) and idx < len(ratios) else None
+    )
+    counts = model_data.get('direction_num_assigned', None)
+    store['direction_num_assigned'].append(
+        counts[idx] if isinstance(counts, list) and idx < len(counts) else None
+    )
+    weighted = model_data.get('direction_weighted_ratio', None)
+    store['direction_weighted_ratio'].append(
+        weighted[idx] if isinstance(weighted, list) and idx < len(weighted) else None
+    )
+    store['decomposition_method'] = model_data['decomposition_method']
+
+
+def combine_concepts(input_dir, clean_example_ratio=0.8):
+    """Split concepts into a positive bank (passed the purity filter) and a
+    negative bank (failed it). Returns (combined_data, negative_data)."""
+    pth_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.pth')])
+
+    combined_data = _empty_combined_dict()
+    negative_data = _empty_combined_dict()
 
     concepts = []
     activations = []
+    negative_concepts = []
+    negative_activations = []
 
     # ── Tracking stats ──
     total_files = len(pth_files)
@@ -150,76 +221,127 @@ def combine_concepts(input_dir, clean_example_ratio=0.8):
         model_data = torch.load(filepath)
         image_grounding_path = model_data['image_grounding_paths']
         image_grounding_predictions = model_data.get('image_grounding_predictions', None)
+        direction_ratios = model_data.get('direction_positive_ratio', None)
+        direction_weighted = model_data.get('direction_weighted_ratio', None)
+        direction_counts = model_data.get('direction_num_assigned', None)
 
         n_concepts_in_file = len(image_grounding_predictions) if image_grounding_predictions else 0
         total_concepts_seen += n_concepts_in_file
 
-        # Include concepts with positive ratio above threshold
-        eligible = eligible_indices_by_threshold(image_grounding_predictions, clean_example_ratio)
+        # Selection: the per-direction positive ratio must be
+        # >= CLEAN_EXAMPLE_RATIO. DIRECTION_RATIO_MODE picks the metric:
+        #   assigned (default) — positives among argmax-assigned / #assigned
+        #   weighted           — positive activation mass / total mass
+        #   both               — must pass the threshold on BOTH metrics
+        # MIN_DIRECTION_ASSIGNED additionally requires a minimum number of
+        # assigned samples (guards against tiny high-variance sets).
+        # Falls back to the grounding-prediction ratio for older files
+        # without direction_positive_ratio.
+        ratio_mode = os.getenv('DIRECTION_RATIO_MODE', 'assigned').strip().lower()
+        min_assigned = int(os.getenv('MIN_DIRECTION_ASSIGNED', '1'))
+        if isinstance(direction_ratios, list) and len(direction_ratios) == n_concepts_in_file:
+            def _passes(idx):
+                r_assigned = direction_ratios[idx]
+                r_weighted = (
+                    direction_weighted[idx]
+                    if isinstance(direction_weighted, list) and idx < len(direction_weighted)
+                    else None
+                )
+                n_owned = (
+                    direction_counts[idx]
+                    if isinstance(direction_counts, list) and idx < len(direction_counts)
+                    else None
+                )
+                if isinstance(n_owned, int) and n_owned < min_assigned:
+                    return False
+                ok_assigned = r_assigned is not None and r_assigned >= clean_example_ratio
+                ok_weighted = r_weighted is not None and r_weighted >= clean_example_ratio
+                if ratio_mode == 'weighted':
+                    return ok_weighted
+                if ratio_mode == 'both':
+                    return ok_assigned and ok_weighted
+                return ok_assigned
+            eligible = [idx for idx in range(n_concepts_in_file) if _passes(idx)]
+            ratio_source = f'direction-{ratio_mode}' + (f', min_assigned={min_assigned}' if min_assigned > 1 else '')
+        else:
+            eligible = eligible_indices_by_threshold(image_grounding_predictions, clean_example_ratio)
+            ratio_source = 'grounding-predictions (legacy fallback)'
         n_skipped = n_concepts_in_file - len(eligible)
 
         # Log per-file details
-        print(f"\n  File: {filename}  ({n_concepts_in_file} concepts)")
+        print(f"\n  File: {filename}  ({n_concepts_in_file} concepts, ratio source: {ratio_source})")
         for c_idx in range(n_concepts_in_file):
             preds = image_grounding_predictions[c_idx] if image_grounding_predictions else []
             neg_items = [p for p in preds if is_negative_prediction(p)]
-            pos_ratio = 0.0
-            if preds:
+            if isinstance(direction_ratios, list) and c_idx < len(direction_ratios) and direction_ratios[c_idx] is not None:
+                pos_ratio = direction_ratios[c_idx]
+            elif preds:
                 pos_ratio = sum(not is_negative_prediction(p) for p in preds) / len(preds)
-            status = "INCLUDED" if c_idx in eligible else "SKIPPED"
-            if neg_items:
-                print(f"    concept {c_idx}: {status} -- positive_ratio={pos_ratio:.2f}, negative predictions: {neg_items}")
             else:
-                print(f"    concept {c_idx}: {status} -- positive_ratio={pos_ratio:.2f}")
+                pos_ratio = 0.0
+            extra = ""
+            if isinstance(direction_counts, list) and c_idx < len(direction_counts) and direction_counts[c_idx] is not None:
+                extra += f", assigned={direction_counts[c_idx]}"
+            if isinstance(direction_weighted, list) and c_idx < len(direction_weighted) and direction_weighted[c_idx] is not None:
+                extra += f", weighted_ratio={direction_weighted[c_idx]:.2f}"
+            status = "POSITIVE" if c_idx in eligible else "NEGATIVE"
+            if neg_items:
+                print(f"    concept {c_idx}: {status} -- positive_ratio={pos_ratio:.2f}{extra}, negative predictions: {neg_items[:10]}")
+            else:
+                print(f"    concept {c_idx}: {status} -- positive_ratio={pos_ratio:.2f}{extra}")
 
         total_concepts_skipped += n_skipped
 
-        # Skip this file if no concept passes the configured threshold
+        # Every concept goes to one of the two banks: eligible -> positive,
+        # below-threshold -> negative (kept, not discarded).
+        for idx in range(n_concepts_in_file):
+            if idx in eligible:
+                _append_concept(combined_data, concepts, activations, model_data,
+                                idx, image_grounding_path, image_grounding_predictions)
+            else:
+                _append_concept(negative_data, negative_concepts, negative_activations,
+                                model_data, idx, image_grounding_path, image_grounding_predictions)
+
         if len(eligible) < 1:
             files_fully_skipped += 1
-            print(f"    >> FILE SKIPPED (0/{n_concepts_in_file} concepts eligible)")
+            print(f"    >> FILE HAS NO ELIGIBLE CONCEPT (0/{n_concepts_in_file}) — all kept in negative bank")
             continue
 
         total_concepts_included += len(eligible)
         print(f"    >> {len(eligible)}/{n_concepts_in_file} concepts eligible")
 
-        # Append each eligible index
-        for idx in eligible:
-            concepts.append(model_data['concepts'][idx])
-            activations.append(model_data['activations'][:, idx])
-            combined_data['text_grounding'].append(model_data['text_grounding'][idx])
-            combined_data['image_grounding_paths'].append(image_grounding_path[idx])
-            combined_data['concept_names'].append(model_data['image_concept_names'][idx])
-            combined_data['analysis_model'].append(model_data['analysis_model'])
-            combined_data['image_grounding_predictions'].append(model_data.get('image_grounding_predictions', [])[idx] if image_grounding_predictions else None)
-            combined_data['image_grounding_bboxes'].append(model_data.get('image_grounding_bboxes', [])[idx] if idx < len(model_data.get('image_grounding_bboxes', [])) else None)
-            # Propagate segmentation masks if available
-            ig_masks = model_data.get('image_grounding_masks', [])
-            combined_data['image_grounding_masks'].append(ig_masks[idx] if idx < len(ig_masks) else None)
-        combined_data['decomposition_method'] = model_data['decomposition_method']
-
     # ── Summary ──
     print(f"\n{'='*60}")
     print(f"COMBINE CONCEPTS SUMMARY")
     print(f"  Files processed:        {total_files}")
-    print(f"  Files fully skipped:    {files_fully_skipped}")
+    print(f"  Files w/o eligible:     {files_fully_skipped}")
     print(f"  Total concepts seen:    {total_concepts_seen}")
-    print(f"  Concepts included:      {total_concepts_included}")
-    print(f"  Concepts skipped:       {total_concepts_skipped}  (below positive-ratio threshold {clean_example_ratio:.2f})")
+    print(f"  Positive bank:          {total_concepts_included}")
+    print(f"  Negative bank:          {total_concepts_skipped}  (below positive-ratio threshold {clean_example_ratio:.2f})")
     if total_concepts_seen > 0:
         pct = 100 * total_concepts_skipped / total_concepts_seen
-        print(f"  Skip rate:              {pct:.1f}%")
+        print(f"  Negative rate:          {pct:.1f}%")
     print(f"{'='*60}\n")
 
     if not concepts:
         print(f"WARNING: No concepts met CLEAN_EXAMPLE_RATIO threshold ({clean_example_ratio:.2f}) in any file.")
         combined_data['concepts'] = torch.empty(0)
         combined_data['activations'] = []
-        return combined_data
+    else:
+        combined_data['concepts'] = torch.stack(concepts, dim=0)
+        combined_data['activations'] = activations
 
-    combined_data['concepts'] = torch.stack(concepts, dim=0)
-    combined_data['activations'] = activations
-    return combined_data
+    if not negative_concepts:
+        negative_data['concepts'] = torch.empty(0)
+        negative_data['activations'] = []
+    else:
+        negative_data['concepts'] = torch.stack(negative_concepts, dim=0)
+        negative_data['activations'] = negative_activations
+
+    combined_data['clean_example_ratio'] = clean_example_ratio
+    negative_data['clean_example_ratio'] = clean_example_ratio
+
+    return combined_data, negative_data
 
 
 
@@ -368,6 +490,9 @@ def apply_normalization(concepts, method):
 
 
 def save_combined_data(data, output_path):
+    parent_dir = os.path.dirname(output_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
     torch.save(data, output_path)
     print(f"Saved combined data to: {output_path}")
 
@@ -395,20 +520,39 @@ def main(args):
     clean_example_ratio = parse_clean_example_ratio(default=0.8)
     print(f"Using CLEAN_EXAMPLE_RATIO={clean_example_ratio:.2f}")
 
-    combined_data = combine_concepts(args.input_dir, clean_example_ratio=clean_example_ratio)
+    combined_data, negative_data = combine_concepts(args.input_dir, clean_example_ratio=clean_example_ratio)
+    # Embed the selection threshold in the file names so different ratios can
+    # be produced and evaluated side by side, e.g.
+    # combined_concept_snmf_cr0.5_raw.pth
+    ratio_tag = f"cr{clean_example_ratio:g}"
     base_output = args.output_path.rsplit('.', 1)[0]
+    if not base_output.endswith(f"_{ratio_tag}"):
+        base_output = f"{base_output}_{ratio_tag}"
+    # Negative bank mirrors the positive naming:
+    # combined_concept_snmf* -> combined_negative_concept_snmf*
+    if 'combined_concept' in os.path.basename(base_output):
+        neg_base = os.path.join(
+            os.path.dirname(base_output),
+            os.path.basename(base_output).replace('combined_concept', 'combined_negative_concept', 1),
+        )
+    else:
+        neg_base = f"{base_output}_negative"
 
-    # Save raw combined concepts
+    # Save raw combined concepts (positive + negative banks)
     save_combined_data(combined_data, f"{base_output}_raw.pth")
+    save_combined_data(negative_data, f"{neg_base}_raw.pth")
 
-    # Apply normalizations
+    # Apply normalizations to both banks
     normalization_methods = ['l2', 'zca', 'l2zca', 'l1', 'l1zca', 'gl']
     for method in normalization_methods:
         if method in args.normalization:
-            normalized_concepts = apply_normalization(combined_data['concepts'], method)
-            data_copy = combined_data.copy()
-            data_copy['concepts'] = torch.tensor(normalized_concepts, dtype=torch.float32)
-            save_combined_data(data_copy, f"{base_output}_{method}.pth")
+            for data, base in ((combined_data, base_output), (negative_data, neg_base)):
+                if not torch.is_tensor(data['concepts']) or data['concepts'].numel() == 0:
+                    continue
+                normalized_concepts = apply_normalization(data['concepts'], method)
+                data_copy = data.copy()
+                data_copy['concepts'] = torch.tensor(normalized_concepts, dtype=torch.float32)
+                save_combined_data(data_copy, f"{base}_{method}.pth")
     
     # Delete original files if requested (default: False)
     if getattr(args, 'delete', False):
@@ -421,6 +565,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_path", type=str, required=True, help="Base path to save output files")
     parser.add_argument("--normalization", nargs="+", choices=['l2', 'zca', 'l2zca', 'l1', 'l1zca', 'gl'], required=True,
                         help="Normalization methods to apply")
-    parser.add_argument("--delete", default=True, action="store_true", help="Delete input .pth files after processing")
+    parser.add_argument("--delete", default=False, action="store_true", help="Delete input .pth files after processing")
     args = parser.parse_args()
     main(args)

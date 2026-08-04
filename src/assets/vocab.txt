@@ -1,6 +1,10 @@
-sedan
-suv
-hatchback
-street lamp
-pickup truck
-motorcycle
+parachute
+cassette player
+chainsaw
+church
+dog
+fish
+french horn
+garbage truck
+gas station
+golf ball

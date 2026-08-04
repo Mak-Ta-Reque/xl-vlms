@@ -102,7 +102,9 @@ def load_concept(
         assert analysis_key in data, f"{analysis_key} not found, got {data.keys()}."
         analysis_data_[analysis_key] = data[analysis_key]
     # Propagate optional keys that may exist in the .pth file (e.g. masks, bboxes, predictions)
-    optional_keys = ["image_grounding_bboxes", "image_grounding_masks", "image_grounding_predictions"]
+    optional_keys = ["image_grounding_bboxes", "image_grounding_masks", "image_grounding_predictions",
+                     "selected_layer", "direction_positive_ratio", "direction_num_assigned",
+                     "direction_weighted_ratio", "clean_example_ratio"]
     for opt_key in optional_keys:
         if opt_key in data and opt_key not in analysis_data_:
             analysis_data_[opt_key] = data[opt_key]
@@ -123,11 +125,23 @@ def analyse_features(
     **kwargs: Any,
 ) -> None:
 
+    # Mandatory whenever a config's features were extracted with the
+    # save_hidden_states_for_token_of_interest hook (cgdl, non_contrastive):
+    # samples where the tag word was never found (mask=False, hook fell back
+    # to position 0) are noise, not signal, and must be dropped rather than
+    # pooled in as if they were real matches. This is a no-op for templates
+    # using save_hidden_states_mean (null): those files carry no
+    # token_of_interest_mask key at all, so get_token_of_interest_features
+    # (called with keep_only_token_of_interest=True below) passes the
+    # features through unfiltered regardless of this flag's value.
+    keep_only_token_of_interest = True
+
     if args.features_path is not None:
         features, metadata = load_features(
             features_path=args.features_path,
             logger=logger,
             args=args,
+            keep_only_token_of_interest=keep_only_token_of_interest,
         )
 
     elif args.analysis_saving_path is not None:
@@ -147,11 +161,35 @@ def analyse_features(
                 args.dest_model_feature_path,
             ],
             args=args,
+            keep_only_token_of_interest=keep_only_token_of_interest,
         )
     
 
     num_concepts = [int(n) for n in args.num_concepts] if args.num_concepts else None
     results_dict = {}
+    # A tag's raw file can be non-empty but still end up with 0 rows here:
+    # keep_only_token_of_interest filtering (above) drops every sample where
+    # the tag word was never found, which for a small sample count and a
+    # template with a lower match rate (non_contrastive) can legitimately
+    # zero out one specific tag even though most tags survive fine.
+    # decompose_activations()'s stats print (np.min/np.max) crashes outright
+    # on an empty matrix, so skip decomposition for this tag/file instead --
+    # results_dict stays {} and the save below is a no-op, same as the
+    # existing "empty concept bank" handling elsewhere in this pipeline.
+    if "decompose_activations" in analysis_name and isinstance(features, dict):
+        empty_keys = [k for k, v in features.items() if hasattr(v, "shape") and v.shape[0] == 0]
+        for k in empty_keys:
+            if logger is not None:
+                logger.warning(
+                    f"Skipping decomposition for '{k}': 0 samples survived "
+                    "token-of-interest filtering (tag word never found in "
+                    "this tag's responses) -- not an error, just no signal "
+                    "to decompose for this tag."
+                )
+            del features[k]
+            metadata.pop(k, None)
+        if not features:
+            return
     if "decompose_activations" in analysis_name:
         results_dict = decompose_and_ground_activations(
             features,
